@@ -1,0 +1,69 @@
+{
+  "name": "@attestwire/en16931",
+  "version": "0.1.0",
+  "description": "Generate and validate EN 16931 e-invoices (XRechnung UBL, Peppol BIS 3.0) with errors that teach the regulation. Zero dependencies.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Attestwire",
+  "homepage": "https://github.com/attestwire/en16931",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/attestwire/en16931.git"
+  },
+  "bugs": {
+    "url": "https://github.com/attestwire/en16931/issues"
+  },
+  "keywords": [
+    "en16931",
+    "xrechnung",
+    "e-invoicing",
+    "einvoice",
+    "einvoicing",
+    "ubl",
+    "peppol",
+    "peppol-bis",
+    "zugferd",
+    "facturx",
+    "invoice",
+    "vat",
+    "kosit",
+    "leitweg-id",
+    "compliance",
+    "germany",
+    "typescript"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "fixtures": "npm run build && node scripts/emit-fixtures.mjs",
+    "kosit": "./scripts/kosit-check.sh",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.11",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
