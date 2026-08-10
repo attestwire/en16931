@@ -5,17 +5,41 @@ export {
   CUSTOMIZATION_IDS,
   PROFILE_IDS,
   DEFAULT_INVOICE_TYPE_CODE,
+  INVOICED_OBJECT_DOCUMENT_TYPE_CODE,
+  UBL_GENERATABLE_PROFILES,
+  CREDIT_NOTE_TYPE_CODES,
+  GenerationError,
+  UnsupportedProfileError,
+  UnsupportedDocumentTypeError,
   type GenerateOptions,
+  type UblGeneratableProfile,
 } from "./generate.js";
 export {
   computeTotals,
   lineNetAmount,
   round2,
   formatAmount,
+  effectiveRate,
+  effectiveAllowanceChargeRate,
   DEFAULT_EXEMPTION_REASONS,
 } from "./totals.js";
 
-export { minimalXRechnung, reverseChargeXRechnung } from "./fixtures.js";
+export {
+  minimalXRechnung,
+  reverseChargeXRechnung,
+  discountedXRechnung,
+} from "./fixtures.js";
+
+/**
+ * The EN 16931 code lists the BR-CL-* rules enforce, as frozen arrays and
+ * membership sets — useful for building a unit picker or a currency dropdown
+ * that cannot offer a value the validator will then reject.
+ *
+ * Each list lives in its own side-effect-free module under `src/codelists/`, so
+ * a bundler drops the ones you do not reference — which matters mainly for
+ * `UNIT_CODES`, whose 2,162 entries are most of the package's data weight.
+ */
+export * from "./codelists/index.js";
 
 import { runInputRules } from "./rules.js";
 import type { InvoiceInput, ValidationResult } from "./types.js";
@@ -27,13 +51,19 @@ import type { InvoiceInput, ValidationResult } from "./types.js";
  * you can see the whole set of things wrong with the document at once.
  * Schematron-parity validation of *existing* XML lands next; this entry point's
  * shape is stable — the same TeachingError payload appears everywhere.
+ *
+ * Findings are split three ways, matching the three flags KoSIT's schematron
+ * uses. `information` is deliberately *not* folded into `warnings`: a caller
+ * whose build fails on a non-empty `warnings` array should not be stopped by a
+ * finding the official validator raises and then accepts.
  */
 export function validateInput(inv: InvoiceInput): ValidationResult {
-  const errors = runInputRules(inv);
+  const findings = runInputRules(inv);
   return {
-    valid: errors.every((e) => e.severity !== "fatal"),
+    valid: findings.every((e) => e.severity !== "fatal"),
     profile: inv.profile,
-    errors: errors.filter((e) => e.severity === "fatal"),
-    warnings: errors.filter((e) => e.severity === "warning"),
+    errors: findings.filter((e) => e.severity === "fatal"),
+    warnings: findings.filter((e) => e.severity === "warning"),
+    information: findings.filter((e) => e.severity === "information"),
   };
 }

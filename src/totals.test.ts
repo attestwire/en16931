@@ -273,3 +273,293 @@ describe("computeTotals arithmetic (BR-CO-10/13/14/15/17)", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// The full EN 16931 amount model: allowances, charges, prepayment, rounding.
+// ---------------------------------------------------------------------------
+
+describe("BT-131 with line allowances and charges (BG-27 / BG-28)", () => {
+  it("subtracts line allowances and adds line charges", () => {
+    // BT-131 = BT-129 x (BT-146 / BT-149) − Σ BT-136 + Σ BT-141
+    const totals = computeTotals(
+      invoiceWith([
+        line({
+          id: "1",
+          quantity: 1,
+          unitPrice: 300,
+          allowances: [{ amount: 30 }],
+          charges: [{ amount: 5 }],
+        }),
+      ]),
+    );
+    expect(totals.lineNetAmounts[0]).toBe(275);
+    expect(totals.lineExtensionAmount).toBe(275);
+  });
+
+  it("sums several allowances and charges on one line", () => {
+    expect(
+      lineNetAmount(
+        line({
+          id: "1",
+          quantity: 2,
+          unitPrice: 100,
+          allowances: [{ amount: 10 }, { amount: 5.5 }],
+          charges: [{ amount: 1.25 }, { amount: 2.25 }],
+        }),
+      ),
+    ).toBe(188);
+  });
+
+  it("rounds the line amount once, at the end, not its constituents", () => {
+    // 3 x 33.333 = 99.999, less an allowance of 0.004 → 99.995 → 100.00.
+    // Rounding the gross first would give 100.00 − 0.00 = 100.00 by luck;
+    // rounding each constituent to 2dp first gives 100.00 − 0.00 too, so the
+    // case that separates them is the one below.
+    expect(
+      lineNetAmount(
+        line({ id: "1", quantity: 3, unitPrice: 33.333, allowances: [{ amount: 0.004 }] }),
+      ),
+    ).toBe(100);
+  });
+
+  it("ignores a non-finite allowance amount rather than poisoning the line", () => {
+    // BR-41 reports the missing amount; the arithmetic must still produce a
+    // number, or every other finding for the document is lost with it.
+    expect(
+      lineNetAmount(
+        line({
+          id: "1",
+          quantity: 1,
+          unitPrice: 100,
+          allowances: [{ amount: Number.NaN }],
+        }),
+      ),
+    ).toBe(100);
+  });
+
+  it("still divides by the price base quantity before applying the allowance", () => {
+    expect(
+      lineNetAmount(
+        line({
+          id: "1",
+          quantity: 500,
+          unitPrice: 12.5,
+          baseQuantity: 100,
+          allowances: [{ amount: 2.5 }],
+        }),
+      ),
+    ).toBe(60);
+  });
+});
+
+describe("BT-107 / BT-108 / BT-109: document allowances and charges", () => {
+  const withDocument = (
+    allowances: InvoiceInput["allowances"],
+    charges: InvoiceInput["charges"],
+  ): InvoiceInput => ({
+    ...invoiceWith([line({ id: "1", quantity: 1, unitPrice: 1000, vatRate: 19 })]),
+    allowances,
+    charges,
+  });
+
+  it("BT-107 is the sum of allowance amounts and BT-108 the sum of charges", () => {
+    const totals = computeTotals(
+      withDocument(
+        [
+          { amount: 50, vatCategory: "S", vatRate: 19 },
+          { amount: 25.5, vatCategory: "S", vatRate: 19 },
+        ],
+        [{ amount: 10, vatCategory: "S", vatRate: 19 }],
+      ),
+    );
+    expect(totals.allowanceTotalAmount).toBe(75.5);
+    expect(totals.chargeTotalAmount).toBe(10);
+  });
+
+  it("BT-109 = BT-106 − BT-107 + BT-108", () => {
+    const totals = computeTotals(
+      withDocument(
+        [{ amount: 50, vatCategory: "S", vatRate: 19 }],
+        [{ amount: 10, vatCategory: "S", vatRate: 19 }],
+      ),
+    );
+    expect(totals.lineExtensionAmount).toBe(1000);
+    expect(totals.taxExclusiveAmount).toBe(960);
+  });
+
+  it("keeps BT-107 and BT-108 as separate sums even when they cancel", () => {
+    // They are disclosures, not a net figure. An allowance and a charge of the
+    // same size leave BT-109 unchanged and must both still be reported.
+    const totals = computeTotals(
+      withDocument(
+        [{ amount: 40, vatCategory: "S", vatRate: 19 }],
+        [{ amount: 40, vatCategory: "S", vatRate: 19 }],
+      ),
+    );
+    expect(totals.allowanceTotalAmount).toBe(40);
+    expect(totals.chargeTotalAmount).toBe(40);
+    expect(totals.taxExclusiveAmount).toBe(1000);
+  });
+
+  it("both are zero, not absent, when the document has neither", () => {
+    const totals = computeTotals(withDocument(undefined, undefined));
+    expect(totals.allowanceTotalAmount).toBe(0);
+    expect(totals.chargeTotalAmount).toBe(0);
+  });
+});
+
+describe("BG-23 with document allowances and charges", () => {
+  it("nets an allowance out of the taxable amount of its own group only", () => {
+    const totals = computeTotals({
+      ...invoiceWith([
+        line({ id: "1", quantity: 1, unitPrice: 1000, vatRate: 19 }),
+        line({ id: "2", quantity: 1, unitPrice: 100, vatRate: 7 }),
+      ]),
+      allowances: [{ amount: 100, vatCategory: "S", vatRate: 19 }],
+      charges: [{ amount: 20, vatCategory: "S", vatRate: 7 }],
+    });
+    const standard = totals.subtotals.find((s) => s.rate === 19)!;
+    const reduced = totals.subtotals.find((s) => s.rate === 7)!;
+    expect(standard.taxableAmount).toBe(900);
+    expect(standard.taxAmount).toBe(171);
+    expect(reduced.taxableAmount).toBe(120);
+    expect(reduced.taxAmount).toBe(8.4);
+    expect(totals.taxAmount).toBe(179.4);
+  });
+
+  it("opens a new breakdown group for a category that only an allowance uses", () => {
+    const totals = computeTotals({
+      ...invoiceWith([line({ id: "1", quantity: 1, unitPrice: 1000, vatRate: 19 })]),
+      allowances: [{ amount: 50, vatCategory: "Z", vatRate: 0 }],
+    });
+    expect(totals.subtotals.map((s) => s.category)).toEqual(["S", "Z"]);
+    const zero = totals.subtotals.find((s) => s.category === "Z")!;
+    expect(zero.taxableAmount).toBe(-50);
+    expect(zero.taxAmount).toBe(0);
+  });
+
+  it("normalises an allowance rate the same way it normalises a line rate", () => {
+    // A stray 19% on a reverse-charge allowance must not split the AE group.
+    const totals = computeTotals({
+      ...invoiceWith([line({ id: "1", quantity: 1, unitPrice: 1000, vatCategory: "AE", vatRate: 0 })]),
+      allowances: [{ amount: 50, vatCategory: "AE", vatRate: 19 }],
+    });
+    expect(totals.subtotals.length).toBe(1);
+    expect(totals.subtotals[0]!.taxableAmount).toBe(950);
+    expect(totals.subtotals[0]!.taxAmount).toBe(0);
+  });
+
+  it("gives a category-O allowance no rate at all", () => {
+    const totals = computeTotals({
+      ...invoiceWith([
+        line({ id: "1", quantity: 1, unitPrice: 100, vatCategory: "O", vatRate: undefined }),
+      ]),
+      allowances: [{ amount: 10, vatCategory: "O" }],
+    });
+    expect(totals.subtotals.length).toBe(1);
+    expect(totals.subtotals[0]!.rate).toBeUndefined();
+    expect(totals.subtotals[0]!.taxableAmount).toBe(90);
+  });
+});
+
+describe("BT-112 / BT-113 / BT-114 / BT-115: the payable chain", () => {
+  const base = invoiceWith([line({ id: "1", quantity: 1, unitPrice: 1000, vatRate: 19 })]);
+
+  it("BT-115 = BT-112 when there is no prepayment and no rounding", () => {
+    const totals = computeTotals(base);
+    expect(totals.taxInclusiveAmount).toBe(1190);
+    expect(totals.paidAmount).toBe(0);
+    expect(totals.roundingAmount).toBe(0);
+    expect(totals.payableAmount).toBe(1190);
+  });
+
+  it("subtracts the paid amount (BT-113)", () => {
+    expect(computeTotals({ ...base, paidAmount: 500 }).payableAmount).toBe(690);
+  });
+
+  it("adds the rounding amount (BT-114), which is signed", () => {
+    expect(computeTotals({ ...base, roundingAmount: 0.4 }).payableAmount).toBe(1190.4);
+    expect(computeTotals({ ...base, roundingAmount: -0.4 }).payableAmount).toBe(1189.6);
+  });
+
+  it("applies both in the order the rule states: BT-112 − BT-113 + BT-114", () => {
+    const totals = computeTotals({ ...base, paidAmount: 190.37, roundingAmount: 0.37 });
+    expect(totals.payableAmount).toBe(1000);
+  });
+
+  it("rounds a prepayment and a rounding amount to two decimals", () => {
+    const totals = computeTotals({ ...base, paidAmount: 100.005, roundingAmount: 0.004 });
+    expect(totals.paidAmount).toBe(100.01);
+    expect(totals.roundingAmount).toBe(0);
+  });
+
+  it("treats a non-finite prepayment as zero rather than throwing", () => {
+    const totals = computeTotals({ ...base, paidAmount: Number.NaN });
+    expect(totals.paidAmount).toBe(0);
+    expect(totals.payableAmount).toBe(1190);
+  });
+
+  it("holds the whole chain together on a document that uses every term", () => {
+    const totals = computeTotals({
+      ...invoiceWith([
+        line({ id: "1", quantity: 10, unitPrice: 150, vatRate: 19 }),
+        line({ id: "2", quantity: 4, unitPrice: 24.95, vatRate: 7 }),
+        line({
+          id: "3",
+          quantity: 1,
+          unitPrice: 300,
+          vatRate: 19,
+          allowances: [{ amount: 30 }],
+        }),
+      ]),
+      allowances: [{ amount: 53.1, vatCategory: "S", vatRate: 19 }],
+      charges: [{ amount: 24.9, vatCategory: "S", vatRate: 19 }],
+      paidAmount: 500,
+      roundingAmount: 0.47,
+    });
+    expect(totals.lineExtensionAmount).toBe(1869.8);
+    expect(totals.allowanceTotalAmount).toBe(53.1);
+    expect(totals.chargeTotalAmount).toBe(24.9);
+    expect(totals.taxExclusiveAmount).toBe(1841.6);
+    expect(totals.subtotals.map((s) => [s.rate, s.taxableAmount, s.taxAmount])).toEqual([
+      [19, 1741.8, 330.94],
+      [7, 99.8, 6.99],
+    ]);
+    expect(totals.taxAmount).toBe(337.93);
+    expect(totals.taxInclusiveAmount).toBe(2179.53);
+    expect(totals.payableAmount).toBe(1680);
+    // BR-CO-15 and BR-CO-16 as identities, not as spot values.
+    expect(totals.taxInclusiveAmount).toBe(
+      round2(totals.taxExclusiveAmount + totals.taxAmount),
+    );
+    expect(totals.payableAmount).toBe(
+      round2(totals.taxInclusiveAmount - totals.paidAmount + totals.roundingAmount),
+    );
+  });
+});
+
+describe("BT-121: the VAT exemption reason code", () => {
+  const exempt = (patch: Partial<InvoiceInput>): InvoiceInput => ({
+    ...invoiceWith([
+      line({ id: "1", quantity: 1, unitPrice: 100, vatCategory: "E", vatRate: 0 }),
+    ]),
+    ...patch,
+  });
+
+  it("carries a supplied code onto the breakdown", () => {
+    const totals = computeTotals(
+      exempt({ vatExemptionReasonCodes: { E: "VATEX-EU-132-1I" } }),
+    );
+    expect(totals.subtotals[0]!.exemptionReasonCode).toBe("VATEX-EU-132-1I");
+  });
+
+  it("suppresses both the code and the text on S and Z, as BR-S-10 and BR-Z-10 require", () => {
+    const totals = computeTotals({
+      ...invoiceWith([line({ id: "1", quantity: 1, unitPrice: 100, vatCategory: "Z", vatRate: 0 })]),
+      vatExemptionReasons: { Z: "no VAT" },
+      vatExemptionReasonCodes: { Z: "VATEX-EU-132-1I" },
+    });
+    expect(totals.subtotals[0]!.exemptionReason).toBeUndefined();
+    expect(totals.subtotals[0]!.exemptionReasonCode).toBeUndefined();
+  });
+});

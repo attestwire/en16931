@@ -1,6 +1,6 @@
 {
   "name": "@attestwire/en16931",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Generate and validate EN 16931 e-invoices (XRechnung UBL, Peppol BIS 3.0) with errors that teach the regulation. Zero dependencies.",
   "type": "module",
   "license": "MIT",
@@ -50,6 +50,7 @@
   },
   "files": [
     "dist",
+    "fixtures",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -58,6 +59,7 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "fixtures": "npm run build && node scripts/emit-fixtures.mjs",
+    "codelists": "node scripts/build-codelists.mjs",
     "kosit": "./scripts/kosit-check.sh",
     "prepublishOnly": "npm run build && npm test"
   },

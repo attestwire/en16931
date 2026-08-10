@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Validate the committed fixtures against the OFFICIAL KoSIT validator.
 #
-# This is the parity check that matters: our own rule engine is a
-# reimplementation, and the only way to know it agrees with the regulator is to
-# run the regulator's own tool. Everything is downloaded into a scratch
+# Our own rule engine is a reimplementation, and the only way to know the XML it
+# produces agrees with the regulator is to run the regulator's own tool over it.
+# Scope: the two release fixtures, not the rule set — this is a conformance
+# check on those documents, not a schematron parity suite. Everything is
+# downloaded into a scratch
 # directory; nothing is installed system-wide.
 #
 # Usage:  ./scripts/kosit-check.sh [output-dir]

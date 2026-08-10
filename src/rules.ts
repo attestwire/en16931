@@ -1,5 +1,7 @@
 import { computeTotals, round2 } from "./totals.js";
-import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
+import { CREDIT_NOTE_TYPE_CODES, DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
+import { extendedRules } from "./rules-extended.js";
+import { documentAllowanceCharges, linesOf } from "./rule-kit.js";
 import type {
   InvoiceInput,
   Party,
@@ -26,12 +28,25 @@ type RuleFn = (inv: InvoiceInput) => RuleResult;
 
 const DOCS = "https://attestwire.com/rules";
 
+/**
+ * Where a *library limitation* (as opposed to a regulation rule) is documented.
+ * Findings that carry an `ATW-` rule id are ours, not the regulator's.
+ */
+const LIMITS_DOCS = "https://github.com/attestwire/en16931#not-implemented-yet";
+
 const XRECHNUNG_PROFILES = new Set(["xrechnung-ubl", "xrechnung-cii"]);
 const isXRechnung = (inv: InvoiceInput) => XRECHNUNG_PROFILES.has(inv.profile);
 const isPeppol = (inv: InvoiceInput) => inv.profile === "peppol-bis-3";
 
 const blank = (v: string | undefined | null): boolean =>
   v === undefined || v === null || String(v).trim() === "";
+
+/**
+ * BR-DE-28's email shape, `$XR-EMAIL-REGEX` in KoSIT's `common.sch`, verbatim.
+ * Deliberately permissive on the local part and strict about the domain having
+ * at least one non-empty dot-separated label.
+ */
+const EMAIL_SHAPE = /^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$/;
 
 /** ISO 3166-1 alpha-2 prefix, plus Greece's "EL" derogation (BR-CO-09). */
 const VAT_PREFIX = /^(EL|[A-Z]{2})/;
@@ -46,12 +61,14 @@ const CATEGORY_NAMES: Record<VatCategory, string> = {
   K: "Intra-community supply",
   G: "Export outside the EU",
   O: "Not subject to VAT",
+  L: "Canary Islands general indirect tax (IGIC)",
+  M: "Tax on production, services and imports in Ceuta and Melilla (IPSI)",
 };
 
 const err = (e: TeachingError): TeachingError => e;
 
 const usesCategory = (inv: InvoiceInput, cat: VatCategory): boolean =>
-  inv.lines.some((l) => l.vatCategory === cat);
+  linesOf(inv).some((l) => l?.vatCategory === cat);
 
 /** BT-31 or BT-32 — either satisfies the "seller is tax-identified" family of rules. */
 const sellerTaxIdentified = (seller: Party): boolean =>
@@ -70,6 +87,11 @@ const SELLER_TAX_ID_RULES: {
   category: VatCategory;
   rule: string;
   why: string;
+  /**
+   * True where the rule text admits only BT-31 or BT-63, and *not* BT-32 —
+   * which is BR-IC-02 and BR-G-02. Everything else takes any of the three.
+   */
+  vatIdOnly?: boolean;
 }[] = [
   {
     category: "S",
@@ -89,12 +111,24 @@ const SELLER_TAX_ID_RULES: {
   {
     category: "K",
     rule: "BR-IC-02",
+    vatIdOnly: true,
     why: "An intra-community supply is zero-rated only if both parties are VAT-registered in different member states; your identifier is half of that proof.",
   },
   {
     category: "G",
     rule: "BR-G-02",
+    vatIdOnly: true,
     why: "Export zero-rating must be attributable to a registered exporter for the customs/VAT reconciliation to work.",
+  },
+  {
+    category: "L",
+    rule: "BR-AF-02",
+    why: "IGIC is the Canary Islands' own indirect tax, charged instead of VAT because the archipelago sits outside the EU VAT area. It is still a tax you collect on the state's behalf, so the state still has to be able to trace it to a registered person.",
+  },
+  {
+    category: "M",
+    rule: "BR-AG-02",
+    why: "IPSI is the indirect tax levied in Ceuta and Melilla, which are likewise outside the EU VAT area. As with IGIC, the tax is real and collected, so the identifier requirement is the same as for a standard-rated supply.",
   },
 ];
 
@@ -155,7 +189,7 @@ const DE_CONTACT_RULES: {
     field: "BT-43",
     label: "Seller contact email address",
     fix: "Set seller.contact.email to a monitored mailbox — this is where the authority sends invoice queries.",
-    example: `"contact": { "email": "rechnungen@musterlieferant.example" }`,
+    example: `"contact": { "email": "rechnungen@example.de" }`,
   },
 ];
 
@@ -175,7 +209,7 @@ const DE_INVOICE_TYPE_CODES = new Set([
 // Rule set
 // ---------------------------------------------------------------------------
 
-export const inputRules: RuleFn[] = [
+const baseInputRules: RuleFn[] = [
   // --- BR-02..BR-16: mandatory document-level fields -----------------------
 
   // BR-02: An Invoice shall have an Invoice number (BT-1).
@@ -325,7 +359,7 @@ export const inputRules: RuleFn[] = [
           message: `The ${who} postal address must contain a ${who} country code (${field}) as an ISO 3166-1 alpha-2 code${
             blank(code) ? ", but none was provided" : `, but "${code}" is not a two-letter code`
           }. This code drives the place-of-supply and reverse-charge logic downstream.`,
-          fix: `Set ${who === "seller" ? "seller" : "buyer"}.address.countryCode to the two-letter code, e.g. "DE" for Germany or "EL"/"GR" for Greece — note EN 16931 uses "GR" for the country and "EL" only as a VAT-number prefix.`,
+          fix: `Set ${who === "seller" ? "seller" : "buyer"}.address.countryCode to the two-letter code, e.g. "DE" for Germany and "GR" for Greece — "GR" is the ISO 3166-1 code EN 16931 requires here, while "EL" is only the prefix Greek VAT identifiers (BT-31/BT-48) carry and is not a valid country code for BT-40 or BT-55, where BR-CL-14 rejects it.`,
           example: `"countryCode": "DE"`,
           xpath: path,
           docsUrl: `${DOCS}/${rule}`,
@@ -351,7 +385,7 @@ export const inputRules: RuleFn[] = [
 
   // BR-16: An Invoice shall have at least one Invoice line (BG-25).
   (inv) =>
-    !inv.lines || inv.lines.length === 0
+    linesOf(inv).length === 0
       ? err({
           rule: "BR-16",
           field: "BG-25",
@@ -387,7 +421,7 @@ export const inputRules: RuleFn[] = [
 
   (inv) => {
     const out: TeachingError[] = [];
-    for (const [index, line] of (inv.lines ?? []).entries()) {
+    for (const [index, line] of linesOf(inv).entries()) {
       const at = `/ubl:Invoice/cac:InvoiceLine[${index + 1}]`;
       const where = `Line ${index + 1}${line.id ? ` (id "${line.id}")` : ""}`;
 
@@ -460,7 +494,13 @@ export const inputRules: RuleFn[] = [
           field: "BT-146",
           severity: "fatal",
           message: `${where} has a negative item net price (BT-146: ${line.unitPrice}). The net price must never be negative — EN 16931 models reductions as allowances, not as negative prices.`,
-          fix: "Make unitPrice positive. To bill less, reduce the price or (once supported) add a line allowance; to reverse a supply entirely, issue a credit note with invoiceTypeCode \"381\".",
+          // DO NOT send the reader to a credit note here. That was the advice
+          // until 2026-08-09 and it walked them into a wall: BT-3 "381" is
+          // refused by ATW-CREDIT-NOTE-UNSUPPORTED and generateXRechnungUBL
+          // throws UnsupportedDocumentTypeError, because a UBL credit note is a
+          // separate CreditNote document this build does not emit. A fix field
+          // that names an unimplemented path is worse than one that says less.
+          fix: 'Make unitPrice positive and express the reduction as a line allowance instead — line.allowances[] carries the amount (BT-136), an optional base amount and percentage (BT-137/BT-138) and a reason (BT-139/BT-140), and it is subtracted from the line net amount for you. That is the mechanism EN 16931 intends here. To reverse a supply entirely, the standard answer is a credit note (BT-3 "381"), which this build cannot generate: it is refused with ATW-CREDIT-NOTE-UNSUPPORTED. Use "384" (corrected invoice, with precedingInvoices carrying BT-25) if your process allows a correction instead, or issue the credit note with another tool.',
           example: `"unitPrice": 150`,
           xpath: `${at}/cac:Price/cbc:PriceAmount`,
           docsUrl: `${DOCS}/BR-27`,
@@ -513,17 +553,36 @@ export const inputRules: RuleFn[] = [
   // --- VAT category consistency --------------------------------------------
 
   // BR-S-02 / BR-Z-02 / BR-E-02 / BR-IC-02 / BR-G-02: seller must be tax-identified.
+  //
+  // Not one predicate: the categories differ in *which* identifiers they
+  // accept, and 0.1.x got two of them wrong by treating them as one. BR-S-02,
+  // BR-Z-02, BR-E-02 and BR-AE-02 admit the seller tax registration identifier
+  // (BT-32) as an alternative to the VAT identifier; BR-IC-02 and BR-G-02 do
+  // not — a national tax number is not evidence of VAT registration, and
+  // zero-rating an intra-community supply or an export is lawful only against a
+  // VAT identifier (BT-31) or a tax representative's (BT-63). A seller with a
+  // Steuernummer and no USt-IdNr. passed here and was rejected by the
+  // regulator's own validator.
   (inv) => {
-    if (!inv.seller || sellerTaxIdentified(inv.seller)) return null;
+    if (!inv.seller) return null;
+    const representativeVatId = inv.taxRepresentative?.vatId;
+    const withVatId = !blank(inv.seller.vatId) || !blank(representativeVatId);
+    const withAnyTaxId =
+      sellerTaxIdentified(inv.seller) || !blank(representativeVatId);
     const out: TeachingError[] = [];
     for (const spec of SELLER_TAX_ID_RULES) {
       if (!usesCategory(inv, spec.category)) continue;
+      if (spec.vatIdOnly ? withVatId : withAnyTaxId) continue;
       out.push({
         rule: spec.rule,
-        field: ["BT-31", "BT-32"],
+        field: spec.vatIdOnly ? ["BT-31", "BT-63"] : ["BT-31", "BT-32"],
         severity: "fatal",
-        message: `A line uses VAT category ${spec.category} (${CATEGORY_NAMES[spec.category]}), so the invoice must carry the seller VAT identifier (BT-31), the seller tax registration identifier (BT-32), or a seller tax representative (BG-11). ${spec.why}`,
-        fix: 'Set seller.vatId (e.g. "DE123456789"). If you are not VAT-registered but have a national tax number, set seller.taxRegistrationId instead.',
+        message: spec.vatIdOnly
+          ? `A line uses VAT category ${spec.category} (${CATEGORY_NAMES[spec.category]}), so the invoice must carry the seller VAT identifier (BT-31) or the seller tax representative VAT identifier (BT-63). Note what is *not* accepted: the seller tax registration identifier (BT-32) satisfies BR-S-02, BR-Z-02, BR-E-02 and BR-AE-02, and does not satisfy this one. A national tax number proves you are registered for tax; it does not prove you are registered for VAT, and only the second justifies zero-rating. ${spec.why}`
+          : `A line uses VAT category ${spec.category} (${CATEGORY_NAMES[spec.category]}), so the invoice must carry the seller VAT identifier (BT-31), the seller tax registration identifier (BT-32), or a seller tax representative (BG-11). ${spec.why}`,
+        fix: spec.vatIdOnly
+          ? 'Set seller.vatId to your VAT identifier (e.g. "DE123456789"). If you are registered through a fiscal representative, set taxRepresentative instead — name, vatId and address, all three (BR-18, BR-19, BR-56). A Steuernummer in seller.taxRegistrationId will not satisfy this category.'
+          : 'Set seller.vatId (e.g. "DE123456789"). If you are not VAT-registered but have a national tax number, set seller.taxRegistrationId instead.',
         example: `"seller": { "vatId": "DE123456789" }`,
         docsUrl: `${DOCS}/${spec.rule}`,
       });
@@ -600,7 +659,7 @@ export const inputRules: RuleFn[] = [
   // BR-S-05: standard-rated lines need a rate greater than zero.
   (inv) => {
     const out: TeachingError[] = [];
-    for (const [index, line] of (inv.lines ?? []).entries()) {
+    for (const [index, line] of linesOf(inv).entries()) {
       if (line.vatCategory !== "S") continue;
       const rate = line.vatRate;
       if (typeof rate === "number" && rate > 0) continue;
@@ -623,7 +682,7 @@ export const inputRules: RuleFn[] = [
   // BR-{Z,E,AE,IC,G}-05: these categories fix the rate at zero.
   (inv) => {
     const out: TeachingError[] = [];
-    for (const [index, line] of (inv.lines ?? []).entries()) {
+    for (const [index, line] of linesOf(inv).entries()) {
       const spec = ZERO_RATE_LINE_RULES.find(
         (s) => s.category === line.vatCategory,
       );
@@ -648,7 +707,7 @@ export const inputRules: RuleFn[] = [
     const out: TeachingError[] = [];
     if (!usesCategory(inv, "O")) return out;
 
-    for (const [index, line] of (inv.lines ?? []).entries()) {
+    for (const [index, line] of linesOf(inv).entries()) {
       if (line.vatCategory !== "O") continue;
       if (line.vatRate === undefined) continue;
       out.push({
@@ -679,14 +738,16 @@ export const inputRules: RuleFn[] = [
 
   // BR-E-10: exempt breakdowns need a reason; there is no standard default text.
   (inv) =>
-    usesCategory(inv, "E") && blank(inv.vatExemptionReasons?.E)
+    usesCategory(inv, "E") &&
+    blank(inv.vatExemptionReasons?.E) &&
+    blank(inv.vatExemptionReasonCodes?.E)
       ? err({
           rule: "BR-E-10",
           field: ["BT-120", "BT-121"],
           severity: "fatal",
           message:
             'A VAT breakdown with category E (exempt from VAT) must have a VAT exemption reason code (BT-121) or reason text (BT-120). Unlike reverse charge or export, "exempt" has no single standard wording — the exemption is granted by a specific provision, and the buyer and the auditor both need to know which one you are relying on.',
-          fix: 'Set vatExemptionReasons.E to the statutory reason, ideally naming the provision, e.g. "Steuerbefreit nach §4 Nr. 21 UStG" or "Exempt under Article 132 of Directive 2006/112/EC".',
+          fix: 'Set vatExemptionReasons.E to the statutory reason, ideally naming the provision, e.g. "Steuerbefreit nach §4 Nr. 21 UStG" or "Exempt under Article 132 of Directive 2006/112/EC". A VATEX code in vatExemptionReasonCodes.E satisfies the rule on its own, and is the machine-checkable form: "VATEX-EU-132-1I" for education.',
           example: `"vatExemptionReasons": { "E": "Exempt under Article 132(1)(i) of Directive 2006/112/EC" }`,
           xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason",
           docsUrl: `${DOCS}/BR-E-10`,
@@ -697,7 +758,7 @@ export const inputRules: RuleFn[] = [
 
   (inv) => {
     const declared = inv.declaredTotals;
-    if (!declared || !inv.lines || inv.lines.length === 0) return null;
+    if (!declared || linesOf(inv).length === 0) return null;
 
     let computed;
     try {
@@ -715,7 +776,11 @@ export const inputRules: RuleFn[] = [
       formula: string,
       why: string,
     ) => {
-      if (typeof declaredValue !== "number") return;
+      // `typeof NaN === "number"`, and round2 throws on a non-finite input, so
+      // a declared total of NaN or Infinity used to take down the whole rule
+      // run with an unhandled RangeError instead of producing findings. The
+      // value is reported as ATW-DECLARED-TOTAL-NOT-FINITE in rules-decimals.ts.
+      if (typeof declaredValue !== "number" || !Number.isFinite(declaredValue)) return;
       if (round2(declaredValue) === computedValue) return;
       const delta = round2(round2(declaredValue) - computedValue);
       out.push({
@@ -743,7 +808,7 @@ export const inputRules: RuleFn[] = [
       "BR-CO-13",
       "BT-109",
       "the invoice total without VAT (BT-109) to equal Σ BT-131 − document allowances (BT-107) + document charges (BT-108)",
-      "This version of the library does not yet model document-level allowances or charges, so BT-109 must equal BT-106 exactly.",
+      "BT-107 and BT-108 are separate disclosures, not a net figure: a document allowance and a document charge of the same size leave BT-109 unchanged and still both appear. Check that your own BT-109 subtracts the allowances and adds the charges, in that order.",
     );
     compare(
       declared.taxAmount,
@@ -767,7 +832,7 @@ export const inputRules: RuleFn[] = [
       "BR-CO-16",
       "BT-115",
       "the amount due for payment (BT-115) to equal BT-112 − paid amount (BT-113) + rounding amount (BT-114)",
-      "This version of the library does not yet model prepaid or rounding amounts, so BT-115 must equal BT-112.",
+      "BT-113 (paid amount) is subtracted and BT-114 (rounding amount) is added — and BT-114 is signed, so a rounding-down carries a negative value. A payable amount that equals BT-112 on an invoice with a deposit is the usual shape of this failure.",
     );
     return out;
   },
@@ -869,7 +934,7 @@ export const inputRules: RuleFn[] = [
         severity: "fatal",
         message:
           "XRechnung requires payment instructions (BG-16) with a payment means type code (BT-81). Core EN 16931 leaves this optional, but the German CIUS makes it mandatory so that a public-sector payer can settle the invoice without a phone call.",
-        fix: 'Set payment.meansCode to a UNTDID 4461 code: "58" SEPA credit transfer, "30" credit transfer, "59" SEPA direct debit, "48" card, "57" standing order, "97" clearing between partners. For a credit transfer also set payment.iban.',
+        fix: 'Set payment.meansCode to a UNTDID 4461 code: "58" SEPA credit transfer, "30" credit transfer, "59" SEPA direct debit, "48" card, "57" standing agreement, "97" clearing between partners. Each code obliges its own group: for 30/58 set payment.iban (BG-17), for 59 set payment.directDebit (BG-19), for 48/54/55 set payment.card (BG-18).',
         example: `"payment": { "meansCode": "58", "iban": "DE02120300000000202051", "accountName": "Acme GmbH" }`,
         xpath: "/ubl:Invoice/cac:PaymentMeans",
         docsUrl: `${DOCS}/BR-DE-1`,
@@ -911,7 +976,7 @@ export const inputRules: RuleFn[] = [
         message:
           "XRechnung requires the seller contact group (BG-6), and requires it complete: contact point (BT-41), telephone number (BT-42) and email address (BT-43) are each individually mandatory under BR-DE-5, BR-DE-6 and BR-DE-7. A public-sector payer must have a named human route to query the invoice.",
         fix: "Set seller.contact with all three of name, phone and email. A shared departmental identity is fine and usually preferable to a named individual.",
-        example: `"contact": { "name": "Buchhaltung", "phone": "+49 30 1234567", "email": "rechnungen@musterlieferant.example" }`,
+        example: `"contact": { "name": "Buchhaltung", "phone": "+49 30 1234567", "email": "rechnungen@example.de" }`,
         xpath: "/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact",
         docsUrl: `${DOCS}/BR-DE-2`,
       });
@@ -1001,19 +1066,37 @@ export const inputRules: RuleFn[] = [
   },
 
   // BR-DE-16: at least one seller tax identifier when a tax code is used.
+  //
+  // Two clauses of the official test were missing before 0.2.0, and they fail
+  // in opposite directions. The trigger is `$BT-95 or $BT-102 or $BT-151` —
+  // a document level allowance or charge carrying a supported code arms the
+  // rule just as a line does, so gating on lines alone let a document whose
+  // lines are all "O" but whose freight charge is "S" through. And the escape
+  // is `(cac:TaxRepresentativeParty, $BT-31orBT-32Path)` — BG-11 satisfies the
+  // rule on its own, so a seller trading through a fiscal representative, who
+  // legitimately has neither BT-31 nor BT-32, was being refused outright.
   (inv) => {
     if (!isXRechnung(inv)) return null;
-    const taxed = (inv.lines ?? []).some((l) =>
-      ["S", "Z", "E", "AE", "K", "G", "L", "M"].includes(l.vatCategory),
-    );
-    if (!taxed || !inv.seller || sellerTaxIdentified(inv.seller)) return null;
+    const supported = ["S", "Z", "E", "AE", "K", "G", "L", "M"];
+    const taxed =
+      linesOf(inv).some((l) => supported.includes(l?.vatCategory)) ||
+      documentAllowanceCharges(inv).some((t) =>
+        supported.includes(t.entry.vatCategory),
+      );
+    if (!taxed || !inv.seller) return null;
+    if (sellerTaxIdentified(inv.seller)) return null;
+    // Element existence, matching both the official test (which asks only
+    // whether cac:TaxRepresentativeParty is there) and this build's generator,
+    // which emits the group on the same bare truthiness. BR-56 and BR-19 are
+    // what require BG-11 to be filled in once it exists.
+    if (inv.taxRepresentative) return null;
     return err({
       rule: "BR-DE-16",
       field: ["BT-31", "BT-32"],
       severity: "fatal",
       message:
-        "XRechnung requires that, when the tax codes S, Z, E, AE, K, G, L or M are used, at least one of the seller VAT identifier (BT-31), the seller tax registration identifier (BT-32) or a seller tax representative party (BG-11) is present. This is stricter than core EN 16931, which only imposes it per category.",
-      fix: 'Set seller.vatId (Umsatzsteuer-Identifikationsnummer, e.g. "DE123456789") or seller.taxRegistrationId (Steuernummer, e.g. "181/815/08155").',
+        "XRechnung requires that, when the tax codes S, Z, E, AE, K, G, L or M are used — on an invoice line (BT-151), a document level allowance (BT-95) or a document level charge (BT-102) — at least one of the seller VAT identifier (BT-31), the seller tax registration identifier (BT-32) or a seller tax representative party (BG-11) is present. This is stricter than core EN 16931, which only imposes it per category.",
+      fix: 'Set seller.vatId (Umsatzsteuer-Identifikationsnummer, e.g. "DE123456789") or seller.taxRegistrationId (Steuernummer, e.g. "181/815/08155"). If you sell through a fiscal representative, supplying taxRepresentative (BG-11) satisfies this rule instead — it carries its own VAT identifier (BT-63) and address.',
       example: `"seller": { "vatId": "DE123456789" }`,
       docsUrl: `${DOCS}/BR-DE-16`,
     });
@@ -1027,12 +1110,35 @@ export const inputRules: RuleFn[] = [
     return err({
       rule: "BR-DE-17",
       field: "BT-3",
-      severity: "fatal",
-      message: `XRechnung restricts the invoice type code (BT-3) to 326, 380, 381, 384, 389, 875, 876 and 877 from UNTDID 1001, but "${code}" was supplied. The wider UNTDID list is legal under core EN 16931 and will be rejected by a German receiving portal.`,
-      fix: 'Use "380" for a commercial invoice, "381" for a credit note, "384" for a corrected invoice (and then also supply the preceding invoice reference, BR-DE-26), "326" for a partial invoice, "389" for self-billing.',
+      severity: "warning",
+      message: `XRechnung asks that the invoice type code (BT-3) be one of 326, 380, 381, 384, 389, 875, 876 and 877 from UNTDID 1001, but "${code}" was supplied. The German text says "sollen", and KoSIT flags the rule "warning" rather than "fatal": the document is accepted, and the wider UNTDID list stays legal under core EN 16931. Treat it as a portal-compatibility finding rather than a rejection — a receiving system that only branches on the eight listed codes will not know what to do with yours, which is a slower and more expensive failure than a bounce.`,
+      fix: 'Use "380" for a commercial invoice, "384" for a corrected invoice (and then also supply precedingInvoices with the number of the invoice you are correcting, BR-DE-26), "326" for a partial invoice, "389" for self-billing. "381" is a credit note: legal under BR-DE-17, but this build cannot generate it — validateInput refuses it with ATW-CREDIT-NOTE-UNSUPPORTED and generateXRechnungUBL throws UnsupportedDocumentTypeError, because a UBL credit note is a separate CreditNote document rather than an Invoice with a different BT-3. Use "384" if a correction fits your process, or issue the credit note with another tool.',
       example: `"invoiceTypeCode": "380"`,
       xpath: "/ubl:Invoice/cbc:InvoiceTypeCode",
       docsUrl: `${DOCS}/BR-DE-17`,
+    });
+  },
+
+  // ATW-CREDIT-NOTE-UNSUPPORTED: a library limitation, not a regulation rule.
+  //
+  // BT-3 = 381 is perfectly legal under EN 16931 and XRechnung (BR-DE-17 lists
+  // it). What this build cannot do is *express* it: a UBL credit note is a
+  // separate CreditNote document, not an Invoice with a different type code, and
+  // only the Invoice generator has shipped. Reporting it here — fatal, before
+  // generation — is the difference between a clear refusal and an ubl:Invoice
+  // that a receiving portal rejects under the EN 16931 schematron.
+  (inv) => {
+    const code = (inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE).trim();
+    if (!CREDIT_NOTE_TYPE_CODES.has(code)) return null;
+    return err({
+      rule: "ATW-CREDIT-NOTE-UNSUPPORTED",
+      field: "BT-3",
+      severity: "fatal",
+      message: `Credit notes are not yet supported by this library. The invoice type code (BT-3) "${code}" denotes a credit note, which EN 16931 and XRechnung both allow — but in UBL a credit note is a separate CreditNote document (root ubl:CreditNote, namespace ...:xsd:CreditNote-2, with cac:CreditNoteLine and cbc:CreditedQuantity), not an ubl:Invoice carrying a different code. This build generates the Invoice document only, so generateXRechnungUBL would have to emit a document the EN 16931 schematron rejects. It throws UnsupportedDocumentTypeError instead. This is a limitation of the library, not a finding against your data.`,
+      fix: 'Use "384" (corrected invoice) with precedingInvoices carrying the number of the invoice you are correcting (BT-25) if your process allows a correction rather than a credit note; otherwise produce the credit note with another tool until the CreditNote generator ships. For an ordinary invoice, set invoiceTypeCode to "380".',
+      example: `"invoiceTypeCode": "380"`,
+      xpath: "/ubl:Invoice/cbc:InvoiceTypeCode",
+      docsUrl: LIMITS_DOCS,
     });
   },
 
@@ -1061,29 +1167,40 @@ export const inputRules: RuleFn[] = [
     const email = inv.seller?.contact?.email;
     if (blank(email)) return null; // BR-DE-7 covers absence
     const value = email!.trim();
-    const parts = value.split("@");
-    const ok =
-      parts.length === 2 &&
-      (parts[0]?.length ?? 0) >= 2 &&
-      (parts[1]?.length ?? 0) >= 2 &&
-      !/\s/.test(value) &&
-      !value.startsWith(".") &&
-      !value.endsWith(".") &&
-      !parts[0]!.endsWith(".") &&
-      !parts[1]!.startsWith(".");
-    if (ok) return null;
+    // KoSIT's $XR-EMAIL-REGEX from common.sch, transcribed literally:
+    //   ^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$
+    //
+    // Before 0.2.0 this was hand-coded from the rule's German *prose* rather
+    // than its executable test, and diverged in both directions: "a@b.de" and
+    // "ab.@example.de" were rejected (the prose's "at least two characters
+    // either side" and "no trailing dot in the local part" are not in the
+    // regex, which accepts any non-@, non-space local part), while
+    // "user@localhost" and "user@example..de" were accepted (the regex requires
+    // at least one dot-terminated domain label, and no empty label). Transcribe
+    // the test, never the description of the test.
+    if (EMAIL_SHAPE.test(value)) return null;
     return err({
       rule: "BR-DE-28",
       field: "BT-43",
       severity: "warning",
       message: `The seller contact email address (BT-43) must contain exactly one "@", flanked by at least two characters on each side and by neither a space nor a dot, and must not begin or end with a dot. "${value}" does not satisfy that shape.`,
       fix: "Supply a single, plain email address — no display name, no angle brackets, no comma-separated list.",
-      example: `"email": "rechnungen@musterlieferant.example"`,
+      example: `"email": "rechnungen@example.de"`,
       xpath: "/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail",
       docsUrl: `${DOCS}/BR-DE-28`,
     });
   },
 ];
+
+/**
+ * The full rule set.
+ *
+ * `baseInputRules` above is the original wave; everything since lives in
+ * `rules-*.ts` files behind `extendedRules`, which is the one seam this file
+ * exposes. Add a family by writing a new `rules-*.ts` and appending it in
+ * `rules-extended.ts` — not by growing the array above.
+ */
+export const inputRules: RuleFn[] = [...baseInputRules, ...extendedRules];
 
 export function runInputRules(inv: InvoiceInput): TeachingError[] {
   const out: TeachingError[] = [];

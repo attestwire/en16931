@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { generateXRechnungUBL, computeTotals } from "./index.js";
+import {
+  generateXRechnungUBL,
+  computeTotals,
+  UBL_GENERATABLE_PROFILES,
+  GenerationError,
+  UnsupportedProfileError,
+  UnsupportedDocumentTypeError,
+} from "./index.js";
 import type { InvoiceInput } from "./types.js";
 
 /**
@@ -24,9 +31,19 @@ function openTagOf(xml: string, tag: string): string | undefined {
   return new RegExp(`<${tag}(?:\\s[^>]*)?/?>`).exec(xml)?.[0];
 }
 
-/** Index of the first occurrence of `<tag`, for ordering assertions. */
+/**
+ * Index of the first occurrence of `<tag`, for ordering assertions.
+ *
+ * The tag name is anchored on a following `>`, `/` or space, because UBL has
+ * several pairs where one name is a prefix of another —
+ * `cbc:TaxExemptionReason` / `cbc:TaxExemptionReasonCode`,
+ * `cbc:AllowanceChargeReason` / `cbc:AllowanceChargeReasonCode` — and a plain
+ * indexOf silently reports the same position for both, which turns an ordering
+ * assertion into a tautology.
+ */
 function posOf(xml: string, tag: string): number {
-  return xml.indexOf(`<${tag}`);
+  const at = new RegExp(`<${tag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=[\\s/>])`).exec(xml);
+  return at ? at.index : -1;
 }
 
 /** Assert that every tag appears, in the given relative order. */
@@ -589,5 +606,522 @@ describe("generateXRechnungUBL — options", () => {
         "urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_2.3",
     });
     expect(textOf(pinned, "cbc:CustomizationID")).toContain("xrechnung_2.3");
+  });
+});
+
+describe("generateXRechnungUBL — refusals", () => {
+  it("generates every profile it claims to support", () => {
+    for (const profile of UBL_GENERATABLE_PROFILES) {
+      const xml = generateXRechnungUBL({ ...minimal, profile });
+      expect(isWellFormed(xml)).toBe(true);
+      expect(xml).toContain("<ubl:Invoice");
+    }
+  });
+
+  it("throws on CII profiles instead of emitting UBL under a CII name", () => {
+    for (const profile of ["xrechnung-cii", "facturx-en16931"] as const) {
+      expect(() => generateXRechnungUBL({ ...minimal, profile })).toThrow(
+        UnsupportedProfileError,
+      );
+    }
+  });
+
+  it("throws on an unknown profile rather than silently defaulting", () => {
+    expect(() =>
+      generateXRechnungUBL({
+        ...minimal,
+        profile: "zugferd-2.3" as unknown as InvoiceInput["profile"],
+      }),
+    ).toThrow(UnsupportedProfileError);
+  });
+
+  it("the profile error teaches what is and is not supported", () => {
+    let caught: unknown;
+    try {
+      generateXRechnungUBL({ ...minimal, profile: "facturx-en16931" });
+    } catch (e) {
+      caught = e;
+    }
+    const err = caught as UnsupportedProfileError;
+    expect(err).toBeInstanceOf(GenerationError);
+    expect(err.code).toBe("unsupported_profile");
+    expect(err.profile).toBe("facturx-en16931");
+    expect(err.supportedProfiles).toContain("xrechnung-ubl");
+    expect(err.message).toContain("xrechnung-ubl");
+    expect(err.message).toContain("CII");
+  });
+
+  it("throws on a credit-note type code rather than emitting ubl:Invoice", () => {
+    let caught: unknown;
+    try {
+      generateXRechnungUBL({ ...minimal, invoiceTypeCode: "381" });
+    } catch (e) {
+      caught = e;
+    }
+    const err = caught as UnsupportedDocumentTypeError;
+    expect(err).toBeInstanceOf(UnsupportedDocumentTypeError);
+    expect(err).toBeInstanceOf(GenerationError);
+    expect(err.code).toBe("unsupported_document_type");
+    expect(err.invoiceTypeCode).toBe("381");
+    expect(err.message).toContain("credit note");
+    expect(err.message).toContain("CreditNote");
+  });
+
+  it("still generates the non-credit-note codes BR-DE-17 allows", () => {
+    for (const code of ["380", "384", "326", "389", "875", "876", "877"]) {
+      const xml = generateXRechnungUBL({ ...minimal, invoiceTypeCode: code });
+      expect(textOf(xml, "cbc:InvoiceTypeCode")).toBe(code);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave B: the structures added with the full EN 16931 semantic model.
+//
+// Every assertion here is about *order*, not merely presence. UBL's content
+// model is an xsd:sequence: a document carrying all the right elements in the
+// wrong order is not a slightly-untidy document, it is schema-invalid, and it
+// fails before a single business rule runs. The orders asserted below were
+// taken from UBL-Invoice-2.1.xsd and UBL-CommonAggregateComponents-2.1.xsd.
+// ---------------------------------------------------------------------------
+
+/** Everything the model can express, so one document exercises every builder. */
+const loaded: InvoiceInput = {
+  ...minimal,
+  deliveryDate: "2026-07-31",
+  noteSubjectCode: "AAI",
+  note: "Sammelrechnung.",
+  taxPointDate: "2026-07-31",
+  buyerAccountingReference: "Kostenstelle 4711",
+  salesOrderReference: "SO-2026-1",
+  projectReference: "PRJ-1",
+  contractReference: "RV-1",
+  despatchAdviceReference: "LS-1",
+  receivingAdviceReference: "WE-1",
+  tenderOrLotReference: "LOS-1",
+  invoicedObjectIdentifier: { value: "OBJ-1", schemeId: "AAJ" },
+  invoicingPeriod: { startDate: "2026-07-01", endDate: "2026-07-31" },
+  precedingInvoices: [{ invoiceNumber: "2026-000141", issueDate: "2026-07-31" }],
+  payee: {
+    name: "Factoring Bank AG",
+    identifier: { value: "4099999000001", schemeId: "0088" },
+    legalRegistrationId: { value: "HRB 111", schemeId: "0060" },
+  },
+  taxRepresentative: {
+    name: "Fiskalvertreter GmbH",
+    vatId: "DE555555555",
+    address: { city: "Hamburg", postalCode: "20095", countryCode: "DE" },
+  },
+  deliverToName: "Zentrallager Nord",
+  deliverTo: { line1: "Lagerweg 3", city: "Hamburg", postalCode: "20095", countryCode: "DE" },
+  deliverToLocationId: { value: "LOC-1", schemeId: "0088" },
+  supportingDocuments: [
+    {
+      reference: "NACHWEIS-1",
+      description: "Stundennachweis",
+      attachment: {
+        filename: "nachweis.pdf",
+        mimeCode: "application/pdf",
+        content: "JVBERi0xLjQK",
+      },
+    },
+  ],
+  allowances: [
+    {
+      amount: 50,
+      baseAmount: 1000,
+      percentage: 5,
+      vatCategory: "S",
+      vatRate: 19,
+      reason: "Mengenrabatt",
+      reasonCode: "95",
+    },
+  ],
+  charges: [
+    { amount: 20, vatCategory: "S", vatRate: 19, reason: "Versand", reasonCode: "FC" },
+  ],
+  paidAmount: 100,
+  roundingAmount: -0.03,
+  lines: [
+    {
+      ...minimal.lines[0]!,
+      longDescription: "Fachliche Beratung zur E-Rechnung.",
+      buyerAccountingReference: "KST-1",
+      orderLineReference: "10",
+      objectIdentifier: { value: "OBJ-L1", schemeId: "AAJ" },
+      period: { startDate: "2026-07-01", endDate: "2026-07-31" },
+      grossUnitPrice: 200,
+      priceDiscount: 50,
+      allowances: [{ amount: 10, baseAmount: 100, percentage: 10, reason: "Rabatt", reasonCode: "95" }],
+      charges: [{ amount: 5, reason: "Eilzuschlag", reasonCode: "FC" }],
+      sellerItemId: "SKU-1",
+      buyerItemId: "MAT-1",
+      standardItemId: { value: "04012345678901", schemeId: "0160" },
+      itemClassifications: [{ code: "72154000", schemeId: "TSP", schemeVersion: "2008" }],
+      originCountryCode: "DE",
+      itemAttributes: [{ name: "Farbe", value: "blau" }],
+    },
+  ],
+};
+
+describe("generated UBL: document-level structures added in 0.2.0", () => {
+  const xml = generateXRechnungUBL(loaded);
+
+  it("is still well formed with every group populated", () => {
+    expect(isWellFormed(xml)).toBe(true);
+  });
+
+  it("emits the root children in UBL Invoice sequence order", () => {
+    expectOrder(xml, [
+      "cbc:CustomizationID",
+      "cbc:ProfileID",
+      "cbc:ID",
+      "cbc:IssueDate",
+      "cbc:DueDate",
+      "cbc:InvoiceTypeCode",
+      "cbc:Note",
+      "cbc:TaxPointDate",
+      "cbc:DocumentCurrencyCode",
+      "cbc:AccountingCost",
+      "cbc:BuyerReference",
+      "cac:InvoicePeriod",
+      "cac:OrderReference",
+      "cac:BillingReference",
+      "cac:DespatchDocumentReference",
+      "cac:ReceiptDocumentReference",
+      "cac:OriginatorDocumentReference",
+      "cac:ContractDocumentReference",
+      "cac:AdditionalDocumentReference",
+      "cac:ProjectReference",
+      "cac:AccountingSupplierParty",
+      "cac:AccountingCustomerParty",
+      "cac:PayeeParty",
+      "cac:TaxRepresentativeParty",
+      "cac:Delivery",
+      "cac:PaymentMeans",
+      "cac:PaymentTerms",
+      "cac:AllowanceCharge",
+      "cac:TaxTotal",
+      "cac:LegalMonetaryTotal",
+      "cac:InvoiceLine",
+    ]);
+  });
+
+  it("writes BT-21 into the note as #CODE#text, because UBL has no element for it", () => {
+    expect(textOf(xml, "cbc:Note")).toBe("#AAI#Sammelrechnung.");
+  });
+
+  it("omits the subject-code prefix when no code is given", () => {
+    const plain = generateXRechnungUBL({ ...loaded, noteSubjectCode: undefined });
+    expect(textOf(plain, "cbc:Note")).toBe("Sammelrechnung.");
+  });
+
+  it("emits the invoicing period as StartDate then EndDate", () => {
+    const period = /<cac:InvoicePeriod>([\s\S]*?)<\/cac:InvoicePeriod>/.exec(xml)![1]!;
+    expectOrder(period, ["cbc:StartDate", "cbc:EndDate"]);
+  });
+
+  it("emits BG-3 as BillingReference / InvoiceDocumentReference with ID then IssueDate", () => {
+    const ref = /<cac:BillingReference>([\s\S]*?)<\/cac:BillingReference>/.exec(xml)![1]!;
+    expect(ref).toContain("<cac:InvoiceDocumentReference>");
+    expectOrder(ref, ["cbc:ID", "cbc:IssueDate"]);
+    expect(textsOf(ref, "cbc:ID")).toContain("2026-000141");
+  });
+
+  it("emits one BillingReference per preceding invoice", () => {
+    const many = generateXRechnungUBL({
+      ...loaded,
+      precedingInvoices: [
+        { invoiceNumber: "A" },
+        { invoiceNumber: "B" },
+      ],
+    });
+    expect((many.match(/<cac:BillingReference>/g) ?? []).length).toBe(2);
+  });
+
+  it("emits BT-18 as an AdditionalDocumentReference carrying DocumentTypeCode 130", () => {
+    const refs = [...xml.matchAll(/<cac:AdditionalDocumentReference>([\s\S]*?)<\/cac:AdditionalDocumentReference>/g)];
+    const object = refs.map((m) => m[1]!).find((body) => body.includes("OBJ-1"))!;
+    expect(object).toContain('schemeID="AAJ"');
+    expect(textOf(object, "cbc:DocumentTypeCode")).toBe("130");
+    expectOrder(object, ["cbc:ID", "cbc:DocumentTypeCode"]);
+  });
+
+  it("emits an embedded attachment with mimeCode and filename inside cac:Attachment", () => {
+    const refs = [...xml.matchAll(/<cac:AdditionalDocumentReference>([\s\S]*?)<\/cac:AdditionalDocumentReference>/g)];
+    const doc = refs.map((m) => m[1]!).find((body) => body.includes("NACHWEIS-1"))!;
+    expectOrder(doc, ["cbc:ID", "cbc:DocumentDescription", "cac:Attachment"]);
+    const open = openTagOf(doc, "cbc:EmbeddedDocumentBinaryObject")!;
+    expect(open).toContain('mimeCode="application/pdf"');
+    expect(open).toContain('filename="nachweis.pdf"');
+  });
+
+  it("emits an external attachment reference as cac:ExternalReference/cbc:URI", () => {
+    const external = generateXRechnungUBL({
+      ...loaded,
+      supportingDocuments: [
+        { reference: "X", externalUri: "https://example.test/x.pdf" },
+      ],
+    });
+    expect(external).toContain("<cac:ExternalReference>");
+    expect(textOf(external, "cbc:URI")).toBe("https://example.test/x.pdf");
+  });
+
+  it("emits BG-10 as cac:PayeeParty with PartyIdentification, PartyName, PartyLegalEntity", () => {
+    const payee = /<cac:PayeeParty>([\s\S]*?)<\/cac:PayeeParty>/.exec(xml)![1]!;
+    expectOrder(payee, ["cac:PartyIdentification", "cac:PartyName", "cac:PartyLegalEntity"]);
+    expect(textOf(payee, "cbc:Name")).toBe("Factoring Bank AG");
+    // BG-10 is not wrapped in cac:Party — the element *is* the party.
+    expect(payee).not.toContain("<cac:Party>");
+  });
+
+  it("emits BG-11 as cac:TaxRepresentativeParty with name, address, VAT scheme", () => {
+    const rep = /<cac:TaxRepresentativeParty>([\s\S]*?)<\/cac:TaxRepresentativeParty>/.exec(xml)![1]!;
+    expectOrder(rep, ["cac:PartyName", "cac:PostalAddress", "cac:PartyTaxScheme"]);
+    expect(textOf(rep, "cbc:CompanyID")).toBe("DE555555555");
+  });
+
+  it("emits BT-29 as cac:PartyIdentification before cac:PartyName on the seller", () => {
+    const seller = /<cac:AccountingSupplierParty>([\s\S]*?)<\/cac:AccountingSupplierParty>/.exec(
+      generateXRechnungUBL({
+        ...loaded,
+        seller: { ...loaded.seller, identifier: { value: "GLN-1", schemeId: "0088" } },
+      }),
+    )![1]!;
+    expectOrder(seller, ["cbc:EndpointID", "cac:PartyIdentification", "cac:PartyName"]);
+  });
+
+  it("puts BT-90, the SEPA creditor identifier, on the seller party rather than in BG-19", () => {
+    const debit = generateXRechnungUBL({
+      ...loaded,
+      payment: {
+        meansCode: "59",
+        directDebit: {
+          mandateReference: "MANDAT-1",
+          creditorIdentifier: "DE98ZZZ09999999999",
+          debitedAccount: "DE98700500001234567890",
+        },
+      },
+    });
+    const seller = /<cac:AccountingSupplierParty>([\s\S]*?)<\/cac:AccountingSupplierParty>/.exec(debit)![1]!;
+    expect(seller).toContain('schemeID="SEPA"');
+    expect(seller).toContain("DE98ZZZ09999999999");
+    const means = /<cac:PaymentMeans>([\s\S]*?)<\/cac:PaymentMeans>/.exec(debit)![1]!;
+    expect(means).toContain("<cac:PaymentMandate>");
+    expectOrder(means, ["cbc:PaymentMeansCode", "cac:PaymentMandate"]);
+    expect(means).toContain("<cac:PayerFinancialAccount>");
+  });
+
+  it("emits BG-18 as cac:CardAccount with the mandatory NetworkID UBL requires", () => {
+    const card = generateXRechnungUBL({
+      ...loaded,
+      payment: { meansCode: "48", card: { primaryAccountNumber: "411111**1111", holderName: "M Muster" } },
+    });
+    const account = /<cac:CardAccount>([\s\S]*?)<\/cac:CardAccount>/.exec(card)![1]!;
+    expectOrder(account, ["cbc:PrimaryAccountNumberID", "cbc:NetworkID", "cbc:HolderName"]);
+    expect(textOf(account, "cbc:NetworkID")).toBe("NA");
+  });
+
+  it("emits the delivery group with date, location and party in schema order", () => {
+    const delivery = /<cac:Delivery>([\s\S]*?)<\/cac:Delivery>/.exec(xml)![1]!;
+    expectOrder(delivery, [
+      "cbc:ActualDeliveryDate",
+      "cac:DeliveryLocation",
+      "cac:DeliveryParty",
+    ]);
+    const location = /<cac:DeliveryLocation>([\s\S]*?)<\/cac:DeliveryLocation>/.exec(delivery)![1]!;
+    expectOrder(location, ["cbc:ID", "cac:Address"]);
+  });
+});
+
+describe("generated UBL: allowances and charges", () => {
+  const xml = generateXRechnungUBL(loaded);
+
+  it("emits document allowances before document charges, both after PaymentTerms", () => {
+    const bodies = [...xml.matchAll(/<cac:AllowanceCharge>([\s\S]*?)<\/cac:AllowanceCharge>/g)].map(
+      (m) => m[1]!,
+    );
+    // Two on the line (allowance, charge), one price allowance, two on the
+    // document — but the document ones come first in the serialised order,
+    // because cac:AllowanceCharge precedes cac:InvoiceLine in the sequence.
+    const documentLevel = bodies.filter((b) => b.includes("cac:TaxCategory"));
+    expect(documentLevel.length).toBe(2);
+    expect(textOf(documentLevel[0]!, "cbc:ChargeIndicator")).toBe("false");
+    expect(textOf(documentLevel[1]!, "cbc:ChargeIndicator")).toBe("true");
+  });
+
+  it("emits ChargeIndicator as the literal true/false the schematron matches on", () => {
+    // `cbc:ChargeIndicator = true()` in XPath does not match "1" or "Y", so a
+    // charge written any other way falls out of every BG-21 rule silently.
+    for (const value of textsOf(xml, "cbc:ChargeIndicator")) {
+      expect(["true", "false"]).toContain(value);
+    }
+  });
+
+  it("emits a document allowance's children in AllowanceCharge sequence order", () => {
+    const first = /<cac:AllowanceCharge>([\s\S]*?)<\/cac:AllowanceCharge>/.exec(xml)![1]!;
+    expectOrder(first, [
+      "cbc:ChargeIndicator",
+      "cbc:AllowanceChargeReasonCode",
+      "cbc:AllowanceChargeReason",
+      "cbc:MultiplierFactorNumeric",
+      "cbc:Amount",
+      "cbc:BaseAmount",
+      "cac:TaxCategory",
+    ]);
+  });
+
+  it("gives a document allowance a TaxCategory and a line allowance none", () => {
+    // BG-27/BG-28 inherit the VAT treatment of their line. An explicit category
+    // there would create a breakdown group EN 16931 does not recognise.
+    const line = /<cac:InvoiceLine>([\s\S]*?)<\/cac:InvoiceLine>/.exec(xml)![1]!;
+    const lineAllowances = [...line.matchAll(/<cac:AllowanceCharge>([\s\S]*?)<\/cac:AllowanceCharge>/g)].map(
+      (m) => m[1]!,
+    );
+    expect(lineAllowances.length).toBeGreaterThanOrEqual(2);
+    for (const body of lineAllowances) expect(body).not.toContain("cac:TaxCategory");
+  });
+
+  it("emits line allowances before line charges and both before cac:Item", () => {
+    const line = /<cac:InvoiceLine>([\s\S]*?)<\/cac:InvoiceLine>/.exec(xml)![1]!;
+    expectOrder(line, [
+      "cbc:ID",
+      "cbc:InvoicedQuantity",
+      "cbc:LineExtensionAmount",
+      "cbc:AccountingCost",
+      "cac:InvoicePeriod",
+      "cac:OrderLineReference",
+      "cac:DocumentReference",
+      "cac:AllowanceCharge",
+      "cac:Item",
+      "cac:Price",
+    ]);
+    const first = /<cac:AllowanceCharge>([\s\S]*?)<\/cac:AllowanceCharge>/.exec(line)![1]!;
+    expect(textOf(first, "cbc:ChargeIndicator")).toBe("false");
+  });
+
+  it("carries BT-107 and BT-108 in LegalMonetaryTotal, in schema order", () => {
+    const total = /<cac:LegalMonetaryTotal>([\s\S]*?)<\/cac:LegalMonetaryTotal>/.exec(xml)![1]!;
+    expectOrder(total, [
+      "cbc:LineExtensionAmount",
+      "cbc:TaxExclusiveAmount",
+      "cbc:TaxInclusiveAmount",
+      "cbc:AllowanceTotalAmount",
+      "cbc:ChargeTotalAmount",
+      "cbc:PrepaidAmount",
+      "cbc:PayableRoundingAmount",
+      "cbc:PayableAmount",
+    ]);
+    expect(textOf(total, "cbc:AllowanceTotalAmount")).toBe("50.00");
+    expect(textOf(total, "cbc:ChargeTotalAmount")).toBe("20.00");
+  });
+
+  it("omits BT-107 and BT-108 entirely when there are no allowances or charges", () => {
+    // BR-CO-13's schematron branches on their presence. A 0.00 total asserts
+    // that the document has allowances summing to nothing, which is a different
+    // claim from having none.
+    const plain = generateXRechnungUBL(minimal);
+    expect(plain).not.toContain("cbc:AllowanceTotalAmount");
+    expect(plain).not.toContain("cbc:ChargeTotalAmount");
+  });
+
+  it("emits a negative rounding amount rather than absorbing it into the payable amount", () => {
+    const total = /<cac:LegalMonetaryTotal>([\s\S]*?)<\/cac:LegalMonetaryTotal>/.exec(xml)![1]!;
+    expect(textOf(total, "cbc:PayableRoundingAmount")).toBe("-0.03");
+    expect(textOf(total, "cbc:PrepaidAmount")).toBe("100.00");
+  });
+
+  it("expresses a gross price and its discount as an allowance on cac:Price", () => {
+    const price = /<cac:Price>([\s\S]*?)<\/cac:Price>/.exec(xml)![1]!;
+    expectOrder(price, ["cbc:PriceAmount", "cac:AllowanceCharge"]);
+    const allowance = /<cac:AllowanceCharge>([\s\S]*?)<\/cac:AllowanceCharge>/.exec(price)![1]!;
+    expect(textOf(allowance, "cbc:ChargeIndicator")).toBe("false");
+    expect(textOf(allowance, "cbc:Amount")).toBe("50.00");
+    expect(textOf(allowance, "cbc:BaseAmount")).toBe("200.00");
+  });
+});
+
+describe("generated UBL: item detail and the VAT accounting currency", () => {
+  const xml = generateXRechnungUBL(loaded);
+
+  it("emits cac:Item children in schema order", () => {
+    const item = /<cac:Item>([\s\S]*?)<\/cac:Item>/.exec(xml)![1]!;
+    expectOrder(item, [
+      "cbc:Description",
+      "cbc:Name",
+      "cac:BuyersItemIdentification",
+      "cac:SellersItemIdentification",
+      "cac:StandardItemIdentification",
+      "cac:OriginCountry",
+      "cac:CommodityClassification",
+      "cac:ClassifiedTaxCategory",
+      "cac:AdditionalItemProperty",
+    ]);
+  });
+
+  it("carries the classification scheme on @listID and its version on @listVersionID", () => {
+    const open = openTagOf(xml, "cbc:ItemClassificationCode")!;
+    expect(open).toContain('listID="TSP"');
+    expect(open).toContain('listVersionID="2008"');
+  });
+
+  it("emits item attributes as Name/Value pairs", () => {
+    const property = /<cac:AdditionalItemProperty>([\s\S]*?)<\/cac:AdditionalItemProperty>/.exec(xml)![1]!;
+    expectOrder(property, ["cbc:Name", "cbc:Value"]);
+    expect(textOf(property, "cbc:Value")).toBe("blau");
+  });
+
+  it("emits BT-6 as cbc:TaxCurrencyCode and BT-111 as a second TaxTotal", () => {
+    const dual = generateXRechnungUBL({
+      ...loaded,
+      vatAccountingCurrency: "SEK",
+      taxAmountInAccountingCurrency: 3245.5,
+    });
+    expect(textOf(dual, "cbc:TaxCurrencyCode")).toBe("SEK");
+    expectOrder(dual, ["cbc:DocumentCurrencyCode", "cbc:TaxCurrencyCode"]);
+    const totals = [...dual.matchAll(/<cac:TaxTotal>([\s\S]*?)<\/cac:TaxTotal>/g)].map((m) => m[1]!);
+    expect(totals.length).toBe(2);
+    // The document-currency total carries the breakdown; the second carries
+    // nothing but the amount, which is where BR-53 and BR-DEC-15 look.
+    expect(totals[0]).toContain("cac:TaxSubtotal");
+    expect(totals[1]).not.toContain("cac:TaxSubtotal");
+    expect(openTagOf(totals[1]!, "cbc:TaxAmount")).toContain('currencyID="SEK"');
+    expect(textOf(totals[1]!, "cbc:TaxAmount")).toBe("3245.50");
+  });
+
+  it("omits the second TaxTotal when only one of BT-6 / BT-111 is given", () => {
+    const only = generateXRechnungUBL({ ...loaded, vatAccountingCurrency: "SEK" });
+    expect((only.match(/<cac:TaxTotal>/g) ?? []).length).toBe(1);
+  });
+
+  it("emits BT-121 before BT-120 inside cac:TaxCategory", () => {
+    const coded = generateXRechnungUBL({
+      ...loaded,
+      lines: [{ ...loaded.lines[0]!, vatCategory: "E", vatRate: 0 }],
+      allowances: undefined,
+      charges: undefined,
+      vatExemptionReasons: { E: "Steuerfrei nach §4 Nr. 21 UStG" },
+      vatExemptionReasonCodes: { E: "VATEX-EU-132-1I" },
+    });
+    const category = /<cac:TaxSubtotal>[\s\S]*?<cac:TaxCategory>([\s\S]*?)<\/cac:TaxCategory>/.exec(coded)![1]!;
+    expectOrder(category, [
+      "cbc:ID",
+      "cbc:Percent",
+      "cbc:TaxExemptionReasonCode",
+      "cbc:TaxExemptionReason",
+      "cac:TaxScheme",
+    ]);
+  });
+
+  it("keeps the whole loaded document's arithmetic self-consistent", () => {
+    const totals = computeTotals(loaded);
+    const monetary = /<cac:LegalMonetaryTotal>([\s\S]*?)<\/cac:LegalMonetaryTotal>/.exec(xml)![1]!;
+    expect(textOf(monetary, "cbc:LineExtensionAmount")).toBe(
+      totals.lineExtensionAmount.toFixed(2),
+    );
+    expect(textOf(monetary, "cbc:TaxExclusiveAmount")).toBe(
+      totals.taxExclusiveAmount.toFixed(2),
+    );
+    expect(textOf(monetary, "cbc:PayableAmount")).toBe(totals.payableAmount.toFixed(2));
   });
 });

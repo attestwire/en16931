@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { generateXRechnungUBL, validateInput } from "../dist/index.js";
 import {
+  discountedXRechnung,
   minimalXRechnung,
   reverseChargeXRechnung,
 } from "../dist/fixtures.js";
@@ -27,6 +28,7 @@ mkdirSync(outDir, { recursive: true });
 const documents = [
   ["xrechnung-ubl-minimal.xml", minimalXRechnung],
   ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung],
+  ["xrechnung-ubl-discount.xml", discountedXRechnung],
 ];
 
 let failed = false;

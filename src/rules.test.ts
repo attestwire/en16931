@@ -533,20 +533,52 @@ describe("XRechnung CIUS (BR-DE-*)", () => {
     expect(rules).not.toContain("BR-DE-11");
   });
 
-  it("BR-DE-17: an invoice type code outside the German subset is fatal", () => {
-    const err = validateInput({
-      ...base,
-      invoiceTypeCode: "393",
-    }).errors.find((e) => e.rule === "BR-DE-17");
-    expect(err).toBeDefined();
-    expect(err!.message).toContain("393");
+  it("BR-DE-17: an invoice type code outside the German subset is a WARNING", () => {
+    // Not fatal. KoSIT's XRechnung schematron flags BR-DE-17 `warning` — the
+    // German text says "sollen", not "müssen" — and 0.2.x corrects an
+    // over-rejection that shipped in 0.1.x. A document carrying BT-3 = 393 is
+    // accepted by the official validator, so it must be accepted here too.
+    const result = validateInput({ ...base, invoiceTypeCode: "393" });
+    expect(result.errors.find((e) => e.rule === "BR-DE-17")).toBeUndefined();
+    const warning = result.warnings.find((e) => e.rule === "BR-DE-17");
+    expect(warning).toBeDefined();
+    expect(warning!.severity).toBe("warning");
+    expect(warning!.message).toContain("393");
+    // 393 is a valid UNTDID 1001 invoice code, so nothing else objects to it:
+    // the document as a whole stays valid.
+    expect(result.valid).toBe(true);
   });
 
-  it("BR-DE-17 accepts the default 380 and an explicit credit note 381", () => {
+  it("BR-DE-17 accepts the default 380 and the credit-note code 381", () => {
     expect(rulesOf(base)).not.toContain("BR-DE-17");
+    // 381 is legal under BR-DE-17; it is refused separately, as a library
+    // limitation, by ATW-CREDIT-NOTE-UNSUPPORTED.
     expect(rulesOf({ ...base, invoiceTypeCode: "381" })).not.toContain(
       "BR-DE-17",
     );
+  });
+
+  it("ATW-CREDIT-NOTE-UNSUPPORTED: a credit note is fatal and says why", () => {
+    const result = validateInput({ ...base, invoiceTypeCode: "381" });
+    expect(result.valid).toBe(false);
+    const err = result.errors.find(
+      (e) => e.rule === "ATW-CREDIT-NOTE-UNSUPPORTED",
+    );
+    expect(err).toBeDefined();
+    expect(err!.field).toBe("BT-3");
+    expect(err!.message).toContain("CreditNote");
+    expect(err!.message).toContain("not yet supported");
+    expect(err!.fix).toContain("384");
+    // A library limitation, so it must not pretend to be a regulator rule page.
+    expect(err!.docsUrl).not.toContain("attestwire.com/rules");
+  });
+
+  it("ATW-CREDIT-NOTE-UNSUPPORTED does not fire for ordinary invoices", () => {
+    for (const code of [undefined, "380", "384", "326", "389"]) {
+      expect(rulesOf({ ...base, invoiceTypeCode: code })).not.toContain(
+        "ATW-CREDIT-NOTE-UNSUPPORTED",
+      );
+    }
   });
 
   it("BR-DE-27: a phone number with too few digits is a warning", () => {
@@ -611,7 +643,13 @@ describe("teaching-error quality invariants", () => {
         seen += 1;
         expect(e.rule, "rule").toBeTruthy();
         expect(e.field, `field for ${e.rule}`).toBeTruthy();
-        expect(e.docsUrl).toBe(`https://attestwire.com/rules/${e.rule}`);
+        // `ATW-` ids are library limitations rather than regulation rules, and
+        // are documented in the README instead of on a per-rule page.
+        expect(e.docsUrl).toBe(
+          e.rule.startsWith("ATW-")
+            ? "https://github.com/attestwire/en16931#not-implemented-yet"
+            : `https://attestwire.com/rules/${e.rule}`,
+        );
         // A message that teaches is a sentence, not a label.
         expect(e.message.length, `message for ${e.rule}`).toBeGreaterThan(60);
         expect(e.fix.length, `fix for ${e.rule}`).toBeGreaterThan(20);

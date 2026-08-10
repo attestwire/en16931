@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { generateXRechnungUBL, validateInput, computeTotals } from "./index.js";
-import { minimalXRechnung, reverseChargeXRechnung } from "./fixtures.js";
+import {
+  discountedXRechnung,
+  minimalXRechnung,
+  reverseChargeXRechnung,
+} from "./fixtures.js";
 import type { InvoiceInput } from "./types.js";
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
@@ -13,6 +17,7 @@ const read = (name: string) => readFileSync(join(fixturesDir, name), "utf8");
 const cases: [string, InvoiceInput][] = [
   ["xrechnung-ubl-minimal.xml", minimalXRechnung],
   ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung],
+  ["xrechnung-ubl-discount.xml", discountedXRechnung],
 ];
 
 describe("committed fixtures", () => {
@@ -31,6 +36,13 @@ describe("committed fixtures", () => {
 
   it.each(cases)("%s comes from an input with zero warnings", (_name, input) => {
     expect(validateInput(input).warnings).toEqual([]);
+  });
+
+  it.each(cases)("%s draws no advisory findings either", (_name, input) => {
+    // Every release fixture states its time of supply, so BR-DE-TMP-32 stays
+    // silent. A published example that trips even an `information` finding
+    // teaches the wrong shape.
+    expect(validateInput(input).information).toEqual([]);
   });
 });
 
@@ -95,5 +107,52 @@ describe("round trip: input → XML → declared totals agree", () => {
     expect(totals.subtotals).toHaveLength(1);
     expect(totals.subtotals[0]!.category).toBe("AE");
     expect(totals.subtotals[0]!.exemptionReason).toBe("Reverse charge");
+  });
+});
+
+describe("the discount fixture: the shape 0.1.x could not express", () => {
+  it("nets the line allowance out of BT-131 on line 3 only", () => {
+    const totals = computeTotals(discountedXRechnung);
+    // 300.00 less a 10% line allowance of 30.00.
+    expect(totals.lineNetAmounts).toEqual([1500, 99.8, 270]);
+  });
+
+  it("reports BT-107 and BT-108 separately and applies both to BT-109", () => {
+    const totals = computeTotals(discountedXRechnung);
+    expect(totals.lineExtensionAmount).toBe(1869.8);
+    expect(totals.allowanceTotalAmount).toBe(53.1);
+    expect(totals.chargeTotalAmount).toBe(24.9);
+    expect(totals.taxExclusiveAmount).toBe(1841.6);
+  });
+
+  it("moves the document allowance and charge into the 19% group, not the 7% one", () => {
+    const totals = computeTotals(discountedXRechnung);
+    expect(totals.subtotals.map((s) => [s.rate, s.taxableAmount, s.taxAmount])).toEqual([
+      [19, 1741.8, 330.94],
+      [7, 99.8, 6.99],
+    ]);
+  });
+
+  it("closes the payable chain through the prepayment and the rounding amount", () => {
+    const totals = computeTotals(discountedXRechnung);
+    expect(totals.taxInclusiveAmount).toBe(2179.53);
+    expect(totals.paidAmount).toBe(500);
+    expect(totals.roundingAmount).toBe(0.47);
+    // The rounding amount exists so that the payable figure can be a round one
+    // without any line or total being falsified to get there.
+    expect(totals.payableAmount).toBe(1680);
+  });
+
+  it("references the partial invoice it settles", () => {
+    expect(discountedXRechnung.precedingInvoices?.[0]?.invoiceNumber).toBe("2026-000118");
+    const xml = read("xrechnung-ubl-discount.xml");
+    expect(xml).toContain("<cac:BillingReference>");
+    expect(xml).toContain("2026-000118");
+  });
+
+  it("states its time of supply through an invoicing period rather than a delivery date", () => {
+    expect(discountedXRechnung.deliveryDate).toBeUndefined();
+    expect(discountedXRechnung.invoicingPeriod?.startDate).toBe("2026-07-01");
+    expect(validateInput(discountedXRechnung).information).toEqual([]);
   });
 });
