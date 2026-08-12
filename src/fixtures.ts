@@ -343,3 +343,260 @@ export const discountedXRechnung: InvoiceInput = {
     },
   ],
 };
+
+/**
+ * The same three invoices, in the CII syntax.
+ *
+ * They are the UBL fixtures with `profile` switched, and that is the point: one
+ * `InvoiceInput` produces either syntax, so the two generators can be held
+ * against each other on identical business content. `xrechnung-cii` and
+ * `xrechnung-ubl` share a CIUS — the German rules are syntax-independent — so
+ * these validate identically to their UBL twins.
+ *
+ * Each of the three is emitted to `fixtures/xrechnung-cii-*.xml` and checked
+ * against the official KoSIT validator, which has a CII scenario of its own.
+ */
+export const minimalXRechnungCii: InvoiceInput = {
+  ...minimalXRechnung,
+  profile: "xrechnung-cii",
+};
+
+export const reverseChargeXRechnungCii: InvoiceInput = {
+  ...reverseChargeXRechnung,
+  profile: "xrechnung-cii",
+};
+
+export const discountedXRechnungCii: InvoiceInput = {
+  ...discountedXRechnung,
+  profile: "xrechnung-cii",
+};
+
+/**
+ * A wide CII invoice, built to put the groups the other three do not reach in
+ * front of the official validator.
+ *
+ * The three fixtures above are the same business documents in two syntaxes,
+ * which is what makes them useful for comparing the generators — but it also
+ * means whole branches of the CII mapping were never seen by KoSIT. This one
+ * exists to fix that, and it is deliberately unglamorous rather than realistic.
+ * What it adds:
+ *
+ *   - **BG-10 payee** and **BG-11 seller tax representative**, two parties that
+ *     hang off different places in CII than in UBL;
+ *   - **BG-19 direct debit** (BT-81 = 59) with the mandate (BT-89), the SEPA
+ *     creditor identifier (BT-90, which CII puts in `ram:CreditorReferenceID`
+ *     rather than on the seller) and the debited account (BT-91). Note there is
+ *     no BG-17 payment account: BR-DE-25-b forbids one for a direct debit;
+ *   - **BG-13/BG-15 deliver-to**, with the city and post code XRechnung's
+ *     BR-DE-10 and BR-DE-11 make mandatory once the group exists;
+ *   - **BG-24 supporting documents**, one external and one carrying an embedded
+ *     base64 attachment;
+ *   - **BT-6 / BT-111**, the VAT accounting currency and the VAT total restated
+ *     in it — in CII a second `ram:TaxTotalAmount` in the same summation,
+ *     distinguished only by `@currencyID`;
+ *   - **BT-7** the tax point date, which CII carries inside every VAT
+ *     breakdown group rather than at document level;
+ *   - **BT-148 / BT-147** a gross price with a discount, **BT-149** a price base
+ *     quantity, and the full set of item identifiers, classification, origin
+ *     country and attributes;
+ *   - **BT-17 tender or lot** and **BT-18 / BT-128 invoiced object**, which in
+ *     CII share one element with BG-24 and are told apart by a type code.
+ */
+export const extendedXRechnungCii: InvoiceInput = {
+  profile: "xrechnung-cii",
+  invoiceNumber: "2026-000145",
+  issueDate: "2026-08-09",
+  dueDate: "2026-09-08",
+  currency: "EUR",
+  invoiceTypeCode: "380",
+  buyerReference: "04011000-1234512345-06",
+  note: "Sammelrechnung mit Einzugsermächtigung.",
+  noteSubjectCode: "AAI",
+  orderReference: "BEST-2026-0900",
+  salesOrderReference: "AUF-2026-0900",
+  contractReference: "RV-2024-0088",
+  projectReference: "PRJ-ERECHNUNG-2026",
+  despatchAdviceReference: "LS-2026-0900",
+  receivingAdviceReference: "WE-2026-0900",
+  tenderOrLotReference: "LOS-4",
+  invoicedObjectIdentifier: { value: "ANL-2026-0900", schemeId: "AAJ" },
+  buyerAccountingReference: "Kostenstelle 4711",
+  taxPointDate: "2026-08-07",
+  vatAccountingCurrency: "SEK",
+  taxAmountInAccountingCurrency: 3255.6,
+  seller: {
+    name: "Musterlieferant GmbH",
+    tradingName: "Muster Technik",
+    vatId: "DE123456789",
+    taxRegistrationId: "181/815/08155",
+    legalRegistrationId: "HRB 12345 B",
+    legalRegistrationSchemeId: "0060",
+    identifier: { value: "4012345000009", schemeId: "0088" },
+    additionalLegalInformation:
+      "Sitz: Berlin. Geschäftsführer: Erika Mustermann.",
+    address: {
+      line1: "Hauptstraße 1",
+      line2: "Haus 4",
+      line3: "Aufgang C",
+      city: "Berlin",
+      postalCode: "10115",
+      countrySubdivision: "Berlin",
+      countryCode: "DE",
+    },
+    electronicAddress: { schemeId: "9930", value: "DE123456789" },
+    contact: {
+      name: "Buchhaltung",
+      phone: "+49 30 1234567",
+      email: "rechnungen@musterlieferant.example",
+    },
+  },
+  buyer: {
+    name: "Bundesamt für Musterangelegenheiten",
+    vatId: "DE987654321",
+    legalRegistrationId: "HRB 98765",
+    legalRegistrationSchemeId: "0060",
+    identifier: { value: "4098765000004", schemeId: "0088" },
+    address: {
+      line1: "Behördenweg 9",
+      city: "München",
+      postalCode: "80331",
+      countryCode: "DE",
+    },
+    electronicAddress: { schemeId: "0204", value: "04011000-1234512345-06" },
+    contact: {
+      name: "Kreditorenbuchhaltung",
+      phone: "+49 89 1234567",
+      email: "kreditoren@bund.example",
+    },
+  },
+  payee: {
+    name: "Factoring Nord AG",
+    identifier: { value: "4011111000005", schemeId: "0088" },
+    legalRegistrationId: { value: "HRB 55555", schemeId: "0060" },
+  },
+  taxRepresentative: {
+    name: "Fiscal Representation B.V.",
+    vatId: "NL123456789B01",
+    address: {
+      line1: "Keizersgracht 1",
+      city: "Amsterdam",
+      postalCode: "1015 CJ",
+      countryCode: "NL",
+    },
+  },
+  deliveryDate: "2026-08-07",
+  deliverToName: "Zentrallager Nord",
+  deliverToLocationId: { value: "4098765000011", schemeId: "0088" },
+  deliverTo: {
+    line1: "Rampe 3",
+    line2: "Tor B",
+    city: "Hamburg",
+    postalCode: "20095",
+    countrySubdivision: "Hamburg",
+    countryCode: "DE",
+  },
+  payment: {
+    meansCode: "59",
+    meansName: "SEPA direct debit",
+    remittanceInformation: "2026-000145",
+    directDebit: {
+      mandateReference: "MANDAT-2026-0900",
+      creditorIdentifier: "DE98ZZZ09999999999",
+      debitedAccount: "DE02120300000000202051",
+    },
+  },
+  paymentTerms: "Der Betrag wird per Lastschrift eingezogen.",
+  supportingDocuments: [
+    {
+      reference: "STUNDENNACHWEIS-2026-08",
+      description: "Stundennachweis August 2026",
+      externalUri:
+        "https://portal.musterlieferant.example/nachweise/2026-08.pdf",
+    },
+    {
+      reference: "PREISBLATT-2026",
+      description: "Preisblatt 2026",
+      attachment: {
+        filename: "preisblatt-2026.csv",
+        mimeCode: "text/csv",
+        // "pos;preis\n" — a real, tiny CSV, so the document is honest about
+        // what it carries rather than embedding filler.
+        content: "cG9zO3ByZWlzCg==",
+      },
+    },
+  ],
+  allowances: [
+    {
+      amount: 100,
+      baseAmount: 2000,
+      percentage: 5,
+      vatCategory: "S",
+      vatRate: 19,
+      reason: "Rahmenvertragsrabatt",
+      reasonCode: "95",
+    },
+  ],
+  charges: [
+    {
+      amount: 40,
+      vatCategory: "S",
+      vatRate: 19,
+      reason: "Versandkosten",
+      reasonCode: "FC",
+    },
+  ],
+  paidAmount: 250,
+  roundingAmount: 0.03,
+  lines: [
+    {
+      id: "1",
+      description: "Industrie-Sensor",
+      longDescription: "Sensor mit Kalibrierprotokoll.",
+      note: "Kalibrierung inklusive.",
+      quantity: 40,
+      unitCode: "C62",
+      unitPrice: 45,
+      grossUnitPrice: 50,
+      priceDiscount: 5,
+      baseQuantity: 1,
+      vatCategory: "S",
+      vatRate: 19,
+      buyerAccountingReference: "Kostenstelle 4711",
+      orderLineReference: "10",
+      objectIdentifier: { value: "ANL-2026-0900-1", schemeId: "AAJ" },
+      period: { startDate: "2026-07-01", endDate: "2026-07-31" },
+      allowances: [
+        {
+          amount: 30,
+          baseAmount: 1500,
+          percentage: 2,
+          reason: "Mengenrabatt",
+          reasonCode: "95",
+        },
+      ],
+      charges: [{ amount: 15, reason: "Verpackung", reasonCode: "PC" }],
+      sellerItemId: "SEN-4711",
+      buyerItemId: "K-9900",
+      standardItemId: { value: "04012345678901", schemeId: "0160" },
+      itemClassifications: [
+        { code: "31712000", schemeId: "TSP", schemeVersion: "2.0" },
+      ],
+      originCountryCode: "DE",
+      itemAttributes: [
+        { name: "Schutzart", value: "IP67" },
+        { name: "Messbereich", value: "0-100 bar" },
+      ],
+    },
+    {
+      id: "2",
+      description: "Wartungspauschale",
+      quantity: 1,
+      unitCode: "MON",
+      unitPrice: 500,
+      baseQuantity: 1,
+      vatCategory: "S",
+      vatRate: 7,
+      period: { startDate: "2026-07-01", endDate: "2026-07-31" },
+    },
+  ],
+};

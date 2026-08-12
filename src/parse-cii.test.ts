@@ -1,0 +1,407 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+
+import {
+  ParseError,
+  UnsupportedCiiSyntaxError,
+  UnsupportedCreditNoteError,
+  UnsupportedSyntaxError,
+  XmlSecurityError,
+  fromCiiDate,
+  generateCii,
+  generateXRechnungUBL,
+  parseCiiInvoice,
+  parseUblInvoice,
+  validateInput,
+  type UnmappedElement,
+} from "./index.js";
+import {
+  discountedXRechnungCii,
+  extendedXRechnungCii,
+  minimalXRechnung,
+  minimalXRechnungCii,
+  reverseChargeXRechnungCii,
+} from "./fixtures.js";
+import type { InvoiceInput } from "./types.js";
+
+const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
+const read = (name: string) => readFileSync(join(fixturesDir, name), "utf8");
+
+const cases: [string, InvoiceInput][] = [
+  ["xrechnung-cii-minimal.xml", minimalXRechnungCii],
+  ["xrechnung-cii-reverse-charge.xml", reverseChargeXRechnungCii],
+  ["xrechnung-cii-discount.xml", discountedXRechnungCii],
+  ["xrechnung-cii-extended.xml", extendedXRechnungCii],
+];
+
+/** The error code a call throws, or undefined if it does not throw. */
+function codeOf(fn: () => unknown): string | undefined {
+  try {
+    fn();
+    return undefined;
+  } catch (error) {
+    return error instanceof ParseError ? error.code : `not-a-ParseError:${error}`;
+  }
+}
+
+const unknowns = (unmapped: UnmappedElement[]) =>
+  unmapped.filter((u) => u.kind === "unknown");
+
+const minimalXml = generateCii(minimalXRechnungCii);
+
+describe("parseCiiInvoice: round trip over every committed CII fixture", () => {
+  it.each(cases)(
+    "%s parses back into an input that regenerates the identical document",
+    (name) => {
+      const xml = read(name);
+      const { invoice } = parseCiiInvoice(xml);
+      // The strongest correctness signal available: if any field were read into
+      // the wrong place, or dropped, the regenerated document would differ.
+      expect(generateCii(invoice)).toBe(xml);
+    },
+  );
+
+  it.each(cases)("%s validates identically before and after", (name, input) => {
+    const { invoice } = parseCiiInvoice(read(name));
+    const before = validateInput(input);
+    const after = validateInput(invoice);
+    expect(after.errors.map((e) => e.rule)).toEqual(before.errors.map((e) => e.rule));
+    expect(after.warnings.map((e) => e.rule)).toEqual(
+      before.warnings.map((e) => e.rule),
+    );
+    expect(after.information.map((e) => e.rule)).toEqual(
+      before.information.map((e) => e.rule),
+    );
+    expect(after.valid).toBe(true);
+  });
+
+  it.each(cases)("%s leaves nothing unknown behind", (name) => {
+    const { unmapped } = parseCiiInvoice(read(name));
+    // Everything reported must be "recomputed" — a value the model derives
+    // rather than stores. An "unknown" here means content was lost.
+    expect(unknowns(unmapped)).toEqual([]);
+    expect(unmapped.length).toBeGreaterThan(0);
+  });
+
+  it.each(cases)("%s reports the document's own arithmetic as declared", (name, input) => {
+    const { invoice } = parseCiiInvoice(read(name));
+    const declared = invoice.declaredTotals!;
+    expect(declared.lineExtensionAmount).toBeDefined();
+    expect(declared.payableAmount).toBeDefined();
+    // Feeding them back through the rules must not trip a BR-CO finding.
+    expect(validateInput({ ...invoice }).errors).toEqual([]);
+    expect(declared.taxAmount).toBe(
+      Number(
+        /<ram:TaxTotalAmount[^>]*>([^<]*)</.exec(read(name))![1],
+      ),
+    );
+    expect(input.currency).toBe(invoice.currency);
+  });
+});
+
+describe("parseCiiInvoice: resolving by namespace URI, not by prefix", () => {
+  /** Rename every prefix, leaving the namespace URIs alone. */
+  const renamed = minimalXml
+    .replace(/xmlns:rsm=/g, "xmlns:a=")
+    .replace(/xmlns:ram=/g, "xmlns:b=")
+    .replace(/xmlns:udt=/g, "xmlns:c=")
+    .replace(/xmlns:qdt=/g, "xmlns:d=")
+    .replace(/<(\/?)rsm:/g, "<$1a:")
+    .replace(/<(\/?)ram:/g, "<$1b:")
+    .replace(/<(\/?)udt:/g, "<$1c:")
+    .replace(/<(\/?)qdt:/g, "<$1d:");
+
+  it("reads a document that uses entirely different prefixes", () => {
+    const { invoice } = parseCiiInvoice(renamed);
+    expect(invoice.invoiceNumber).toBe("2026-000142");
+    expect(invoice.seller.name).toBe("Musterlieferant GmbH");
+    expect(generateCii(invoice)).toBe(minimalXml);
+  });
+
+  it("refuses a document whose element names look right but whose namespace is wrong", () => {
+    const wrong = minimalXml.replace(
+      "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100",
+      "urn:example:not-cii",
+    );
+    expect(codeOf(() => parseCiiInvoice(wrong))).toBe("unsupported_syntax");
+  });
+});
+
+describe("parseCiiInvoice: dates", () => {
+  it("converts format-102 back to an ISO date", () => {
+    expect(fromCiiDate("20260809")).toBe("2026-08-09");
+    expect(fromCiiDate("  20260809 ")).toBe("2026-08-09");
+  });
+
+  it("carries a date it cannot recognise through untouched", () => {
+    // Better an obviously wrong value the rules reject than an invented one.
+    expect(fromCiiDate("2026-08-09")).toBe("2026-08-09");
+    expect(fromCiiDate("later")).toBe("later");
+    const odd = minimalXml.replace(">20260809<", ">later<");
+    const { invoice } = parseCiiInvoice(odd);
+    expect(invoice.issueDate).toBe("later");
+    expect(validateInput(invoice).errors.map((e) => e.rule)).toContain(
+      "ATW-DATE-NOT-A-CALENDAR-DATE",
+    );
+  });
+
+  it("reads BT-26 from the qualified namespace", () => {
+    const { invoice } = parseCiiInvoice(read("xrechnung-cii-discount.xml"));
+    expect(invoice.precedingInvoices).toEqual([
+      { invoiceNumber: "2026-000118", issueDate: "2026-07-15" },
+    ]);
+  });
+
+  it("reads BT-7 from the VAT breakdown group that carries it", () => {
+    const { invoice } = parseCiiInvoice(read("xrechnung-cii-extended.xml"));
+    expect(invoice.taxPointDate).toBe("2026-08-07");
+  });
+});
+
+describe("parseCiiInvoice: the groups CII places differently from UBL", () => {
+  const { invoice } = parseCiiInvoice(read("xrechnung-cii-extended.xml"));
+
+  it("reads BT-90 from the settlement into the payment instructions", () => {
+    expect(invoice.payment?.directDebit).toEqual({
+      mandateReference: "MANDAT-2026-0900",
+      creditorIdentifier: "DE98ZZZ09999999999",
+      debitedAccount: "DE02120300000000202051",
+    });
+  });
+
+  it("reads BT-9 and BT-20 out of the payment terms group", () => {
+    expect(invoice.dueDate).toBe("2026-09-08");
+    expect(invoice.paymentTerms).toBe(
+      "Der Betrag wird per Lastschrift eingezogen.",
+    );
+  });
+
+  it("reads BT-31 and BT-32 back from schemeID VA and FC", () => {
+    expect(invoice.seller.vatId).toBe("DE123456789");
+    expect(invoice.seller.taxRegistrationId).toBe("181/815/08155");
+  });
+
+  it("reads BT-28 out of SpecifiedLegalOrganization", () => {
+    expect(invoice.seller.tradingName).toBe("Muster Technik");
+    expect(invoice.seller.legalRegistrationId).toBe("HRB 12345 B");
+    expect(invoice.seller.legalRegistrationSchemeId).toBe("0060");
+  });
+
+  it("reads the payee and the tax representative", () => {
+    expect(invoice.payee?.name).toBe("Factoring Nord AG");
+    expect(invoice.payee?.identifier).toEqual({
+      value: "4011111000005",
+      schemeId: "0088",
+    });
+    expect(invoice.taxRepresentative?.vatId).toBe("NL123456789B01");
+    expect(invoice.taxRepresentative?.address.city).toBe("Amsterdam");
+  });
+
+  it("splits ShipToTradeParty back into BT-70, BT-71 and BG-15", () => {
+    expect(invoice.deliverToName).toBe("Zentrallager Nord");
+    expect(invoice.deliverToLocationId).toEqual({
+      value: "4098765000011",
+      schemeId: "0088",
+    });
+    expect(invoice.deliverTo?.city).toBe("Hamburg");
+    expect(invoice.deliveryDate).toBe("2026-08-07");
+  });
+
+  it("tells the three uses of AdditionalReferencedDocument apart", () => {
+    expect(invoice.invoicedObjectIdentifier).toEqual({
+      value: "ANL-2026-0900",
+      schemeId: "AAJ",
+    });
+    expect(invoice.tenderOrLotReference).toBe("LOS-4");
+    expect(invoice.supportingDocuments).toHaveLength(2);
+    expect(invoice.supportingDocuments?.[1]?.attachment?.mimeCode).toBe("text/csv");
+  });
+
+  it("reads BT-6 and BT-111 apart by currencyID", () => {
+    expect(invoice.vatAccountingCurrency).toBe("SEK");
+    expect(invoice.taxAmountInAccountingCurrency).toBe(3255.6);
+    expect(invoice.declaredTotals?.taxAmount).not.toBe(3255.6);
+  });
+
+  it("reads the gross price and its discount back into BT-148 and BT-147", () => {
+    expect(invoice.lines[0]?.grossUnitPrice).toBe(50);
+    expect(invoice.lines[0]?.priceDiscount).toBe(5);
+    expect(invoice.lines[0]?.unitPrice).toBe(45);
+    expect(invoice.lines[0]?.baseQuantity).toBe(1);
+  });
+
+  it("reads BT-21 from the real element, with no #CODE# to strip", () => {
+    const { invoice: discounted } = parseCiiInvoice(
+      read("xrechnung-cii-discount.xml"),
+    );
+    expect(discounted.noteSubjectCode).toBe("AAI");
+    expect(discounted.note?.startsWith("#")).toBe(false);
+  });
+});
+
+describe("parseCiiInvoice: what it refuses", () => {
+  it("refuses a UBL Invoice and names the function that reads it", () => {
+    const ubl = generateXRechnungUBL(minimalXRechnung);
+    expect(codeOf(() => parseCiiInvoice(ubl))).toBe("unsupported_syntax");
+    let caught: unknown;
+    try {
+      parseCiiInvoice(ubl);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(UnsupportedCiiSyntaxError);
+    expect((caught as Error).message).toContain("parseUblInvoice");
+  });
+
+  it("refuses a credit note by BT-3, exactly as the UBL reader does", () => {
+    const credit = minimalXml.replace(
+      "<ram:TypeCode>380</ram:TypeCode>",
+      "<ram:TypeCode>381</ram:TypeCode>",
+    );
+    expect(codeOf(() => parseCiiInvoice(credit))).toBe("unsupported_document_type");
+    expect(() => parseCiiInvoice(credit)).toThrow(UnsupportedCreditNoteError);
+  });
+
+  it("refuses something that is neither UBL nor CII", () => {
+    expect(codeOf(() => parseCiiInvoice("<hello/>"))).toBe("unsupported_syntax");
+  });
+
+  it("keeps every security limit of the shared XML reader", () => {
+    const doctype = `<!DOCTYPE x [<!ENTITY a "b">]>\n${minimalXml}`;
+    expect(codeOf(() => parseCiiInvoice(doctype))).toBe("xml_doctype_forbidden");
+    expect(codeOf(() => parseCiiInvoice(minimalXml, { maxCharacters: 10 }))).toBe(
+      "xml_too_large",
+    );
+    expect(codeOf(() => parseCiiInvoice(minimalXml, { maxElements: 3 }))).toBe(
+      "xml_too_many_elements",
+    );
+    expect(codeOf(() => parseCiiInvoice(minimalXml, { maxDepth: 2 }))).toBe(
+      "xml_too_deep",
+    );
+    expect(() => parseCiiInvoice(doctype)).toThrow(XmlSecurityError);
+  });
+
+  it("still lets parseUblInvoice refuse a CII document, and vice versa", () => {
+    expect(() => parseUblInvoice(minimalXml)).toThrow(UnsupportedSyntaxError);
+    let caught: unknown;
+    try {
+      parseUblInvoice(minimalXml);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).toContain("parseCiiInvoice");
+  });
+});
+
+describe("parseCiiInvoice: nothing is dropped silently", () => {
+  it("reports an element it has no field for", () => {
+    const withExtra = minimalXml.replace(
+      "<ram:TypeCode>380</ram:TypeCode>",
+      "<ram:TypeCode>380</ram:TypeCode>\n    <ram:Name>Rechnung</ram:Name>",
+    );
+    const { unmapped } = parseCiiInvoice(withExtra);
+    const found = unknowns(unmapped).find((u) => u.name === "ram:Name");
+    expect(found).toBeDefined();
+    expect(found?.text).toBe("Rechnung");
+    expect(found?.namespace).toBe(
+      "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100",
+    );
+  });
+
+  it("reports the recomputed amounts rather than storing them", () => {
+    const { unmapped } = parseCiiInvoice(minimalXml);
+    const kinds = new Set(unmapped.map((u) => u.kind));
+    expect(kinds).toEqual(new Set(["recomputed"]));
+    expect(unmapped.map((u) => u.name)).toContain("ram:LineTotalAmount");
+    expect(unmapped.map((u) => u.name)).toContain("ram:BasisAmount");
+  });
+
+  it("reports a number it cannot read and leaves the field unset", () => {
+    const broken = minimalXml.replace(
+      "<ram:ChargeAmount>150.00</ram:ChargeAmount>",
+      "<ram:ChargeAmount>one hundred</ram:ChargeAmount>",
+    );
+    const { invoice, unmapped } = parseCiiInvoice(broken);
+    expect(invoice.lines[0]?.unitPrice).toBe(0);
+    expect(unknowns(unmapped).some((u) => u.name === "ram:ChargeAmount")).toBe(true);
+  });
+
+  it("reports a second document note rather than overwriting the first", () => {
+    const twoNotes = minimalXml.replace(
+      "  </rsm:ExchangedDocument>",
+      "    <ram:IncludedNote>\n      <ram:Content>A</ram:Content>\n    </ram:IncludedNote>\n" +
+        "    <ram:IncludedNote>\n      <ram:Content>B</ram:Content>\n    </ram:IncludedNote>\n" +
+        "  </rsm:ExchangedDocument>",
+    );
+    const { invoice, unmapped } = parseCiiInvoice(twoNotes);
+    expect(invoice.note).toBe("A");
+    expect(unknowns(unmapped).some((u) => u.name === "ram:IncludedNote")).toBe(true);
+  });
+
+  it("reports a tax registration scheme it does not model", () => {
+    const odd = minimalXml.replace('schemeID="FC"', 'schemeID="XX"');
+    const { invoice, unmapped } = parseCiiInvoice(odd);
+    expect(invoice.seller.taxRegistrationId).toBeUndefined();
+    expect(
+      unknowns(unmapped).some((u) => u.name === "ram:SpecifiedTaxRegistration"),
+    ).toBe(true);
+  });
+});
+
+describe("parseCiiInvoice: the profile it infers", () => {
+  it("maps the XRechnung 3.0 identifier to xrechnung-cii", () => {
+    expect(parseCiiInvoice(minimalXml).invoice.profile).toBe("xrechnung-cii");
+    expect(parseCiiInvoice(minimalXml).customizationId).toContain("xrechnung_3.0");
+    expect(parseCiiInvoice(minimalXml).profileId).toBe(
+      "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+    );
+  });
+
+  it("maps the core identifier to en16931, which is also what Factur-X states", () => {
+    // Factur-X's EN 16931 profile and plain core EN 16931 carry the *same*
+    // BT-24, so a facturx-en16931 document reads back as en16931. Nothing is
+    // lost: the rule set is the same, and regenerating gives the same document.
+    const facturx = generateCii({ ...minimalXRechnungCii, profile: "facturx-en16931" });
+    const { invoice } = parseCiiInvoice(facturx);
+    expect(invoice.profile).toBe("en16931");
+    expect(generateCii(invoice)).toBe(facturx);
+  });
+
+  it("guesses from the text of an unknown identifier, and says so", () => {
+    const pinned = generateCii(minimalXRechnungCii, {
+      customizationId:
+        "urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_2.3",
+    });
+    const { invoice, unmapped } = parseCiiInvoice(pinned);
+    expect(invoice.profile).toBe("xrechnung-cii");
+    expect(unknowns(unmapped).some((u) => u.reason.includes("xrechnung-cii"))).toBe(
+      true,
+    );
+  });
+
+  it("falls back to en16931 when BT-24 is absent, and reports the fallback", () => {
+    const without = minimalXml.replace(
+      /\s*<ram:GuidelineSpecifiedDocumentContextParameter>[\s\S]*?<\/ram:GuidelineSpecifiedDocumentContextParameter>/,
+      "",
+    );
+    const { invoice, unmapped } = parseCiiInvoice(without);
+    expect(invoice.profile).toBe("en16931");
+    expect(unknowns(unmapped).some((u) => u.reason.includes("BT-24"))).toBe(true);
+  });
+});
+
+describe("the two syntaxes meet in the middle", () => {
+  it("a CII document can be re-issued as UBL through the shared model", () => {
+    const { invoice } = parseCiiInvoice(read("xrechnung-cii-discount.xml"));
+    const ubl = generateXRechnungUBL({ ...invoice, profile: "xrechnung-ubl" });
+    // Not byte-identical to the UBL fixture — the two bindings differ on BT-21
+    // and on the names the model keeps — but it is the same invoice, and the
+    // arithmetic that a receiver checks is unchanged.
+    expect(ubl).toContain("<cbc:PayableAmount currencyID=\"EUR\">1680.00</cbc:PayableAmount>");
+    const back = parseUblInvoice(ubl).invoice;
+    expect(back.invoiceNumber).toBe("2026-000144");
+    expect(back.lines).toHaveLength(3);
+  });
+});

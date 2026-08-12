@@ -4,28 +4,42 @@
 [![npm](https://img.shields.io/npm/v/@attestwire/en16931.svg)](https://www.npmjs.com/package/@attestwire/en16931)
 [![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-**Generate and validate EN 16931 e-invoices (XRechnung UBL, Peppol BIS 3.0) with
+**Generate and validate EN 16931 e-invoices — UBL 2.1 and UN/CEFACT CII — with
 errors that teach the regulation.**
 
-The three release fixtures in [`fixtures/`](fixtures) — the documents this
-generator produces — are validated against the UBL 2.1 XSD, and are checked
-against the official [KoSIT validator](https://github.com/itplr-kosit/validator)
-1.6.2 with the XRechnung 3.0.2 configuration (XSD, EN 16931 schematron,
-XRechnung CIUS schematron) on release. Reproduce it yourself with
+Both syntaxes generate and both parse: `generateXRechnungUBL` /
+`parseUblInvoice` for XRechnung UBL and Peppol BIS 3.0, `generateCii` /
+`parseCiiInvoice` for XRechnung CII and the Factur-X EN 16931 payload. One
+`InvoiceInput` model feeds either.
+
+The seven release fixtures in [`fixtures/`](fixtures) — the documents these
+generators produce — are checked against the official
+[KoSIT validator](https://github.com/itplr-kosit/validator) 1.6.2 with the
+XRechnung 3.0.2 configuration on release. The three UBL documents go through the
+UBL 2.1 XSD, the EN 16931 schematron and the XRechnung CIUS schematron; the four
+CII documents go through the UN/CEFACT D16B XSD, the EN 16931 **CII**
+schematron and the XRechnung **CII** schematron, under KoSIT's own
+`EN16931 XRechnung (CII)` scenario. Reproduce it yourself with
 [`scripts/kosit-check.sh`](scripts/kosit-check.sh), which needs a JDK.
 
 **The KoSIT run was performed on 2026-08-11** — validator 1.6.2, XRechnung
-configuration 3.0.2, over the three committed fixtures: `Acceptable: 3
+configuration 3.0.2, over all seven committed fixtures: `Acceptable: 7
 Rejected: 0`, with zero findings at any severity. The recorded output is in
-[`scripts/kosit-check.md`](scripts/kosit-check.md). (For the record: 0.2.0 was
-published on 2026-08-10, one day *before* that run, so the README inside the
-0.2.0 tarball says the run had not happened. It had not, yet. This is 0.2.1.)
+[`scripts/kosit-check.md`](scripts/kosit-check.md), together with the two
+findings the CII run caught before it went green.
 
 Even a clean run
-is a conformance check on three documents, not a parity suite: it says nothing
-about the paths those three fixtures do not exercise, and `validateInput` is a
+is a conformance check on seven documents, not a parity suite: it says nothing
+about the paths those fixtures do not exercise, and `validateInput` is a
 pre-flight rather than a schematron (see
 [Not implemented yet](#not-implemented-yet)).
+
+**There is no PDF.** Factur-X and ZUGFeRD are CII XML inside a PDF/A-3
+container. `generateCii` emits the XML. It does not build the container, does
+not attach the XML to a PDF under the required name (`factur-x.xml`, or
+`xrechnung.xml` for the XRECHNUNG reference profile), and does not set the
+`/AFRelationship` value Germany requires (`Alternative`). A file produced by
+this package is a CII XML document, not a Factur-X or ZUGFeRD document.
 
 Zero runtime dependencies. TypeScript-first. Every validation failure carries the
 official rule ID, the business term it constrains, a plain-English explanation of
@@ -90,9 +104,188 @@ Totals are always **computed** from the lines, never echoed from caller input, s
 a BR-CO arithmetic rejection cannot originate in the generated document.
 
 Generation **refuses** rather than emitting a document that would be rejected
-downstream: a non-UBL profile throws `UnsupportedProfileError` and a credit-note
-`invoiceTypeCode` throws `UnsupportedDocumentTypeError` (see
+downstream: a profile in the wrong syntax throws (`UnsupportedProfileError` from
+the UBL generator, `UnsupportedCiiProfileError` from the CII one) and a
+credit-note `invoiceTypeCode` throws `UnsupportedDocumentTypeError` (see
 [Refusals](#refusals)).
+
+## CII: XRechnung CII and the Factur-X payload
+
+```ts
+import { generateCii, parseCiiInvoice } from "@attestwire/en16931";
+
+const xml = generateCii({ ...invoice, profile: "xrechnung-cii" });
+const { invoice: readBack, unmapped } = parseCiiInvoice(xml);
+```
+
+`generateCii` accepts `xrechnung-cii`, `facturx-en16931` and `en16931` — the
+core profile is syntax-neutral, so you pick the syntax by picking the function.
+`xrechnung-ubl` and `peppol-bis-3` are UBL-only and throw; Peppol BIS Billing
+3.0 has no CII binding at all.
+
+CII is not UBL with different names, and four differences are where a UBL habit
+produces a rejected file:
+
+| | UBL | CII |
+| --- | --- | --- |
+| Dates | `<cbc:IssueDate>2026-08-09</cbc:IssueDate>` | `<ram:IssueDateTime><udt:DateTimeString format="102">20260809</udt:DateTimeString></ram:IssueDateTime>` |
+| Currency | on every amount, as `@currencyID` | once, in `ram:InvoiceCurrencyCode`; only BT-110 and BT-111 carry `@currencyID` |
+| BT-21 note subject | no element — encoded into the note as `#CODE#text` | a real element, `ram:SubjectCode` |
+| BT-90 SEPA creditor id | on the seller party, `schemeID="SEPA"` | on the settlement, `ram:CreditorReferenceID` |
+
+Element order is part of schema validity in both syntaxes, and the two do not
+agree on it. `ram:PostalTradeAddress` puts the post code before the street.
+`ram:SpecifiedTradeSettlementHeaderMonetarySummation` puts charges before
+allowances and the rounding amount before the grand total. A
+`ram:SpecifiedTradeAllowanceCharge` puts the percentage and the base amount
+before the amount, and the reason **code** before the reason **text**. Every
+builder in `generate-cii.ts` quotes the XSD sequence it follows.
+
+`parseCiiInvoice` is the inverse, and the round trip is tested: for each
+committed CII fixture, `generateCii(parseCiiInvoice(xml).invoice)` returns the
+identical document, and the result validates identically. It shares the hardened
+XML reader — and every one of its security limits — with `parseUblInvoice`, and
+resolves everything by namespace URI rather than by prefix.
+
+One thing it cannot tell you: **Factur-X's EN 16931 profile and plain core
+EN 16931 state the same BT-24** (`urn:cen.eu:en16931:2017`), so a
+`facturx-en16931` document reads back with `profile: "en16931"`. Nothing is
+lost — the rule set is identical and regenerating produces the same bytes — but
+if you need the distinction, keep it yourself.
+
+## Reading an existing UBL invoice
+
+`parseUblInvoice` reads a UBL 2.1 `Invoice` document into the same
+`InvoiceInput` object the rest of this package uses. That is what lets you
+answer the question people actually arrive with: *my customer's platform
+rejected this file — why?*
+
+```ts
+import { parseUblInvoice, validateInput } from "@attestwire/en16931";
+
+const { invoice, unmapped } = parseUblInvoice(xmlString);
+const findings = validateInput(invoice);
+
+for (const item of unmapped) {
+  console.log(item.kind, item.path, item.reason);
+}
+```
+
+**It is a reader, not an authority.** It tells you what is in the document. It
+does not tell you whether a receiver will accept the document. A file that
+parses here, and then passes `validateInput`, can still be rejected by KoSIT or
+by a receiving platform: `validateInput` checks the input model, not the XML,
+and this build is not a schematron. See
+[Not implemented yet](#not-implemented-yet).
+
+### What it reads
+
+Every element `generateXRechnungUBL` emits, mapped back to the field it came
+from. The round trip is tested: for each committed fixture,
+`generateXRechnungUBL(parseUblInvoice(xml).invoice)` returns the identical
+document, and the result validates identically.
+
+Namespaces are resolved by URI, not by prefix. A document that calls the two
+common namespaces `b:` and `a:`, or that puts the root in the default
+namespace, reads the same as one using `cbc:` and `cac:`. Element order does not
+matter to the reader.
+
+The document's own totals (BT-106 to BT-115) are read into `declaredTotals`, so
+`validateInput` checks the document's arithmetic against ours under the
+`BR-CO-*` rules. The VAT breakdown and the line net amounts are recomputed from
+the lines instead of being stored, because that is how the input model works.
+
+`parseUblInvoice` also returns `customizationId` and `profileId` — BT-24 and
+BT-23 exactly as the document states them. `invoice.profile` is derived from
+BT-24. If BT-24 is missing or unknown, the profile falls back to `en16931` or is
+guessed from the text, and the guess is reported in `unmapped` — because the
+profile decides which CIUS rules run.
+
+### What it refuses
+
+It throws rather than returning a half-read invoice. Every error extends
+`ParseError` and carries a stable `code`.
+
+| Error | `code` | When |
+| --- | --- | --- |
+| `UnsupportedSyntaxError` | `unsupported_syntax` | The root element is not a UBL `Invoice`. A CII document (ZUGFeRD, Factur-X, XRechnung CII) and a UBL `CreditNote` each get their own message saying which one it is. |
+| `UnsupportedCreditNoteError` | `unsupported_document_type` | BT-3 is one of the six credit-note codes in `CREDIT_NOTE_TYPE_CODES`. |
+| `XmlSecurityError` | see below | The document hit one of the security limits. |
+| `XmlSyntaxError` | various | The document is not well-formed, or uses a construct outside the accepted subset. |
+
+There is no PDF support: Factur-X and ZUGFeRD carry CII inside a PDF/A-3, and
+neither half of that is implemented.
+
+### Security limits
+
+The XML comes from someone else. The reader is written for the UBL subset and
+refuses everything outside it, rather than accepting more and hoping.
+
+| Defence | Limit | What it stops |
+| --- | --- | --- |
+| No DTD processing | any `<!DOCTYPE` or `<!ENTITY` in the document is refused (`xml_doctype_forbidden`, `xml_entity_declaration_forbidden`) | **XXE** — an external entity that reads a local file or makes a network request. Also the declaration half of billion-laughs. The check runs on the raw text, so a DOCTYPE inside a CDATA section is refused too. |
+| No custom entity expansion | only `&amp; &lt; &gt; &quot; &apos;` and numeric character references are decoded (`xml_entity_forbidden`) | **Billion laughs.** An unknown entity is refused, never silently dropped — dropping one would change the text of a tax document without saying so. |
+| Depth cap | 100 elements (`xml_too_deep`) | Deeply nested documents. A UBL invoice nests about eight levels. |
+| Size cap | 10,000,000 characters (`xml_too_large`) | Memory exhaustion from a very large upload. Roughly a 10 MB ASCII document — far above any real invoice, including one with an embedded PDF. |
+| Element cap | 200,000 elements (`xml_too_many_elements`) | A flat document of millions of tiny elements, which passes both caps above. |
+
+All three numbers are the defaults in `DEFAULT_XML_LIMITS` and can be raised per
+call: `parseUblInvoice(xml, { maxCharacters: 20_000_000 })`.
+
+The reader also refuses mixed content (an element holding both text and child
+elements), unbound namespace prefixes, and control characters XML 1.0 does not
+permit. Comments and processing instructions are skipped and never acted on: a
+stylesheet instruction cannot make this library fetch anything.
+
+### Nothing is dropped silently
+
+Anything in the document that does not reach the invoice object is returned in
+`unmapped`, with its path, its name, its namespace and its text:
+
+```ts
+{
+  path: "/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:WebsiteURI",
+  name: "cbc:WebsiteURI",
+  namespace: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+  kind: "unknown",
+  reason: "This parser has no field for this element, so neither it nor anything inside it reached the invoice object.",
+  text: "https://example.invalid"
+}
+```
+
+`kind` separates the two reasons, and they are very different:
+
+- `"unknown"` — there is no field for it. **The content is gone from the
+  model.** If it matters to you, read it from the XML yourself.
+- `"recomputed"` — the element is understood, but the model derives the value
+  rather than storing it. Line net amounts (BT-131) and the VAT breakdown
+  (BT-116, BT-117) are the whole of this list for a document this package
+  generated. Nothing is lost; the values come back from the lines.
+
+An unmapped group is reported once, not once per element inside it. A number the
+reader cannot read is reported too, and the field is left unset rather than
+guessed at.
+
+### What a real XRechnung from a German portal will hit
+
+Honestly: things this reader does not yet handle.
+
+- **Credit notes.** Refused, by root element and by BT-3. This is now the
+  largest gap; CII is no longer one — read those with `parseCiiInvoice`.
+- **`cac:Signature`, `cbc:CopyIndicator`, `cbc:UBLVersionID`** and the other UBL
+  elements that carry no EN 16931 business term. These parse, and appear in
+  `unmapped` as `"unknown"`. They are not errors.
+- **Repeated groups the input model holds only once** — a second `cbc:Note`, a
+  second `cac:PartyIdentification`, a second `cac:PaymentMeans`. The first is
+  read; the rest are reported as `"unknown"`.
+- **`cac:PaymentTerms` `#SKONTO#` lines.** XRechnung encodes discount terms in
+  the payment-terms text. They are read as text, exactly as written, and are not
+  parsed into fields.
+- **A tax scheme other than `VAT` or `FC`** on a party is reported rather than
+  taken for a VAT number.
+
+Nothing in that list produces a wrong invoice. Everything in it produces either
+a clear refusal or an `unmapped` entry.
 
 ## Teaching errors
 
@@ -143,6 +336,16 @@ a case fails the build rather than the audit.
 | --- | --- |
 | `validateInput(inv)` | Run all input rules. Returns `{ valid, profile, errors, warnings, information }`. Reports **every** finding, not the first. |
 | `generateXRechnungUBL(inv, options?)` | JSON → UBL 2.1 Invoice XML string. |
+| `generateCii(inv, options?)` | JSON → UN/CEFACT CII (D16B) `CrossIndustryInvoice` XML string, for `xrechnung-cii`, `facturx-en16931` and `en16931`. **XML only — not a PDF.** |
+| `parseCiiInvoice(xml, options?)` | CII XML → `{ invoice, unmapped, customizationId, profileId }`, the same shape `parseUblInvoice` returns. |
+| `CII_GENERATABLE_PROFILES` / type `CiiGeneratableProfile` | The profiles `generateCii` accepts, and the union type of them. |
+| `CII_NAMESPACES` | The four namespace URIs (`rsm`, `ram`, `qdt`, `udt`) a CII invoice uses — for resolving by URI when you walk a document yourself. |
+| `toCiiDate(iso)` / `fromCiiDate(value)` | ISO 8601 ↔ the CII `format="102"` form (`YYYYMMDD`). A value that is not a calendar date passes through untouched rather than being rewritten. |
+| `SUPPORTING_DOCUMENT_TYPE_CODE` / `TENDER_OR_LOT_DOCUMENT_TYPE_CODE` | `"916"` and `"50"`. In CII one element, `ram:AdditionalReferencedDocument`, carries BG-24, BT-17 **and** BT-18, told apart only by these codes and by `INVOICED_OBJECT_DOCUMENT_TYPE_CODE` (`"130"`). |
+| `parseUblInvoice(xml, options?)` | UBL 2.1 Invoice XML → `{ invoice, unmapped, customizationId, profileId }`. Feed `invoice` to `validateInput`. See [Reading an existing UBL invoice](#reading-an-existing-ubl-invoice). |
+| `ParseError` and subclasses | What parsing throws instead of returning a half-read invoice: `UnsupportedSyntaxError`, `UnsupportedCreditNoteError`, `XmlSecurityError`, `XmlSyntaxError`. Each carries a stable `code`. |
+| `DEFAULT_XML_LIMITS` / type `XmlLimits` | The size, depth and element caps applied to every parse, and the shape for overriding them. |
+| `parseXml(xml, limits?)` | The hardened XML reader on its own, returning an `XmlElement` tree. With `attr`, `firstChild` and `childrenNamed` for walking it — useful for reading an element `parseUblInvoice` reports as unmapped. |
 | `computeTotals(inv)` | BG-22 totals and the BG-23 VAT breakdown, as the BR-CO rules define them — including BT-107/BT-108 for document allowances and charges, and BT-113/BT-114. |
 | `lineNetAmount(line)` | BT-131 for a single line, net of its BG-27 allowances and BG-28 charges. |
 | `round2(n)` / `formatAmount(n)` | Half-up 2dp rounding, and its 2-decimal string form. |
@@ -159,7 +362,9 @@ a case fails the build rather than the audit.
 | `CREDIT_NOTE_TYPE_CODES_CL` (and `_SET`) | The thirteen UNTDID 1001 codes BR-CL-01 admits on a *credit note* document (`cbc:CreditNoteTypeCode`) — `81`, `83`, `261`, `262`, `296`, `308`, `381`, `396`, `420`, `458`, `502`, `503`, `532`. The `_CL` suffix means code list. Different list, different job: it exists for validating credit-note documents, and a code in it that is not in `CREDIT_NOTE_TYPE_CODES` (such as `83`) is not refused by this generator. Reach for `CREDIT_NOTE_TYPE_CODES` when you want to know what this build will throw on, and for `CREDIT_NOTE_TYPE_CODES_CL` when you want to know what the regulation calls a credit note. |
 | `PEPPOL_EAS_SCHEME_CODES`, `PEPPOL_CURRENCY_CODES` (and their `_SET` variants) | Peppol's own narrower lists, enforced only on `profile: "peppol-bis-3"`: the EAS schemes `PEPPOL-EN16931-CL008` admits for BT-34/BT-49, and the currencies `PEPPOL-EN16931-CL007` admits for BT-5. Both rules name these exports in their `fix` text, so this is where a caller following the error message lands. |
 | `GenerationError` and subclasses | What generation throws instead of emitting a wrong document. |
-| `minimalXRechnung` / `reverseChargeXRechnung` / `discountedXRechnung` | The example inputs behind `fixtures/`. |
+| `minimalXRechnung` / `reverseChargeXRechnung` / `discountedXRechnung` | The example inputs behind the UBL `fixtures/`. |
+| `minimalXRechnungCii` / `reverseChargeXRechnungCii` / `discountedXRechnungCii` | The same three invoices with `profile: "xrechnung-cii"` — one model, two syntaxes. |
+| `extendedXRechnungCii` | A wide CII invoice: payee, tax representative, direct debit, deliver-to, attachments, VAT accounting currency, tax point date, gross price. It exists so KoSIT judges the groups the other three never reach. |
 | `CURRENCY_CODES`, `COUNTRY_CODES`, `UNIT_CODES`, `VAT_CATEGORY_CODES`, `PAYMENT_MEANS_CODES`, `INVOICE_TYPE_CODES`, `EAS_SCHEME_CODES`, `ICD_SCHEME_CODES`, `OBJECT_SCHEME_CODES`, `ITEM_CLASSIFICATION_SCHEME_CODES`, `ALLOWANCE_REASON_CODES`, `CHARGE_REASON_CODES`, `VATEX_CODES`, `MIME_CODES`, `NOTE_SUBJECT_CODES`, `VAT_POINT_DATE_CODES` (and a `_SET` for each) | The official code lists the `BR-CL-*` rules enforce. Build a picker that cannot offer a value the validator rejects. |
 
 `GenerateOptions`: `indent` (default `"  "`), `customizationId`, `profileId` — the
@@ -167,13 +372,14 @@ last two let you pin an older CIUS version such as XRechnung 2.3.
 
 ### Refusals
 
-`generateXRechnungUBL` throws instead of returning XML in two cases. Both errors
-extend `GenerationError`, carry a stable `code`, and explain in the message what
+Each generator throws instead of returning XML in two cases. Every error extends
+`GenerationError`, carries a stable `code`, and explains in the message what
 *is* supported:
 
 | Error | `code` | When |
 | --- | --- | --- |
-| `UnsupportedProfileError` | `unsupported_profile` | `profile` is not one of `en16931`, `xrechnung-ubl`, `peppol-bis-3`. In particular `xrechnung-cii` and `facturx-en16931` are CII documents (Factur-X being CII inside a PDF/A-3); emitting UBL under those names would produce a file that passes nothing. |
+| `UnsupportedProfileError` | `unsupported_profile` | From `generateXRechnungUBL`: `profile` is not one of `en16931`, `xrechnung-ubl`, `peppol-bis-3`. `xrechnung-cii` and `facturx-en16931` are CII documents — call `generateCii` for those. |
+| `UnsupportedCiiProfileError` | `unsupported_profile` | From `generateCii`: `profile` is not one of `en16931`, `xrechnung-cii`, `facturx-en16931`. `xrechnung-ubl` and `peppol-bis-3` are UBL-only. |
 | `UnsupportedDocumentTypeError` | `unsupported_document_type` | `invoiceTypeCode` is one of the six codes in `CREDIT_NOTE_TYPE_CODES` — `381`, `261`, `262`, `296`, `308`, `396`. A UBL credit note is a separate `CreditNote` document, not an `Invoice` with a different BT-3. That set is narrower than the thirteen-code `CREDIT_NOTE_TYPE_CODES_CL`: `invoiceTypeCode: "83"` is a credit-note code in the code list and does **not** throw here. |
 
 `validateInput` reports the credit-note case up front as a fatal finding with the
@@ -195,10 +401,13 @@ is `1.00`, and `(2.675).toFixed(2)` is `"2.67"`. Both are wrong for tax.
 | Area | Coverage |
 | --- | --- |
 | **XRechnung 3.0 UBL generation** | Full document: namespaces, BT-24/BT-23, header terms, both parties (incl. electronic address with `schemeID`, VAT vs. national tax scheme, legal entity, party and registration identifiers with their ISO 6523 schemes, trading name, contact), payee and tax representative parties, delivery group, payment means with card (`cac:CardAccount`) and direct debit (`cac:PaymentMandate`), payment terms, tax breakdown, monetary totals, lines. Plus document and line allowances and charges (`cac:AllowanceCharge`), invoicing periods at both levels, preceding invoice references (`cac:BillingReference`), the project/contract/despatch/receipt/tender/sales-order references, the invoiced object identifier and supporting documents (`cac:AdditionalDocumentReference`, including an embedded base64 attachment), item identifiers, origin country, commodity classification and item attributes, a second `cac:TaxTotal` for the VAT accounting currency, and the price allowance for BT-147/BT-148. Element order follows `UBL-Invoice-2.1.xsd`, and all three fixtures validate against the UBL 2.1 XSD. |
+| **XRechnung 3.0 UBL ingestion** | `parseUblInvoice` reads a UBL 2.1 `Invoice` document back into the input model — every element the generator emits, resolved by namespace URI rather than by prefix, in any element order. Round-tripped over every committed fixture: parse then regenerate returns the identical document, and it validates identically. Anything not carried into the model is returned in `unmapped`. The XML reader is hand-rolled for the UBL subset and refuses DOCTYPEs, custom entities, mixed content and over-sized, over-deep or over-wide documents. No PDF, no credit notes. See [Reading an existing UBL invoice](#reading-an-existing-ubl-invoice). |
+| **CII (D16B) generation** | `generateCii` emits a `rsm:CrossIndustryInvoice` for `xrechnung-cii`, `facturx-en16931` and `en16931`, from the same `InvoiceInput`, with the same computed totals. Full document: the exchanged-document context (BT-23/BT-24), header terms, both trade parties (identifier vs. global identifier, legal organisation, contact, address, endpoint, VAT and national tax registrations), tax representative, payee, ship-to party and delivery event, payment means with financial card and direct debit, the VAT breakdown, document and line allowances and charges, billing periods at both levels, preceding invoices, the referenced-document family (BG-24 / BT-17 / BT-18 / BT-128, told apart by type code), procuring project, the monetary summation including BT-111, and lines with gross and net price, item identifiers, classification, origin country and attributes. Element order follows `CrossIndustryInvoice_*_100pD16B.xsd`; all four CII fixtures pass the D16B XSD and both CII schematrons. |
+| **CII (D16B) ingestion** | `parseCiiInvoice` reads a `CrossIndustryInvoice` back into the input model — every element the CII generator emits, resolved by namespace URI rather than by prefix, in any element order. Round-tripped over every committed CII fixture: parse then regenerate returns the identical document, and it validates identically. Same hardened XML reader and same security limits as the UBL path. Anything not carried into the model is returned in `unmapped`. |
 | **BT coverage** | BT-1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161. |
 | **Arithmetic** | BT-131 = quantity × (BT-146 / BT-149) − Σ BT-136 + Σ BT-141; BT-106 = Σ BT-131; BT-107 = Σ BT-92; BT-108 = Σ BT-99; BT-109 = BT-106 − BT-107 + BT-108; the BG-23 taxable amount per (category, rate) group nets document allowances out and charges in; BT-117 from BT-116 × BT-119; BT-110 = Σ BT-117; BT-112 = BT-109 + BT-110; BT-115 = BT-112 − BT-113 + BT-114. Per-line half-up rounding, and sums taken over the rounded values. BT-107 and BT-108 stay separate sums even where the breakdown nets them — that asymmetry is the standard's. |
 | **Rules** | 287 regulation rules with teaching errors (enumerated below), plus four library-limitation findings (`ATW-CREDIT-NOTE-UNSUPPORTED`, `ATW-DECLARED-TOTAL-NOT-FINITE`, `ATW-VAT-CATEGORY-UNSUPPORTED`, `ATW-DATE-NOT-A-CALENDAR-DATE`) — 291 distinct rule ids. 251 are reachable from caller input; the other 40 constrain the library's own computed arithmetic and cannot be tripped by any input, which is what they are for. |
-| **KoSIT conformance of the fixtures** | Checked on release against the official validator 1.6.2 / XRechnung 3.0.2 config: XSD, EN 16931 schematron and XRechnung CIUS schematron. Three documents, not a parity suite — **run 2026-08-11, `Acceptable: 3 Rejected: 0`, zero findings** (see `scripts/kosit-check.md`). Run `./scripts/kosit-check.sh` yourself before relying on it. |
+| **KoSIT conformance of the fixtures** | Checked on release against the official validator 1.6.2 / XRechnung 3.0.2 config — for UBL: the UBL 2.1 XSD, the EN 16931 schematron and the XRechnung CIUS schematron; for CII: the UN/CEFACT D16B XSD, the EN 16931 CII schematron and the XRechnung CII schematron. Seven documents, not a parity suite — **run 2026-08-11, `Acceptable: 7 Rejected: 0`, zero findings** (see `scripts/kosit-check.md`, which also records the two findings the CII run caught first). Run `./scripts/kosit-check.sh` yourself before relying on it. |
 
 Rules implemented, by family. This list is maintained by hand; the
 [rule reference](https://attestwire.com/rules/) derives its own from the engine.
@@ -313,17 +522,17 @@ sees no reference to a list drops it.
 | **XRechnung Extension and CVD profiles** | `BR-DEX-*` and `BR-DE-CVD-*` apply to customization ids this build does not emit. |
 | **Rules that cannot be tested mechanically** | `BR-CO-05`, `BR-CO-06`, `BR-CO-07` and `BR-CO-08` require a reason code and a reason text to "indicate the same type of allowance". The reference schematron binds all four to `true()` — the regulator does not test them either. `BR-CO-25` is absent from both the reference schematron and Peppol's, so implementing it would reject documents the authority accepts. |
 | **Rules the generator controls** | `BR-01` and `BR-DE-21` constrain BT-24, which `generateXRechnungUBL` derives from `profile`; the only override is `GenerateOptions.customizationId`, which `validateInput` never sees. `BR-DE-13` is in the same position. They belong to a document-validation entry point, not an input pre-flight. |
-| **Validating existing XML** | Only the JSON input model is validated. `TeachingError.xpath` is populated in anticipation of this. |
-| **CII syntax** | `validateInput` runs the profile's rules against the JSON model, but no CII document is generated: `generateXRechnungUBL` throws `UnsupportedProfileError` for `xrechnung-cii`. |
-| **Factur-X / ZUGFeRD PDF** | Not started. `facturx-en16931` throws `UnsupportedProfileError` on generation. |
+| **Validating existing XML** | `parseUblInvoice` now reads a UBL 2.1 `Invoice` document into the input model, so an existing file can be checked: parse it, then `validateInput` the result. That is a **pre-flight over the parsed input, not a schematron over the document**. Two consequences. First, a rule that constrains the XML rather than the input — `BR-01`, `BR-DE-13`, `BR-DE-21` on BT-24, and the rules the generator controls — still does not run. Second, the reader recomputes the totals and the VAT breakdown from the lines, so what is checked is the arithmetic of the *model*, with the document's own declared totals compared against it. `TeachingError.xpath` is populated but is not yet derived from the parsed document. |
+| **Factur-X / ZUGFeRD as a PDF** | Not started, and not planned in this package. Factur-X and ZUGFeRD are CII XML embedded in a PDF/A-3 container: the XML must be attached under a fixed name (`factur-x.xml`, except for the XRECHNUNG reference profile, which uses `xrechnung.xml`), the PDF must be PDF/A-3 conformant, and Germany requires `/AFRelationship = Alternative` for the BASIC, EN 16931, EXTENDED and XRECHNUNG profiles. `generateCii({ profile: "facturx-en16931" })` gives you the **CII XML payload** and nothing else. Take it to a PDF/A-3 library to make a Factur-X *file*. |
+| **CII credit notes** | A CII credit note is an invoice with a credit-note BT-3 rather than a separate root element, so the CII path is closer to supporting one than the UBL path is — but the input model and much of the rule set are still written for an invoice, so `generateCii` refuses the same six codes. |
+| **Peppol rules inside the XRechnung schematron** | KoSIT's XRechnung schematron — both the UBL and the CII one — includes a few `PEPPOL-EN16931-*` assertions (`R040` among them). This build gates its Peppol rules on `profile: "peppol-bis-3"`, so those do not run for an XRechnung input here even though KoSIT runs them. Found by the 2026-08-11 CII run; recorded in `scripts/kosit-check.md`. |
 | **Credit notes** | `invoiceTypeCode: "381"` is a fatal `ATW-CREDIT-NOTE-UNSUPPORTED` finding and generation throws. A UBL credit note is a separate `CreditNote` document (root `ubl:CreditNote`, `cac:CreditNoteLine`, `cbc:CreditedQuantity`), not an `Invoice` with a different BT-3. |
 | **VIES lookups** | Out of scope for this package. |
 
 ## Fixtures
 
-`fixtures/` ships in the npm tarball and holds three generated documents, all
-validated against the UBL 2.1 XSD and checked against the official KoSIT
-validator on release:
+`fixtures/` ships in the npm tarball and holds seven generated documents, all
+checked against the official KoSIT validator on release:
 
 - `xrechnung-ubl-minimal.xml` — domestic German invoice, two lines at 19% and 7%.
 - `xrechnung-ubl-reverse-charge.xml` — cross-border DE→NL, VAT category AE.
@@ -332,6 +541,17 @@ validator on release:
   invoicing period instead of a delivery date, a reference to the
   Abschlagsrechnung it settles, a prepayment of 500.00 and a rounding amount of
   0.47 that takes the payable figure to a round 1 680.00.
+- `xrechnung-cii-minimal.xml`, `xrechnung-cii-reverse-charge.xml`,
+  `xrechnung-cii-discount.xml` — the same three invoices in CII. The inputs
+  differ from the UBL ones only in `profile`, which is asserted by a test, so
+  the pair is a like-for-like comparison of the two bindings.
+- `xrechnung-cii-extended.xml` — a wide CII invoice added so the validator sees
+  the groups the other three never reach: payee (BG-10), seller tax
+  representative (BG-11), direct debit (BG-19) with mandate, SEPA creditor
+  identifier and debited account, deliver-to party and address (BG-13/BG-15),
+  two supporting documents (one external, one with an embedded attachment), the
+  VAT accounting currency and BT-111, the tax point date, a gross price with a
+  discount, and the full set of item identifiers.
 
 Regenerate and re-verify:
 
@@ -342,8 +562,8 @@ node scripts/emit-fixtures.mjs
 ```
 
 `kosit-check.sh` takes `JAVA_BIN=/path/to/bin/java` if `java` is not on your
-`PATH`. It has not been run against 0.2.0 — see the note at the top of this
-README.
+`PATH`. Re-run it whenever a fixture is added: a new fixture is a document
+nobody has validated.
 
 `npm test` asserts the committed XML still matches current output, so generator
 drift shows up as a test failure rather than a stale file.
@@ -352,7 +572,7 @@ drift shows up as a test failure rather than a stale file.
 
 ```bash
 npm install
-npm test      # 783 tests
+npm test      # 1,040 tests
 npm run build
 ```
 

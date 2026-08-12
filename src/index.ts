@@ -15,6 +15,43 @@ export {
   type UblGeneratableProfile,
 } from "./generate.js";
 export {
+  generateCii,
+  CII_GENERATABLE_PROFILES,
+  CII_NAMESPACES,
+  SUPPORTING_DOCUMENT_TYPE_CODE,
+  TENDER_OR_LOT_DOCUMENT_TYPE_CODE,
+  UnsupportedCiiProfileError,
+  toCiiDate,
+  type CiiGeneratableProfile,
+} from "./generate-cii.js";
+export {
+  parseUblInvoice,
+  UnsupportedSyntaxError,
+  UnsupportedCreditNoteError,
+  type ParsedInvoice,
+  type ParseUblOptions,
+  type UnmappedElement,
+} from "./parse.js";
+export {
+  parseCiiInvoice,
+  UnsupportedCiiSyntaxError,
+  fromCiiDate,
+  type ParseCiiOptions,
+} from "./parse-cii.js";
+export {
+  parseXml,
+  attr,
+  firstChild,
+  childrenNamed,
+  ParseError,
+  XmlSyntaxError,
+  XmlSecurityError,
+  DEFAULT_XML_LIMITS,
+  type XmlLimits,
+  type XmlElement,
+  type XmlAttribute,
+} from "./xml-parse.js";
+export {
   computeTotals,
   lineNetAmount,
   round2,
@@ -28,6 +65,10 @@ export {
   minimalXRechnung,
   reverseChargeXRechnung,
   discountedXRechnung,
+  minimalXRechnungCii,
+  reverseChargeXRechnungCii,
+  discountedXRechnungCii,
+  extendedXRechnungCii,
 } from "./fixtures.js";
 
 /**

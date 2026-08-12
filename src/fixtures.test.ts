@@ -3,11 +3,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { generateXRechnungUBL, validateInput, computeTotals } from "./index.js";
+import {
+  generateCii,
+  generateXRechnungUBL,
+  validateInput,
+  computeTotals,
+} from "./index.js";
 import {
   discountedXRechnung,
+  discountedXRechnungCii,
+  extendedXRechnungCii,
   minimalXRechnung,
+  minimalXRechnungCii,
   reverseChargeXRechnung,
+  reverseChargeXRechnungCii,
 } from "./fixtures.js";
 import type { InvoiceInput } from "./types.js";
 
@@ -19,6 +28,45 @@ const cases: [string, InvoiceInput][] = [
   ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung],
   ["xrechnung-ubl-discount.xml", discountedXRechnung],
 ];
+
+const ciiCases: [string, InvoiceInput][] = [
+  ["xrechnung-cii-minimal.xml", minimalXRechnungCii],
+  ["xrechnung-cii-reverse-charge.xml", reverseChargeXRechnungCii],
+  ["xrechnung-cii-discount.xml", discountedXRechnungCii],
+  ["xrechnung-cii-extended.xml", extendedXRechnungCii],
+];
+
+describe("committed CII fixtures", () => {
+  it.each(ciiCases)("%s is byte-identical to current output", (name, input) => {
+    // If this fails, the generator changed: re-run
+    //   npm run build && node scripts/emit-fixtures.mjs
+    // and then re-run ./scripts/kosit-check.sh before committing the diff. The
+    // recorded KoSIT verdict only covers the documents in fixtures/.
+    expect(generateCii(input)).toBe(read(name));
+  });
+
+  it.each(ciiCases)("%s comes from an input with no findings at all", (_name, input) => {
+    const result = validateInput(input);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.information).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("the CII and UBL fixtures are the same three invoices in two syntaxes", () => {
+    // The point of the pairing: one InvoiceInput, two bindings. If these ever
+    // diverge on anything but `profile`, the comparison stops meaning anything.
+    const pairs: [InvoiceInput, InvoiceInput][] = [
+      [minimalXRechnung, minimalXRechnungCii],
+      [reverseChargeXRechnung, reverseChargeXRechnungCii],
+      [discountedXRechnung, discountedXRechnungCii],
+    ];
+    for (const [ubl, cii] of pairs) {
+      expect(cii).toEqual({ ...ubl, profile: "xrechnung-cii" });
+      expect(computeTotals(cii)).toEqual(computeTotals(ubl));
+    }
+  });
+});
 
 describe("committed fixtures", () => {
   it.each(cases)("%s is byte-identical to current output", (name, input) => {

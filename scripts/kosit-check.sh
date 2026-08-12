@@ -3,7 +3,7 @@
 #
 # Our own rule engine is a reimplementation, and the only way to know the XML it
 # produces agrees with the regulator is to run the regulator's own tool over it.
-# Scope: the two release fixtures, not the rule set — this is a conformance
+# Scope: every fixture in fixtures/, not the rule set — this is a conformance
 # check on those documents, not a schematron parity suite. Everything is
 # downloaded into a scratch
 # directory; nothing is installed system-wide.

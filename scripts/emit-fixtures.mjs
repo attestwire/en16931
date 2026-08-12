@@ -14,11 +14,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { generateXRechnungUBL, validateInput } from "../dist/index.js";
+import { generateCii, generateXRechnungUBL, validateInput } from "../dist/index.js";
 import {
   discountedXRechnung,
+  discountedXRechnungCii,
+  extendedXRechnungCii,
   minimalXRechnung,
+  minimalXRechnungCii,
   reverseChargeXRechnung,
+  reverseChargeXRechnungCii,
 } from "../dist/fixtures.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -26,13 +30,17 @@ const outDir = join(here, "..", "fixtures");
 mkdirSync(outDir, { recursive: true });
 
 const documents = [
-  ["xrechnung-ubl-minimal.xml", minimalXRechnung],
-  ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung],
-  ["xrechnung-ubl-discount.xml", discountedXRechnung],
+  ["xrechnung-ubl-minimal.xml", minimalXRechnung, generateXRechnungUBL],
+  ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung, generateXRechnungUBL],
+  ["xrechnung-ubl-discount.xml", discountedXRechnung, generateXRechnungUBL],
+  ["xrechnung-cii-minimal.xml", minimalXRechnungCii, generateCii],
+  ["xrechnung-cii-reverse-charge.xml", reverseChargeXRechnungCii, generateCii],
+  ["xrechnung-cii-discount.xml", discountedXRechnungCii, generateCii],
+  ["xrechnung-cii-extended.xml", extendedXRechnungCii, generateCii],
 ];
 
 let failed = false;
-for (const [filename, input] of documents) {
+for (const [filename, input, generate] of documents) {
   const result = validateInput(input);
   if (!result.valid) {
     failed = true;
@@ -42,7 +50,7 @@ for (const [filename, input] of documents) {
     }
     continue;
   }
-  const xml = generateXRechnungUBL(input);
+  const xml = generate(input);
   writeFileSync(join(outDir, filename), xml, "utf8");
   const warnings = result.warnings.length
     ? ` (${result.warnings.length} warning(s): ${result.warnings.map((w) => w.rule).join(", ")})`
