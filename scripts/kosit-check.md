@@ -3,8 +3,8 @@
 Our rule engine is a reimplementation of EN 16931 and the XRechnung CIUS. The
 only way to know our *output* agrees with the regulator is to run the
 regulator's own tool against it. That is what `scripts/kosit-check.sh` does: it
-validates the two release fixtures. It is a conformance check on those two
-documents, not a parity suite over the rule set.
+validates every fixture in `fixtures/` — three of them today. It is a
+conformance check on those documents, not a parity suite over the rule set.
 
 ## Running it
 
@@ -31,23 +31,29 @@ nothing system-wide:
 
 Reports are written to `<workdir>/out/*-report.xml`.
 
-The generator is unchanged since the run recorded below, and `npm test` asserts
-both committed fixtures are still byte-identical to current output — so that
-result stands. Re-run the check after any change to `generate.ts`, `totals.ts`
-or `xml.ts`; a rule-set change alone cannot alter the emitted document.
+`npm test` asserts the committed fixtures are still byte-identical to current
+output, so the recorded result stands as long as the fixture set and the
+generator are unchanged. Re-run the check after any change to `generate.ts`,
+`totals.ts` or `xml.ts`, **and whenever a fixture is added** — a rule-set change
+alone cannot alter the emitted document, but a new fixture is a document nobody
+has validated. attestwire.com/llms.txt states this result and scopes it to
+"the three fixtures shipped in the repository"; that sentence is only true
+while the record below matches `fixtures/`.
 
 ## Last recorded result
 
-Run on 2026-08-09 with validator 1.6.2 and XRechnung configuration 3.0.2
-(2026-01-31), against both committed fixtures:
+Run on 2026-08-11 with validator 1.6.2 and XRechnung configuration 3.0.2
+(2026-01-31), against all three committed fixtures:
 
 | Fixture | XSD (UBL 2.1) | Schematron EN 16931 | Schematron XRechnung CIUS | Acceptance |
 | --- | --- | --- | --- | --- |
+| `xrechnung-ubl-discount.xml` | pass | pass | pass | ACCEPTABLE |
 | `xrechnung-ubl-minimal.xml` | pass | pass | pass | ACCEPTABLE |
 | `xrechnung-ubl-reverse-charge.xml` | pass | pass | pass | ACCEPTABLE |
 
-`Acceptable: 2  Rejected: 0`, with zero error, warning or information messages
-in either report.
+`Acceptable: 3  Rejected: 0`. The three report XMLs contain zero
+`failed-assert`, zero `successful-report` and zero `rep:message` elements — so
+"no error, warning or information findings" is a count, not an impression.
 
 ### What the check caught
 
@@ -69,11 +75,16 @@ documents come back completely silent.
 
 ## Scope of the claim
 
-Passing KoSIT on two fixtures means our *output* is conformant for the paths
+Passing KoSIT on three fixtures means our *output* is conformant for the paths
 those fixtures exercise. It does **not** mean our *rule engine* has reached
-schematron parity — we implement 126 of the ~180 rules that apply to a UBL
-invoice under XRechnung, and this script exercises two documents, so calling it
-a parity suite would be wrong. A document our engine accepts can still be rejected
+schematron parity: the engine raises 251 rule ids reachable from caller input
+(the number the site publishes, harvested by executing the library), but that
+is a count of what we implement across EN 16931, the XRechnung CIUS and Peppol
+BIS 3 — not a fraction of what the XRechnung schematron asserts, which nothing
+in this repo measures. No ratio is quoted here for that reason; the previous
+"126 of ~180" predated v0.2.0 and was never re-derived. This script exercises
+three documents, so calling it a parity suite would be wrong either way. A
+document our engine accepts can still be rejected
 by KoSIT. Treat `validateInput` as a fast, teaching-oriented pre-flight and
 KoSIT as the authority. Closing that gap is tracked as schematron parity on the
 roadmap.

@@ -5,6 +5,30 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-08-11
+
+Documentation correctness only. No code, no rule, no output changes.
+
+0.2.0 was published on 2026-08-10. The KoSIT conformance run happened on
+2026-08-11 — one day later — so the README inside the published 0.2.0 tarball
+states, in bold, that the run "has not been performed". That was true when
+written and could not be edited without republishing, while attestwire.com
+correctly reported the fixtures passing. Two of our own artefacts contradicted
+each other on the one claim we invite people to verify.
+
+- **Fixed** — the README now records the actual result: validator 1.6.2,
+  XRechnung configuration 3.0.2, three committed fixtures, `Acceptable: 3
+  Rejected: 0`, zero findings at any severity. The scope caveat is unchanged:
+  this is a conformance check on three documents, not a schematron parity suite.
+- **Fixed** — removed the `zugferd` keyword from `package.json`. The only
+  ZUGFeRD code in this package is a test asserting that a `zugferd-2.3` profile
+  *throws*. Advertising a format the library refuses to emit is an overclaim,
+  and npm keyword search is a discovery surface.
+- **Added** — `src/readme-kosit-claim.test.ts`, a release gate that fails the
+  build whenever `README.md` and `scripts/kosit-check.md` disagree about whether
+  the KoSIT run happened, in either direction. A published tarball cannot be
+  edited; this makes the contradiction impossible to ship again.
+
 ## [0.2.0] — 2026-08-10
 
 Closes the gap between what the input model can say and what EN 16931 lets an

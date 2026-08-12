@@ -14,11 +14,14 @@ against the official [KoSIT validator](https://github.com/itplr-kosit/validator)
 XRechnung CIUS schematron) on release. Reproduce it yourself with
 [`scripts/kosit-check.sh`](scripts/kosit-check.sh), which needs a JDK.
 
-**The KoSIT run for 0.2.0 has not been performed**: the machine this release was
-built on has no Java runtime. The XSD validation that *was* run proves element
-order and schema validity and says nothing about the schematron, which is where
-every EN 16931 and XRechnung rule lives — so treat the schematron result as
-unverified for this version until you run the script yourself. Even a clean run
+**The KoSIT run was performed on 2026-08-11** — validator 1.6.2, XRechnung
+configuration 3.0.2, over the three committed fixtures: `Acceptable: 3
+Rejected: 0`, with zero findings at any severity. The recorded output is in
+[`scripts/kosit-check.md`](scripts/kosit-check.md). (For the record: 0.2.0 was
+published on 2026-08-10, one day *before* that run, so the README inside the
+0.2.0 tarball says the run had not happened. It had not, yet. This is 0.2.1.)
+
+Even a clean run
 is a conformance check on three documents, not a parity suite: it says nothing
 about the paths those three fixtures do not exercise, and `validateInput` is a
 pre-flight rather than a schematron (see
@@ -195,7 +198,7 @@ is `1.00`, and `(2.675).toFixed(2)` is `"2.67"`. Both are wrong for tax.
 | **BT coverage** | BT-1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161. |
 | **Arithmetic** | BT-131 = quantity × (BT-146 / BT-149) − Σ BT-136 + Σ BT-141; BT-106 = Σ BT-131; BT-107 = Σ BT-92; BT-108 = Σ BT-99; BT-109 = BT-106 − BT-107 + BT-108; the BG-23 taxable amount per (category, rate) group nets document allowances out and charges in; BT-117 from BT-116 × BT-119; BT-110 = Σ BT-117; BT-112 = BT-109 + BT-110; BT-115 = BT-112 − BT-113 + BT-114. Per-line half-up rounding, and sums taken over the rounded values. BT-107 and BT-108 stay separate sums even where the breakdown nets them — that asymmetry is the standard's. |
 | **Rules** | 287 regulation rules with teaching errors (enumerated below), plus four library-limitation findings (`ATW-CREDIT-NOTE-UNSUPPORTED`, `ATW-DECLARED-TOTAL-NOT-FINITE`, `ATW-VAT-CATEGORY-UNSUPPORTED`, `ATW-DATE-NOT-A-CALENDAR-DATE`) — 291 distinct rule ids. 251 are reachable from caller input; the other 40 constrain the library's own computed arithmetic and cannot be tripped by any input, which is what they are for. |
-| **KoSIT conformance of the fixtures** | Checked on release against the official validator 1.6.2 / XRechnung 3.0.2 config: XSD, EN 16931 schematron and XRechnung CIUS schematron. Three documents, not a parity suite — **and the 0.2.0 run has not been performed on the build machine, which has no JDK.** Run `./scripts/kosit-check.sh` yourself before relying on it. |
+| **KoSIT conformance of the fixtures** | Checked on release against the official validator 1.6.2 / XRechnung 3.0.2 config: XSD, EN 16931 schematron and XRechnung CIUS schematron. Three documents, not a parity suite — **run 2026-08-11, `Acceptable: 3 Rejected: 0`, zero findings** (see `scripts/kosit-check.md`). Run `./scripts/kosit-check.sh` yourself before relying on it. |
 
 Rules implemented, by family. This list is maintained by hand; the
 [rule reference](https://attestwire.com/rules/) derives its own from the engine.
