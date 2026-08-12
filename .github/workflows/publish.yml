@@ -1,60 +1,76 @@
-# Publish to npm on a published GitHub release, with no token anywhere.
-#
-# This uses npm trusted publishing (OIDC): npm is configured to trust
-# attestwire/en16931's `publish.yml`, and the short-lived id-token minted below
-# is what authenticates the publish. There is deliberately no NODE_AUTH_TOKEN,
-# no NPM_TOKEN and no secrets context in this file — a long-lived token is the
-# thing this workflow exists to make unnecessary.
-#
-# Provenance is attached automatically by trusted publishing; do not add
-# --provenance, which conflicts with it.
 name: Publish
 
-on:
-  release:
-    types: [published]
+# Trusted publishing (OIDC). No npm token exists anywhere — not in the repo,
+# not in Actions secrets, not on a laptop. npm verifies the identity of this
+# workflow directly against the package's configured trusted publisher, and
+# mints a short-lived credential for the publish only.
+#
+# This is also the only route that survives npm's deprecation of
+# bypass-2FA tokens for direct publishing.
+#
+# Setup on npmjs.com (once, per package):
+#   Package → Settings → Trusted Publisher → GitHub Actions
+#     Organization or user : attestwire
+#     Repository           : en16931
+#     Workflow filename    : publish.yml
+#     Environment          : (leave blank)
+#
+# To release: bump the version in package.json, update CHANGELOG.md, push,
+# then run this workflow from the Actions tab (or push a v* tag).
 
-permissions:
-  id-token: write # OIDC token for npm trusted publishing
-  contents: read
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
 
 jobs:
   publish:
-    name: npm publish
     runs-on: ubuntu-latest
-    # Releases are cut from v* tags; anything else is not a release of this package.
-    if: startsWith(github.event.release.tag_name, 'v')
+
+    permissions:
+      # Required for OIDC. Without this the publish falls back to looking for
+      # a token and fails.
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          registry-url: "https://registry.npmjs.org"
           cache: npm
-          registry-url: https://registry.npmjs.org
 
-      # Trusted publishing needs npm 11.5.1 or newer; Node 22 still ships npm 10.
-      - name: Upgrade npm
+      # Trusted publishing requires npm >= 11.5.1, which is newer than the npm
+      # bundled with Node 22. Upgrade explicitly rather than relying on the
+      # runner image.
+      - name: Upgrade npm for trusted publishing
         run: |
           npm install -g npm@latest
           npm --version
 
       - run: npm ci
 
+      # prepublishOnly runs build + test again during `npm publish`; running
+      # them here first means a failure surfaces before we touch the registry.
       - run: npm run build
-
       - run: npm test
 
-      # A tag that disagrees with package.json publishes the wrong thing under
-      # the right name, so fail before the registry sees it.
-      - name: Check tag matches package version
+      # Refuse to publish a version that is already on the registry. Without
+      # this the job fails late, inside npm publish, with a noisier error.
+      - name: Check version is unpublished
         run: |
-          tag="${{ github.event.release.tag_name }}"
-          pkg="v$(node -p "require('./package.json').version")"
-          if [ "$tag" != "$pkg" ]; then
-            echo "release tag $tag does not match package.json $pkg" >&2
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Publishing $NAME@$VERSION"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::error::$NAME@$VERSION is already published. Bump the version first."
             exit 1
           fi
 
+      # --provenance attaches a signed attestation linking the tarball to this
+      # workflow run and this commit. Free, and it is the thing that makes the
+      # supply chain checkable by someone who does not trust us.
       - name: Publish
-        run: npm publish
+        run: npm publish --provenance --access public
