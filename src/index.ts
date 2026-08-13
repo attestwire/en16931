@@ -8,6 +8,9 @@ export {
   INVOICED_OBJECT_DOCUMENT_TYPE_CODE,
   UBL_GENERATABLE_PROFILES,
   CREDIT_NOTE_TYPE_CODES,
+  documentKindOf,
+  isCreditNote,
+  type DocumentKind,
   GenerationError,
   UnsupportedProfileError,
   UnsupportedDocumentTypeError,
@@ -25,6 +28,7 @@ export {
   type CiiGeneratableProfile,
 } from "./generate-cii.js";
 export {
+  parseUbl,
   parseUblInvoice,
   UnsupportedSyntaxError,
   UnsupportedCreditNoteError,
@@ -69,6 +73,10 @@ export {
   reverseChargeXRechnungCii,
   discountedXRechnungCii,
   extendedXRechnungCii,
+  creditNoteXRechnung,
+  creditNoteDiscountXRechnung,
+  creditNoteXRechnungCii,
+  creditNoteDiscountXRechnungCii,
 } from "./fixtures.js";
 
 /**

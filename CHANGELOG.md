@@ -5,6 +5,96 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-08-13
+
+**Credit notes.** The package's largest functional gap is closed: UBL
+`CreditNote` and CII type-code-381 documents are now generated, parsed and
+validated end to end. Also in this release: two well-formedness holes in the
+XML reader, both named by an external review and reproduced against the
+published 0.4.0 build before being fixed.
+
+**This is 0.5.0 and not 0.4.1 for the same reason 0.4.0 was not 0.3.1: it
+rejects input 0.4.0 accepted** (the two reader fixes below), and it accepts
+input 0.4.0 refused (credit notes, which previously raised
+`ATW-CREDIT-NOTE-UNSUPPORTED`).
+
+### Credit notes
+
+- **Added** — **`invoiceTypeCode` is the whole API.** Set `"381"` on the same
+  input you already build and `generateXRechnungUBL` emits a `ubl:CreditNote`
+  (root, namespace, `cac:CreditNoteLine`/`cbc:CreditedQuantity`,
+  `cbc:CreditNoteTypeCode`), while the CII generator emits `ram:TypeCode` 381
+  into the unchanged `CrossIndustryInvoice` shape — that asymmetry is the two
+  standards', not ours. No new entry points for the ordinary case; BT-3 is the
+  discriminant in the regulation, so it is the discriminant here. Parsers
+  detect the document from the root element (`parseUbl` is the new canonical
+  name; `parseUblInvoice` remains as a permanent alias) and `validateInput`
+  runs the full rule surface — EN 16931 binds the same rule ids to both
+  document types, and the whole BR-*/BR-CO-*/BR-DE-* surface runs unchanged on
+  the semantic model. Helpers: `isCreditNote(input)`, `documentKindOf(code)`.
+
+- **Verified against KoSIT, not claimed.** Four new committed fixtures
+  (`xrechnung-{ubl,cii}-credit-note{,-discount}.xml`) put the total at eleven,
+  and the validator (1.6.2, XRechnung 3.0.2 configuration) reports
+  `Acceptable: 11  Rejected: 0` — the UBL credit notes routed by the
+  validator's own scenario matching to its dedicated UBL-CreditNote schema.
+  Probe documents recorded in `scripts/kosit-check.md` settled the contested
+  bindings, including two deliberate rejections (`cbc:DueDate` is not in the
+  CreditNote schema; `CreditNoteTypeCode` 380 fails BR-CL-01).
+
+- **Changed** — `BR-CL-01` accepts the union of the invoice and credit-note
+  halves of UNTDID 1001, matching the CII schematron literally; `BR-DE-17`'s
+  message and XPath are document-aware. New advisories, none fatal:
+  `ATW-CREDIT-NOTE-NEGATIVE-AMOUNTS` (warning — a credit note stating negative
+  amounts mixes two legal idioms; KoSIT accepts both, so we advise rather than
+  reject), `ATW-CREDIT-NOTE-DUE-DATE-UNBOUND` and
+  `ATW-CREDIT-NOTE-PROJECT-REFERENCE-UNBOUND` (fields with no UBL CreditNote
+  element to land in), and `ATW-CREDIT-NOTE-NO-PRECEDING-INVOICE`
+  (information — BG-3 is how a credit note names the invoice it corrects, but
+  no XRechnung rule requires it; BR-DE-26 fires on type 384 only, verified
+  against schematron 2.5.0 before deciding not to invent the requirement).
+  Removed: `ATW-CREDIT-NOTE-UNSUPPORTED`. Counts: 265 reachable, 294 total.
+
+- **Out of scope, stated plainly:** self-billing workflows and the
+  `SelfBilledInvoice`/`SelfBilledCreditNote` roots, `ubl:DebitNote`, and BT-11
+  on a UBL credit note (the schema has no element for it). Most
+  `TeachingError.xpath` values still read `/ubl:Invoice/…` on credit notes;
+  the credit-note-specific rules name `/ubl:CreditNote`. Both limitations are
+  in the README.
+
+### Reading
+
+Both reader fixes below came from an external review
+(`STRATEGIC_ASSESSMENT.md` §2.4) and were knowingly left out of 0.4.0 as
+lower-priority than the security and arithmetic defects that release carried.
+Both documents are ill-formed under XML 1.0 and were parsed anyway, so nothing
+that was *correct* stops working — but if you generate documents with a tool of
+your own, a comment or an attribute list it emits may now be refused where it
+previously went through. Both refusals are `XmlSyntaxError`, which the API
+surfaces as HTTP 400 `xml_malformed`.
+
+- **Fixed** — **an element could carry the same attribute twice.**
+  `<r a="1" a="2"/>` parsed, both attributes landed in `attributes`, and `attr()`
+  returned the first — so a document stating two different `@currencyID` or
+  `@schemeID` values on one element was read by position and the losing value
+  vanished from the invoice with nothing raised. XML 1.0 forbids it, and the
+  duplicate is now detected by **expanded name** (namespace URI plus local name)
+  rather than by the text as written: `p:x` and `q:x` with both prefixes bound to
+  one URI are the same attribute written twice and are refused, while the same
+  local name under two genuinely different namespaces is legal and still parses.
+  The check runs after prefix resolution, which is the only point at which the
+  element's namespace context is known. New code: `xml_duplicate_attribute`.
+
+- **Fixed** — **a comment could contain `--`.** `<r><!-- bad -- comment --></r>`
+  was accepted. `-->` is the only comment terminator there is, so a comment
+  holding `--` has no single reading — a writer who meant it as text and a reader
+  who takes it as the start of the terminator disagree about where the comment
+  ends, and therefore about how much of the document is markup. A comment ending
+  in a hyphen (`--->`) is refused on the same grounds. Single hyphens separated
+  by other characters are ordinary text and are unaffected: `<!-- a- -b -->` and
+  `<!-- BT-1 is the invoice number -->` both still parse. New code:
+  `xml_bad_comment`.
+
 ## [0.4.0] — 2026-08-12
 
 Security, correctness and rule-coverage fixes from a four-lens adversarial

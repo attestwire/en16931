@@ -78,12 +78,26 @@ describe("BR-CL-01 invoice type code", () => {
     expect(allIds(withInvoice({ invoiceTypeCode: "999" }))).toContain("BR-CL-01");
   });
 
-  it("rejects a credit-note code carried on an invoice", () => {
-    // 381 is a perfectly valid UNTDID 1001 code — on a CreditNote document.
-    const ids = allIds(withInvoice({ invoiceTypeCode: "381" }));
-    expect(ids).toContain("BR-CL-01");
-    const finding = findingFor(withInvoice({ invoiceTypeCode: "381" }), "BR-CL-01")!;
+  // ⚠ Replaced 2026-08-13. This asserted that a credit-note code fails
+  // BR-CL-01, which was true of the document this build used to emit for it —
+  // an ubl:Invoice, where the invoice half of UNTDID 1001 is the applicable
+  // list. 0.5.0 emits a ubl:CreditNote for those codes, so the applicable list
+  // is the credit-note half and the code passes. The rule did not change; the
+  // document did.
+  it("accepts every code on the credit-note half of the list", () => {
+    for (const code of ["381", "261", "262", "296", "308", "396", "83"]) {
+      expect(
+        allIds(withInvoice({ invoiceTypeCode: code })),
+        code,
+      ).not.toContain("BR-CL-01");
+    }
+  });
+
+  it("names both halves when the code is on neither", () => {
+    const finding = findingFor(withInvoice({ invoiceTypeCode: "999" }), "BR-CL-01")!;
     expect(finding.message).toContain("credit-note");
+    expect(finding.message).toContain("cbc:CreditNoteTypeCode");
+    expect(finding.message).toContain("cbc:InvoiceTypeCode");
   });
 });
 

@@ -16,6 +16,10 @@ import { fileURLToPath } from "node:url";
 
 import { generateCii, generateXRechnungUBL, validateInput } from "../dist/index.js";
 import {
+  creditNoteDiscountXRechnung,
+  creditNoteDiscountXRechnungCii,
+  creditNoteXRechnung,
+  creditNoteXRechnungCii,
   discountedXRechnung,
   discountedXRechnungCii,
   extendedXRechnungCii,
@@ -33,10 +37,22 @@ const documents = [
   ["xrechnung-ubl-minimal.xml", minimalXRechnung, generateXRechnungUBL],
   ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung, generateXRechnungUBL],
   ["xrechnung-ubl-discount.xml", discountedXRechnung, generateXRechnungUBL],
+  ["xrechnung-ubl-credit-note.xml", creditNoteXRechnung, generateXRechnungUBL],
+  [
+    "xrechnung-ubl-credit-note-discount.xml",
+    creditNoteDiscountXRechnung,
+    generateXRechnungUBL,
+  ],
   ["xrechnung-cii-minimal.xml", minimalXRechnungCii, generateCii],
   ["xrechnung-cii-reverse-charge.xml", reverseChargeXRechnungCii, generateCii],
   ["xrechnung-cii-discount.xml", discountedXRechnungCii, generateCii],
   ["xrechnung-cii-extended.xml", extendedXRechnungCii, generateCii],
+  ["xrechnung-cii-credit-note.xml", creditNoteXRechnungCii, generateCii],
+  [
+    "xrechnung-cii-credit-note-discount.xml",
+    creditNoteDiscountXRechnungCii,
+    generateCii,
+  ],
 ];
 
 let failed = false;

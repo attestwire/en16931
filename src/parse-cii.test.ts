@@ -23,6 +23,8 @@ import {
   minimalXRechnung,
   minimalXRechnungCii,
   reverseChargeXRechnungCii,
+  creditNoteXRechnungCii,
+  creditNoteDiscountXRechnungCii,
 } from "./fixtures.js";
 import type { InvoiceInput } from "./types.js";
 
@@ -34,6 +36,8 @@ const cases: [string, InvoiceInput][] = [
   ["xrechnung-cii-reverse-charge.xml", reverseChargeXRechnungCii],
   ["xrechnung-cii-discount.xml", discountedXRechnungCii],
   ["xrechnung-cii-extended.xml", extendedXRechnungCii],
+  ["xrechnung-cii-credit-note.xml", creditNoteXRechnungCii],
+  ["xrechnung-cii-credit-note-discount.xml", creditNoteDiscountXRechnungCii],
 ];
 
 /** The error code a call throws, or undefined if it does not throw. */
@@ -257,13 +261,19 @@ describe("parseCiiInvoice: what it refuses", () => {
     expect((caught as Error).message).toContain("parseUblInvoice");
   });
 
-  it("refuses a credit note by BT-3, exactly as the UBL reader does", () => {
+  // ⚠ Replaced 2026-08-13: this asserted the BT-3 refusal 0.5.0 removes. In CII
+  // that refusal was always the odd one out — the document type is three digits
+  // on one element of one root element, and reading it needed no new code at
+  // all, only permission.
+  it("reads a credit note by BT-3, with no other difference from an invoice", () => {
     const credit = minimalXml.replace(
       "<ram:TypeCode>380</ram:TypeCode>",
       "<ram:TypeCode>381</ram:TypeCode>",
     );
-    expect(codeOf(() => parseCiiInvoice(credit))).toBe("unsupported_document_type");
-    expect(() => parseCiiInvoice(credit)).toThrow(UnsupportedCreditNoteError);
+    const { invoice } = parseCiiInvoice(credit);
+    const { invoice: asInvoice } = parseCiiInvoice(minimalXml);
+    expect(invoice.invoiceTypeCode).toBe("381");
+    expect({ ...invoice, invoiceTypeCode: "380" }).toEqual(asInvoice);
   });
 
   it("refuses something that is neither UBL nor CII", () => {

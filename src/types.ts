@@ -73,11 +73,36 @@ export interface InvoiceInput {
   issueDate: string; // BT-2, ISO 8601 date
   currency: string; // BT-5, ISO 4217
   /**
-   * BT-3, UNTDID 1001 invoice type code. Defaults to "380" (commercial invoice).
-   * BR-DE-17 restricts XRechnung to 326/380/381/384/389/875/876/877.
+   * BT-3, UNTDID 1001 document type code. Defaults to "380" (commercial
+   * invoice). BR-DE-17 restricts XRechnung to 326/380/381/384/389/875/876/877.
+   *
+   * **This field decides the document type.** Set it to `"381"` and you get a
+   * credit note: `generateXRechnungUBL` emits a `ubl:CreditNote` (its own root
+   * element and namespace, `cbc:CreditNoteTypeCode`, `cac:CreditNoteLine` with
+   * `cbc:CreditedQuantity`) and `generateCii` emits the same
+   * `CrossIndustryInvoice` it always does with `ram:TypeCode` 381 — because CII
+   * has no separate credit-note document. Everything else about the input is
+   * unchanged, which is the point: a credit note is one field away from the
+   * invoice it credits.
+   *
+   * There is no separate `documentType` discriminant on purpose. BT-3 already is
+   * one, and a second field would let this model express
+   * `{ documentType: "invoice", invoiceTypeCode: "381" }`, which is not a
+   * document.
+   *
+   * State the amounts **positively** on a credit note. The type code conveys the
+   * direction; negative amounts on top of it reverse it back, and
+   * `ATW-CREDIT-NOTE-NEGATIVE-AMOUNTS` says so.
    */
   invoiceTypeCode?: string;
-  /** BT-9 payment due date, ISO 8601. */
+  /**
+   * BT-9 payment due date, ISO 8601.
+   *
+   * ⚠ On a **UBL credit note** this lands in `cac:PaymentMeans/cbc:PaymentDueDate`
+   * rather than in `cbc:DueDate`, which that document does not have. With no
+   * `payment` group there is nowhere lawful to put it and it is dropped —
+   * reported first as `ATW-CREDIT-NOTE-DUE-DATE-UNBOUND`. CII is unaffected.
+   */
   dueDate?: string;
   /** BT-22 free-text note on the invoice. */
   note?: string;
@@ -95,7 +120,13 @@ export interface InvoiceInput {
   orderReference?: string;
   /** BT-14 sales order reference — your own order number, not the buyer's. */
   salesOrderReference?: string;
-  /** BT-11 project reference. */
+  /**
+   * BT-11 project reference.
+   *
+   * ⚠ A **UBL credit note** cannot carry this: `cac:ProjectReference` is not in
+   * `UBL-CreditNote-2.1.xsd` at all. It is dropped from that document and
+   * reported as `ATW-CREDIT-NOTE-PROJECT-REFERENCE-UNBOUND`. CII keeps it.
+   */
   projectReference?: string;
   /** BT-12 contract reference. */
   contractReference?: string;
@@ -122,7 +153,16 @@ export interface InvoiceInput {
   taxPointDate?: string;
   /** BG-14 invoicing period — the period the supply relates to. */
   invoicingPeriod?: InvoicingPeriod;
-  /** BG-3 preceding invoice references. Required in substance by BR-DE-26 for BT-3 = 384. */
+  /**
+   * BG-3 preceding invoice references — the invoice(s) this document corrects,
+   * credits or settles against.
+   *
+   * Required in substance by BR-DE-26 for BT-3 = 384 (corrected invoice). Not
+   * required for a credit note: BR-DE-26's test names 384 and only 384, on
+   * either document type. Supplying it anyway is the ordinary case for a credit
+   * note, and `ATW-CREDIT-NOTE-NO-PRECEDING-INVOICE` says so at `information`
+   * level — the flag the regulator uses for advice it then accepts.
+   */
   precedingInvoices?: PrecedingInvoiceReference[];
   seller: Party;
   buyer: Party;

@@ -2,6 +2,8 @@ import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
 import { computeTotals } from "./totals.js";
 import {
   COUNTRY_CODES_SET,
+  CREDIT_NOTE_TYPE_CODES_CL,
+  CREDIT_NOTE_TYPE_CODES_CL_SET,
   CURRENCY_CODES_SET,
   EAS_SCHEME_CODES_SET,
   INVOICE_TYPE_CODES,
@@ -57,15 +59,27 @@ const wrongCaseHint = (value: string, set: ReadonlySet<string>): string =>
 export const codelistRules: RuleFn[] = [
   // BR-CL-01: The document type code MUST be coded by the invoice and credit
   // note related code lists of UNTDID 1001.
+  //
+  // "and", not "or". The rule is one rule over two lists, and which list applies
+  // depends on the document the code produces — which is exactly what
+  // `documentKindOf` decides. A code on the invoice list emits an ubl:Invoice
+  // and is tested against the invoice list; a code on the credit-note list emits
+  // a ubl:CreditNote and is tested against the credit-note list. So membership
+  // of *either* list passes, and the check is the union.
+  //
+  // That is also literally what the CII schematron does: `EN16931-CII-validation.xsl`
+  // tests `ram:TypeCode` against one 62-code literal that is the union of the
+  // two, because CII has one type-code element for both document types.
   (inv) => {
     const code = normalise(inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE);
     if (INVOICE_TYPE_CODES_SET.has(code)) return null;
+    if (CREDIT_NOTE_TYPE_CODES_CL_SET.has(code)) return null;
     return err({
       rule: "BR-CL-01",
       field: "BT-3",
       severity: "fatal",
-      message: `The invoice type code (BT-3) must be a code from the invoice-related subset of UNTDID 1001, but "${code}" is not in it. UNTDID 1001 splits into an invoice list (carried on cbc:InvoiceTypeCode) and a credit-note list (carried on cbc:CreditNoteTypeCode of a separate CreditNote document); a credit-note code on an invoice fails this rule even though the code itself is perfectly valid. The invoice list holds ${INVOICE_TYPE_CODES.length} codes, beginning ${sample(INVOICE_TYPE_CODES, 6)}.`,
-      fix: 'Use "380" for an ordinary commercial invoice. Other codes you are likely to want: "326" partial invoice, "384" corrected invoice, "389" self-billed invoice, "875"/"876"/"877" construction invoices. Under XRechnung the list narrows further — BR-DE-17 admits only those plus "381".',
+      message: `The document type code (BT-3) must be a code from the invoice-related or the credit-note-related subset of UNTDID 1001, but "${code}" is in neither. The two lists decide which document you get: an invoice code emits a ubl:Invoice carrying cbc:InvoiceTypeCode (${INVOICE_TYPE_CODES.length} codes, beginning ${sample(INVOICE_TYPE_CODES, 6)}), a credit-note code emits a ubl:CreditNote carrying cbc:CreditNoteTypeCode (${CREDIT_NOTE_TYPE_CODES_CL.length} codes: ${sample(CREDIT_NOTE_TYPE_CODES_CL, 13)}). In CII both live on one ram:TypeCode and the schematron tests the union of the two lists.`,
+      fix: 'Use "380" for an ordinary commercial invoice and "381" for an ordinary credit note. Other codes you are likely to want: "326" partial invoice, "384" corrected invoice, "389" self-billed invoice, "875"/"876"/"877" construction invoices, "261" self-billed credit note. Under XRechnung the list narrows sharply — BR-DE-17 admits only 326, 380, 381, 384, 389, 875, 876 and 877.',
       example: `"invoiceTypeCode": "380"`,
       xpath: "/ubl:Invoice/cbc:InvoiceTypeCode",
       docsUrl: `${DOCS}/BR-CL-01`,

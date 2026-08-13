@@ -1,6 +1,7 @@
 import { allowanceChargeRules } from "./rules-allowance.js";
 import { codelistRules } from "./rules-codelists.js";
 import { coreRules } from "./rules-core.js";
+import { creditNoteRules } from "./rules-credit-note.js";
 import { decimalRules } from "./rules-decimals.js";
 import { germanRules } from "./rules-de.js";
 import { peppolRules } from "./rules-peppol.js";
@@ -24,6 +25,7 @@ import type { RuleFn } from "./rule-kit.js";
 export const extendedRules: RuleFn[] = [
   ...coreRules,
   ...codelistRules,
+  ...creditNoteRules,
   ...decimalRules,
   ...vatRules,
   ...allowanceChargeRules,

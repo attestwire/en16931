@@ -1,5 +1,11 @@
 /**
- * UBL 2.1 `Invoice` XML → the `InvoiceInput` model.
+ * UBL 2.1 `Invoice` or `CreditNote` XML → the `InvoiceInput` model.
+ *
+ * The document type is detected from the root element, not asked for: hand this
+ * function either document and it fills in the same semantic model, with BT-3
+ * (`invoiceTypeCode`) set from whichever type-code element the document carries.
+ * A credit note read here and regenerated comes back a credit note, because the
+ * generator makes the same decision from the same field.
  *
  * This is the inverse of `generate.ts`, and only of `generate.ts`: it reads the
  * same elements, in the same bindings, and puts them back in the same fields.
@@ -12,7 +18,7 @@
  * can still be rejected by KoSIT or by a receiving platform.
  */
 
-import { CREDIT_NOTE_TYPE_CODES, DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
+import { DEFAULT_INVOICE_TYPE_CODE } from "./document-type.js";
 import { NOTE_SUBJECT_CODES_SET } from "./codelists/note-subject.js";
 import {
   attr,
@@ -61,10 +67,16 @@ const PROFILE_BY_CUSTOMIZATION_ID: Record<string, Profile> = {
   "urn:cen.eu:en16931:2017": "en16931",
 };
 
+/**
+ * BT-3 assumed for a `CreditNote` root that carries no `cbc:CreditNoteTypeCode`.
+ * 381 = credit note (UNTDID 1001), the code the root element already asserts.
+ */
+const CREDIT_NOTE_DEFAULT_TYPE_CODE = "381";
+
 /** UNTDID 1153 code that marks an AdditionalDocumentReference as BT-18. */
 const INVOICED_OBJECT_CODE = "130";
 
-/** Thrown when the document is not a UBL 2.1 `Invoice`. */
+/** Thrown when the document is neither a UBL 2.1 `Invoice` nor a `CreditNote`. */
 export class UnsupportedSyntaxError extends ParseError {
   readonly rootElement: string;
   readonly rootNamespace: string;
@@ -72,10 +84,11 @@ export class UnsupportedSyntaxError extends ParseError {
   constructor(rootElement: string, rootNamespace: string, detail: string) {
     super(
       "unsupported_syntax",
-      `parseUblInvoice reads UBL 2.1 Invoice documents only. ${detail} ` +
+      `parseUbl reads UBL 2.1 Invoice and CreditNote documents only. ${detail} ` +
         `The root element found was <${rootElement}> in the namespace ` +
         `"${rootNamespace || "(none)"}"; a UBL invoice has the root element Invoice in ` +
-        `"${INVOICE_NS}". Parsing this document as a UBL invoice would produce an ` +
+        `"${INVOICE_NS}", and a UBL credit note the root element CreditNote in ` +
+        `"${CREDIT_NOTE_NS}". Parsing this document as one of those would produce an ` +
         `invoice object with almost every field missing, and a long list of findings ` +
         `that all point at the wrong problem, so this call refuses instead.`,
     );
@@ -84,20 +97,27 @@ export class UnsupportedSyntaxError extends ParseError {
   }
 }
 
-/** Thrown when BT-3 says the document is a credit note. */
+/**
+ * Thrown when BT-3 says the document is a credit note.
+ *
+ * ⚠ **Nothing throws this any more.** Since 0.5.0 a UBL `CreditNote` is read
+ * into the same `InvoiceInput` as an `Invoice`, with `invoiceTypeCode` carrying
+ * the code the document states, so the refusal this class announced no longer
+ * happens. It stays exported — and stays a `ParseError` with the same
+ * `unsupported_document_type` code — because removing an exported symbol breaks
+ * every `import` and every `instanceof` a caller has already written. A caller
+ * branching on it will simply never take that branch.
+ */
 export class UnsupportedCreditNoteError extends ParseError {
   readonly invoiceTypeCode: string;
 
   constructor(invoiceTypeCode: string) {
     super(
       "unsupported_document_type",
-      `This document carries the invoice type code (BT-3) "${invoiceTypeCode}", which ` +
-        `denotes a credit note. Credit notes are not supported: the input model, the ` +
-        `generator and a large part of the rule set are all written for an invoice, and ` +
-        `a UBL credit note is a different document (root element CreditNote, with ` +
-        `cac:CreditNoteLine and cbc:CreditedQuantity). Reading one into an InvoiceInput ` +
-        `would produce findings about the wrong document. Handle credit notes with ` +
-        `another tool until the CreditNote reader ships.`,
+      `This document carries the document type code (BT-3) "${invoiceTypeCode}". ` +
+        `Credit notes are supported since 0.5.0 — parseUbl reads a ubl:CreditNote into ` +
+        `the same model an ubl:Invoice produces — so nothing in this package raises ` +
+        `this error.`,
     );
     this.invoiceTypeCode = invoiceTypeCode;
   }
@@ -334,8 +354,16 @@ interface ReadLineResult {
   declaredNetAmount?: number;
 }
 
-function readLine(r: Reader, el: XmlElement): ReadLineResult {
-  const quantity = r.cbcEl(el, "InvoicedQuantity");
+function readLine(
+  r: Reader,
+  el: XmlElement,
+  quantityElement: string,
+): ReadLineResult {
+  // BT-129 is cbc:InvoicedQuantity on an invoice line and cbc:CreditedQuantity
+  // on a credit-note line. Reading the wrong one would leave the quantity at 0
+  // and the unit code (BT-130) empty, and the caller would then be told the line
+  // has no unit of measure — a finding about the reader, not about the document.
+  const quantity = r.cbcEl(el, quantityElement);
   const item = r.cac(el, "Item");
   const price = r.cac(el, "Price");
 
@@ -462,24 +490,30 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Read a UBL 2.1 `Invoice` document into the `InvoiceInput` model.
+ * Read a UBL 2.1 `Invoice` **or** `CreditNote` document into the `InvoiceInput`
+ * model.
  *
  * ```ts
- * const { invoice, unmapped } = parseUblInvoice(xmlString);
+ * const { invoice, unmapped } = parseUbl(xmlString);
  * const findings = validateInput(invoice);
  * ```
+ *
+ * The document type is detected from the root element and reported back in
+ * `invoice.invoiceTypeCode` (BT-3) — read from `cbc:InvoiceTypeCode` or from
+ * `cbc:CreditNoteTypeCode`, whichever the document carries. Feed the result
+ * straight back to `generateXRechnungUBL` and the same document type comes out,
+ * because the generator branches on the same field.
  *
  * @throws {XmlSecurityError} DOCTYPE present, a custom entity, or the document
  *   is over the size, depth or element limits.
  * @throws {XmlSyntaxError} the document is not well-formed, or uses a
  *   construct outside the accepted subset (mixed content, for instance).
- * @throws {UnsupportedSyntaxError} the root element is not a UBL `Invoice` —
- *   a CII document, a UBL `CreditNote`, or something else entirely.
- * @throws {UnsupportedCreditNoteError} BT-3 says the document is a credit note.
+ * @throws {UnsupportedSyntaxError} the root element is neither a UBL `Invoice`
+ *   nor a UBL `CreditNote` — a CII document, or something else entirely.
  *
- * All four extend `ParseError` and carry a stable `code`.
+ * All three extend `ParseError` and carry a stable `code`.
  */
-export function parseUblInvoice(
+export function parseUbl(
   xml: string,
   options: ParseUblOptions = {},
 ): ParsedInvoice {
@@ -494,30 +528,29 @@ export function parseUblInvoice(
         "Read it with parseCiiInvoice instead.",
     );
   }
-  if (root.namespace === CREDIT_NOTE_NS || root.local === "CreditNote") {
+  const creditNote =
+    root.namespace === CREDIT_NOTE_NS && root.local === "CreditNote";
+  if (!creditNote && (root.namespace !== INVOICE_NS || root.local !== "Invoice")) {
     throw new UnsupportedSyntaxError(
       root.qname,
       root.namespace,
-      "This is a UBL CreditNote, not a UBL Invoice. A credit note is a different " +
-        "document with its own root element and its own line element " +
-        "(cac:CreditNoteLine with cbc:CreditedQuantity), and it is not supported.",
-    );
-  }
-  if (root.namespace !== INVOICE_NS || root.local !== "Invoice") {
-    throw new UnsupportedSyntaxError(
-      root.qname,
-      root.namespace,
-      "The document is not a UBL invoice.",
+      "The document is not a UBL invoice or credit note.",
     );
   }
 
   const r = new Reader();
   r.enter(root);
 
-  const typeCode = (r.cbc(root, "InvoiceTypeCode") ?? DEFAULT_INVOICE_TYPE_CODE).trim();
-  if (CREDIT_NOTE_TYPE_CODES.has(typeCode)) {
-    throw new UnsupportedCreditNoteError(typeCode);
-  }
+  // BT-3 sits in a different element on each document, and the default only
+  // applies to an invoice: a CreditNote with no cbc:CreditNoteTypeCode is a
+  // document that failed its own schema (the element is mandatory there), and
+  // defaulting it to "380" would turn it back into an invoice on the way out.
+  // "381" is the honest default for a document whose root says credit note.
+  const typeCode = (
+    creditNote
+      ? (r.cbc(root, "CreditNoteTypeCode") ?? CREDIT_NOTE_DEFAULT_TYPE_CODE)
+      : (r.cbc(root, "InvoiceTypeCode") ?? DEFAULT_INVOICE_TYPE_CODE)
+  ).trim();
 
   const customizationId = r.cbc(root, "CustomizationID");
   const profileId = r.cbc(root, "ProfileID");
@@ -534,7 +567,10 @@ export function parseUblInvoice(
     lines: [],
   };
 
-  set(invoice, "dueDate", r.cbc(root, "DueDate"));
+  // BT-9. `cbc:DueDate` on an invoice; a credit note has no such element and
+  // carries it as `cac:PaymentMeans/cbc:PaymentDueDate` instead, which is read
+  // with the rest of the payment instructions below.
+  if (!creditNote) set(invoice, "dueDate", r.cbc(root, "DueDate"));
   set(invoice, "taxPointDate", r.cbc(root, "TaxPointDate"));
   set(invoice, "buyerAccountingReference", r.cbc(root, "AccountingCost"));
   set(invoice, "buyerReference", r.cbc(root, "BuyerReference"));
@@ -709,6 +745,15 @@ export function parseUblInvoice(
     const meansCodeEl = r.cbcEl(paymentMeans, "PaymentMeansCode");
     const payment: PaymentInstructions = { meansCode: meansCodeEl?.text ?? "" };
     if (meansCodeEl) set(payment, "meansName", attr(meansCodeEl, "name"));
+    // BT-9 on a credit note (see the note on cbc:DueDate above). Read on both
+    // documents: an invoice should not carry it (UBL-CR-412), but a document
+    // that does carry it is telling us its due date, and dropping the value
+    // because the element is in the wrong place would lose it silently. It
+    // round-trips back to cbc:DueDate, where an invoice belongs.
+    const paymentDueDate = r.cbc(paymentMeans, "PaymentDueDate");
+    if (paymentDueDate !== undefined && invoice.dueDate === undefined) {
+      invoice.dueDate = paymentDueDate;
+    }
     set(payment, "remittanceInformation", r.cbc(paymentMeans, "PaymentID"));
 
     const card = r.cac(paymentMeans, "CardAccount");
@@ -868,7 +913,11 @@ export function parseUblInvoice(
   }
   if (Object.keys(declared).length > 0) invoice.declaredTotals = declared;
 
-  const readLines = r.cacAll(root, "InvoiceLine").map((line) => readLine(r, line));
+  const readLines = r
+    .cacAll(root, creditNote ? "CreditNoteLine" : "InvoiceLine")
+    .map((line) =>
+      readLine(r, line, creditNote ? "CreditedQuantity" : "InvoicedQuantity"),
+    );
   invoice.lines = readLines.map((read) => read.line);
   if (readLines.some((read) => read.declaredNetAmount !== undefined)) {
     declared.lineNetAmounts = readLines.map((read) => read.declaredNetAmount);
@@ -882,6 +931,16 @@ export function parseUblInvoice(
   if (profileId !== undefined) result.profileId = profileId;
   return result;
 }
+
+/**
+ * The name this function had until 0.5.0, kept as an alias forever.
+ *
+ * It reads credit notes now, so "Invoice" in the name is no longer the whole
+ * truth — but a published entry point is a promise, and renaming one to improve
+ * a noun would break every caller for no functional gain. `parseUbl` is the
+ * name to reach for in new code; this one will not be removed.
+ */
+export const parseUblInvoice = parseUbl;
 
 /**
  * BT-24 → profile.

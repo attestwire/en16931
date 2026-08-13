@@ -538,10 +538,17 @@ describe("generateCii: refusals", () => {
     ).toThrow(UnsupportedCiiProfileError);
   });
 
-  it("refuses a credit-note type code, exactly as the UBL generator does", () => {
-    expect(() => generateCii({ ...minimal, invoiceTypeCode: "381" })).toThrow(
-      UnsupportedDocumentTypeError,
-    );
+  // ⚠ Replaced 2026-08-13, for the same reason as its UBL twin in
+  // generate.test.ts: the refusal it asserted is gone. What replaces it is the
+  // fact that makes CII credit notes so much less work than UBL ones — there is
+  // no second document to emit, so the type code is the entire difference.
+  it("emits a credit-note type code into the same document, with no other change", () => {
+    const invoice = generateCii({ ...minimal, invoiceTypeCode: "380" });
+    const creditNote = generateCii({ ...minimal, invoiceTypeCode: "381" });
+    expect(textAt(parse(creditNote), "rsm:ExchangedDocument/TypeCode")).toBe("381");
+    // Byte-for-byte identical apart from those three digits: CII has one root
+    // element for both document types, so nothing else can differ.
+    expect(creditNote.replace(">381<", ">380<")).toBe(invoice);
   });
 
   it("still generates the non-credit-note codes BR-DE-17 allows", () => {

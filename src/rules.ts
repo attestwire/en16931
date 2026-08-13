@@ -1,6 +1,6 @@
 import { COUNTRY_CODES_SET } from "./codelists/country.js";
 import { computeTotals, effectiveRate, round2 } from "./totals.js";
-import { CREDIT_NOTE_TYPE_CODES, DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
+import { DEFAULT_INVOICE_TYPE_CODE, documentNoun, isCreditNote, xpathRoot } from "./document-type.js";
 import { extendedRules } from "./rules-extended.js";
 import {
   CATEGORY_RULE_INFIX,
@@ -630,13 +630,11 @@ const baseInputRules: RuleFn[] = [
           field: "BT-146",
           severity: "fatal",
           message: `${where} has a negative item net price (BT-146: ${line.unitPrice}). The net price must never be negative — EN 16931 models reductions as allowances, not as negative prices.`,
-          // DO NOT send the reader to a credit note here. That was the advice
-          // until 2026-08-09 and it walked them into a wall: BT-3 "381" is
-          // refused by ATW-CREDIT-NOTE-UNSUPPORTED and generateXRechnungUBL
-          // throws UnsupportedDocumentTypeError, because a UBL credit note is a
-          // separate CreditNote document this build does not emit. A fix field
-          // that names an unimplemented path is worse than one that says less.
-          fix: 'Make unitPrice positive and express the reduction as a line allowance instead — line.allowances[] carries the amount (BT-136), an optional base amount and percentage (BT-137/BT-138) and a reason (BT-139/BT-140), and it is subtracted from the line net amount for you. That is the mechanism EN 16931 intends here. To reverse a supply entirely, the standard answer is a credit note (BT-3 "381"), which this build cannot generate: it is refused with ATW-CREDIT-NOTE-UNSUPPORTED. Use "384" (corrected invoice, with precedingInvoices carrying BT-25) if your process allows a correction instead, or issue the credit note with another tool.',
+          // This fix field pointed at a credit note, then stopped pointing at
+          // one on 2026-08-09 because the build could not emit one, and now
+          // points at one again. The rule for it has not changed: name only
+          // paths that work. All three of these do.
+          fix: 'Make unitPrice positive and express the reduction as a line allowance instead — line.allowances[] carries the amount (BT-136), an optional base amount and percentage (BT-137/BT-138) and a reason (BT-139/BT-140), and it is subtracted from the line net amount for you. That is the mechanism EN 16931 intends here. To reverse a supply entirely, issue a credit note: set invoiceTypeCode to "381" and state the amounts positively, with precedingInvoices naming the invoice you are crediting (BT-25). The document type, not the sign, is what conveys the direction. "384" (corrected invoice) is the third option, for a process that replaces the earlier document rather than adjusting it.',
           example: `"unitPrice": 150`,
           xpath: `${at}/cac:Price/cbc:PriceAmount`,
           docsUrl: `${DOCS}/BR-27`,
@@ -1584,34 +1582,11 @@ const baseInputRules: RuleFn[] = [
       rule: "BR-DE-17",
       field: "BT-3",
       severity: "warning",
-      message: `XRechnung asks that the invoice type code (BT-3) be one of 326, 380, 381, 384, 389, 875, 876 and 877 from UNTDID 1001, but "${code}" was supplied. The German text says "sollen", and KoSIT flags the rule "warning" rather than "fatal": the document is accepted, and the wider UNTDID list stays legal under core EN 16931. Treat it as a portal-compatibility finding rather than a rejection — a receiving system that only branches on the eight listed codes will not know what to do with yours, which is a slower and more expensive failure than a bounce.`,
-      fix: 'Use "380" for a commercial invoice, "384" for a corrected invoice (and then also supply precedingInvoices with the number of the invoice you are correcting, BR-DE-26), "326" for a partial invoice, "389" for self-billing. "381" is a credit note: legal under BR-DE-17, but this build cannot generate it — validateInput refuses it with ATW-CREDIT-NOTE-UNSUPPORTED and generateXRechnungUBL throws UnsupportedDocumentTypeError, because a UBL credit note is a separate CreditNote document rather than an Invoice with a different BT-3. Use "384" if a correction fits your process, or issue the credit note with another tool.',
+      message: `XRechnung asks that the ${documentNoun(inv)} type code (BT-3) be one of 326, 380, 381, 384, 389, 875, 876 and 877 from UNTDID 1001, but "${code}" was supplied. The rule is one rule across both document types: KoSIT's schematron tests \`cbc:InvoiceTypeCode = $supportedInvAndCNTypeCodes or cbc:CreditNoteTypeCode = $supportedInvAndCNTypeCodes\`, against one eight-code list, so a credit note is held to exactly the same eight. The German text says "sollen", and KoSIT flags the rule "warning" rather than "fatal": the document is accepted, and the wider UNTDID list stays legal under core EN 16931. Treat it as a portal-compatibility finding rather than a rejection — a receiving system that only branches on the eight listed codes will not know what to do with yours, which is a slower and more expensive failure than a bounce.`,
+      fix: 'Use "380" for a commercial invoice, "384" for a corrected invoice (and then also supply precedingInvoices with the number of the invoice you are correcting, BR-DE-26), "326" for a partial invoice, "389" for self-billing, "381" for a credit note. All eight generate: "381" and the rest of the UNTDID 1001 credit-note list emit a ubl:CreditNote in the UBL syntax and a CrossIndustryInvoice with ram:TypeCode 381 in CII.',
       example: `"invoiceTypeCode": "380"`,
-      xpath: "/ubl:Invoice/cbc:InvoiceTypeCode",
+      xpath: `${xpathRoot(inv)}/cbc:${isCreditNote(inv) ? "CreditNoteTypeCode" : "InvoiceTypeCode"}`,
       docsUrl: `${DOCS}/BR-DE-17`,
-    });
-  },
-
-  // ATW-CREDIT-NOTE-UNSUPPORTED: a library limitation, not a regulation rule.
-  //
-  // BT-3 = 381 is perfectly legal under EN 16931 and XRechnung (BR-DE-17 lists
-  // it). What this build cannot do is *express* it: a UBL credit note is a
-  // separate CreditNote document, not an Invoice with a different type code, and
-  // only the Invoice generator has shipped. Reporting it here — fatal, before
-  // generation — is the difference between a clear refusal and an ubl:Invoice
-  // that a receiving portal rejects under the EN 16931 schematron.
-  (inv) => {
-    const code = (inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE).trim();
-    if (!CREDIT_NOTE_TYPE_CODES.has(code)) return null;
-    return err({
-      rule: "ATW-CREDIT-NOTE-UNSUPPORTED",
-      field: "BT-3",
-      severity: "fatal",
-      message: `Credit notes are not yet supported by this library. The invoice type code (BT-3) "${code}" denotes a credit note, which EN 16931 and XRechnung both allow — but in UBL a credit note is a separate CreditNote document (root ubl:CreditNote, namespace ...:xsd:CreditNote-2, with cac:CreditNoteLine and cbc:CreditedQuantity), not an ubl:Invoice carrying a different code. This build generates the Invoice document only, so generateXRechnungUBL would have to emit a document the EN 16931 schematron rejects. It throws UnsupportedDocumentTypeError instead. This is a limitation of the library, not a finding against your data.`,
-      fix: 'Use "384" (corrected invoice) with precedingInvoices carrying the number of the invoice you are correcting (BT-25) if your process allows a correction rather than a credit note; otherwise produce the credit note with another tool until the CreditNote generator ships. For an ordinary invoice, set invoiceTypeCode to "380".',
-      example: `"invoiceTypeCode": "380"`,
-      xpath: "/ubl:Invoice/cbc:InvoiceTypeCode",
-      docsUrl: LIMITS_DOCS,
     });
   },
 

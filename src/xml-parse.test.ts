@@ -415,6 +415,71 @@ describe("parseXml: refusals for anything outside the subset", () => {
     expect(codeOf(() => parseXml(`<a b/>`))).toBe("xml_bad_attribute");
   });
 
+  it("refuses an element that carries the same attribute name twice", () => {
+    // XML 1.0 forbids it, and the reason it matters here is that `attr()`
+    // returns the first match: accepted, one of the two values would simply be
+    // gone from the invoice with nothing raised.
+    expect(codeOf(() => parseXml(`<r a="1" a="2"/>`))).toBe("xml_duplicate_attribute");
+    expect(() => parseXml(`<r a="1" a="2"/>`)).toThrow(XmlSyntaxError);
+    // The message names the attribute, so the sender can find it.
+    expect(() => parseXml(`<r a="1" a="2"/>`)).toThrow(/\ba\b/);
+    // Repeated namespace declarations are attributes too.
+    expect(codeOf(() => parseXml(`<r xmlns:p="urn:a" xmlns:p="urn:b"/>`))).toBe(
+      "xml_duplicate_attribute",
+    );
+  });
+
+  it("refuses two attributes that are the same name once the prefixes resolve", () => {
+    // Different prefixes, one namespace URI, one local name: this is the same
+    // attribute written twice, and a check on the text as written would miss it.
+    expect(
+      codeOf(() =>
+        parseXml(`<r xmlns:p="urn:one" xmlns:q="urn:one" p:x="1" q:x="2"/>`),
+      ),
+    ).toBe("xml_duplicate_attribute");
+    // The message names both spellings, because neither on its own explains it.
+    expect(() =>
+      parseXml(`<r xmlns:p="urn:one" xmlns:q="urn:one" p:x="1" q:x="2"/>`),
+    ).toThrow(/p:x.*q:x/);
+  });
+
+  it("accepts the same local name under two genuinely different namespaces", () => {
+    const root = parseXml(
+      `<r xmlns:p="urn:one" xmlns:q="urn:two" p:x="1" q:x="2"/>`,
+    );
+    expect(attr(root, "x", "urn:one")).toBe("1");
+    expect(attr(root, "x", "urn:two")).toBe("2");
+    // An unprefixed attribute is in no namespace, so it does not collide with a
+    // prefixed one of the same local name even under the default namespace.
+    const mixed = parseXml(`<r xmlns="urn:one" xmlns:p="urn:one" x="1" p:x="2"/>`);
+    expect(attr(mixed, "x", "")).toBe("1");
+    expect(attr(mixed, "x", "urn:one")).toBe("2");
+  });
+
+  it("refuses a comment containing '--', which XML 1.0 does not permit", () => {
+    // "-->" is the only terminator, so a comment holding "--" has no single
+    // reading: writer and reader disagree about where the markup ends.
+    expect(codeOf(() => parseXml(`<r><!-- bad -- comment --></r>`))).toBe(
+      "xml_bad_comment",
+    );
+    expect(() => parseXml(`<r><!-- bad -- comment --></r>`)).toThrow(XmlSyntaxError);
+    // A comment may not end with a hyphen either, which is the same rule seen
+    // from the other end: the close would be written "--->".
+    expect(codeOf(() => parseXml(`<r><!-- bad ---></r>`))).toBe("xml_bad_comment");
+  });
+
+  it("still accepts single hyphens inside a comment", () => {
+    // The boundary case the '--' check must not swallow: hyphens separated by
+    // other characters are ordinary comment text.
+    expect(() => parseXml(`<r><!-- a- -b --></r>`)).not.toThrow();
+    expect(() => parseXml(`<r><!-- BT-1 is the invoice number --></r>`)).not.toThrow();
+    // And an ordinary comment, in every position one can appear.
+    const root = parseXml(
+      `<!-- before --><r><!-- inside --><b>1</b></r><!-- after -->`,
+    );
+    expect(root.children[0]!.text).toBe("1");
+  });
+
   it("refuses a markup declaration it does not understand", () => {
     expect(codeOf(() => parseXml(`<a><!NOTATION x SYSTEM "y"></a>`))).toBe(
       "xml_unsupported_declaration",

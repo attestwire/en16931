@@ -18,16 +18,13 @@
  * can still be rejected by KoSIT or by a receiving platform.
  */
 
-import {
-  CREDIT_NOTE_TYPE_CODES,
-  DEFAULT_INVOICE_TYPE_CODE,
-} from "./generate.js";
+import { DEFAULT_INVOICE_TYPE_CODE } from "./document-type.js";
 import {
   CII_NAMESPACES,
   SUPPORTING_DOCUMENT_TYPE_CODE,
   TENDER_OR_LOT_DOCUMENT_TYPE_CODE,
 } from "./generate-cii.js";
-import { UnsupportedCreditNoteError, type ParsedInvoice } from "./parse.js";
+import { type ParsedInvoice } from "./parse.js";
 import {
   attr,
   firstChild,
@@ -541,9 +538,13 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
  *   construct outside the accepted subset.
  * @throws {UnsupportedCiiSyntaxError} the root element is not a CII
  *   `CrossIndustryInvoice` — a UBL document, or something else entirely.
- * @throws {UnsupportedCreditNoteError} BT-3 says the document is a credit note.
  *
- * All four extend `ParseError` and carry a stable `code`.
+ * All three extend `ParseError` and carry a stable `code`.
+ *
+ * Credit notes need no separate entry point and no flag: CII carries both
+ * document types on one root element, so a credit note arrives here as an
+ * ordinary document with `ram:TypeCode` 381, and comes back as an
+ * `InvoiceInput` whose `invoiceTypeCode` says so.
  */
 export function parseCiiInvoice(
   xml: string,
@@ -591,9 +592,6 @@ export function parseCiiInvoice(
   const typeCode = (
     (header ? r.ram(header, "TypeCode") : undefined) ?? DEFAULT_INVOICE_TYPE_CODE
   ).trim();
-  if (CREDIT_NOTE_TYPE_CODES.has(typeCode)) {
-    throw new UnsupportedCreditNoteError(typeCode);
-  }
 
   const invoice: InvoiceInput = {
     profile,

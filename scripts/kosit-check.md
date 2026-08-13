@@ -3,9 +3,16 @@
 Our rule engine is a reimplementation of EN 16931 and the XRechnung CIUS. The
 only way to know our *output* agrees with the regulator is to run the
 regulator's own tool against it. That is what `scripts/kosit-check.sh` does: it
-validates every fixture in `fixtures/` — seven of them today, three UBL and four
+validates every fixture in `fixtures/` — eleven of them today, five UBL and six
 CII. It is a conformance check on those documents, not a parity suite over the
 rule set.
+
+Two of the eleven are UBL **credit notes**, and they are judged by a scenario of
+their own. KoSIT's configuration carries `EN16931 XRechnung (UBL CreditNote)`
+alongside the invoice scenario, selected by the root element and BT-24, with
+`UBL-CreditNote-2.1.xsd` in place of `UBL-Invoice-2.1.xsd` and the same two
+schematrons. So a credit note we emit is judged against the credit-note schema
+by a scenario we did not choose.
 
 The CII fixtures matter more than their count suggests. KoSIT's XRechnung 3.0.2
 configuration has a scenario of its own for CII (`EN16931 XRechnung (CII)`),
@@ -52,14 +59,115 @@ a document nobody has validated.
 
 ⚠ `apps/site` (attestwire.com/llms.txt and the homepage) still scopes this
 result to "the three fixtures shipped in the repository". That was true until
-2026-08-11 and is now stale — there are seven. The site is outside this
+2026-08-11 and is now stale — there are eleven. The site is outside this
 package; whoever updates it should take the count from the table below, which
 is the record.
 
 ## Last recorded result
 
+Run on **2026-08-13** with validator 1.6.2 and XRechnung configuration 3.0.2
+(2026-01-31), against all eleven committed fixtures — the seven that existed
+before plus the four credit notes:
+
+| Fixture | Syntax | Scenario matched | XSD | Schematron EN 16931 | Schematron XRechnung CIUS | Acceptance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `xrechnung-ubl-credit-note.xml` | UBL 2.1 | **EN16931 XRechnung (UBL CreditNote)** | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-credit-note-discount.xml` | UBL 2.1 | **EN16931 XRechnung (UBL CreditNote)** | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-credit-note.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-credit-note-discount.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-discount.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-minimal.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-reverse-charge.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-discount.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-extended.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-minimal.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-reverse-charge.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+
+`Acceptable: 11  Rejected: 0`, and
+`grep -c "failed-assert\|successful-report\|rep:message" out/*.xml` returns `0`
+for all eleven reports — so "no error, warning or information findings" is a
+count and not an impression.
+
+The `Scenario matched` column is the part worth reading twice. The two UBL credit
+notes were routed to `EN16931 XRechnung (UBL CreditNote)` by the validator's own
+`<match>` on the root element, which means they were validated against
+`UBL-CreditNote-2.1.xsd` — a different schema, with a different element sequence
+— rather than being waved through the invoice one.
+
+Nothing was rejected on the first attempt, so there is no list of rule ids we
+disagreed with on the way to this table. That is worth stating rather than
+implying: the credit-note bindings below were read out of the schemas and the
+schematron *before* the generator was written, and the check confirmed them
+rather than discovering them. The 2026-08-11 CII run, recorded further down,
+went the other way and is the reason the reading came first this time.
+
+### What the check settled, 2026-08-13 (credit notes)
+
+Eleven acceptable fixtures say the documents are conformant. They cannot say
+whether the *rule decisions* around credit notes are right, so eight
+purpose-built probes were put to the validator in both syntaxes, and the ids it
+returned were compared with the ids this build returns for the same input. None
+is committed: two of them exist to be rejected.
+
+| Probe | KoSIT | This build |
+| --- | --- | --- |
+| Credit note (381) with **no** BG-3 — UBL | ACCEPTABLE `[]` | `valid: true`, `ATW-CREDIT-NOTE-NO-PRECEDING-INVOICE` at `information` |
+| Credit note (381) with **no** BG-3 — CII | ACCEPTABLE `[]` | same |
+| Credit note with **negative** line amounts — UBL | ACCEPTABLE `[]` | `valid: true`, `ATW-CREDIT-NOTE-NEGATIVE-AMOUNTS` at `warning` |
+| Credit note with **negative** line amounts — CII | ACCEPTABLE `[]` | same |
+| BT-3 `261` (self-billed credit note) on XRechnung — UBL | ACCEPTABLE `[BR-DE-17]` (warning) | `BR-DE-17` at `warning`, `valid: true` |
+| BT-3 `261` (self-billed credit note) on XRechnung — CII | ACCEPTABLE `[BR-DE-17]` (warning) | same |
+| BT-9 written as `cbc:DueDate` on a CreditNote root — UBL | **REJECTED**, XSD: `cvc-complex-type.2.4.a: Invalid content … {…CommonBasicComponents-2}:DueDate` | n/a — the generator cannot emit this |
+| `cbc:CreditNoteTypeCode` = `380` on a CreditNote root — UBL | **REJECTED** `[BR-CL-01]` | n/a — the generator cannot emit this |
+
+Four things that were *decided* by that table rather than by reading:
+
+1. **BR-DE-26 does not apply to credit notes.** It is widely quoted as requiring
+   a preceding invoice reference on one, and the requirement this build was
+   originally asked to implement said so. It is not what the rule says. Verbatim
+   from `XRechnung-UBL-validation.xsl` (3.0.2, schematron 2.5.0):
+   `((not(normalize-space(cbc:InvoiceTypeCode) = '384' or normalize-space(cbc:CreditNoteTypeCode) = '384') or (cac:BillingReference/cac:InvoiceDocumentReference)))`.
+   The trigger is the **corrected-invoice code 384**, on either document type;
+   381 does not appear in the test. The CII rule is the same shape against
+   `rsm:ExchangedDocument/ram:TypeCode`. And the probe agrees: a credit note with
+   no BG-3 at all comes back ACCEPTABLE with zero messages, in both syntaxes.
+   Implementing the requirement as given would have produced a warning on a
+   document KoSIT accepts silently. What ships instead is
+   `ATW-CREDIT-NOTE-NO-PRECEDING-INVOICE` at `information` — our advice, at the
+   level the regulator reserves for advice, with the rule text in its message so
+   nobody has to take our word for it.
+2. **The sign-convention finding must be a warning.** A credit note stating
+   negative amounts is accepted by both schematrons with zero messages. It is
+   still wrong — the document type carries the direction, so a negative credit
+   note reverses it — but a build that made it fatal would be rejecting a
+   document the authority accepts, which is the error this package works hardest
+   to avoid.
+3. **BT-9 really does move.** `cbc:DueDate` does not exist in
+   `UBL-CreditNote-2.1.xsd`, and a credit note carrying one fails the **schema**,
+   before any business rule runs — the report names no BT at all, only
+   `cvc-complex-type.2.4.a`. EN 16931 binds BT-9 to
+   `cac:PaymentMeans/cbc:PaymentDueDate` there, which is why `UBL-CR-412` ("A UBL
+   invoice should not include the PaymentMeans PaymentDueDate") carries the
+   explicit `or ../cn:CreditNote` exemption. That is the whole reason
+   `ATW-CREDIT-NOTE-DUE-DATE-UNBOUND` exists: with no BG-16 there is nowhere
+   lawful to put the date, and dropping it silently was not an option.
+4. **The two halves of UNTDID 1001 are not interchangeable.** A `ubl:CreditNote`
+   carrying `cbc:CreditNoteTypeCode` = `380` is REJECTED under BR-CL-01. So
+   BR-CL-01 accepting the union of the two lists — which is what this build now
+   does, and what the CII schematron does literally — is only correct because the
+   code and the document type are chosen together: a credit-note code always
+   produces a credit-note document, and an invoice code always produces an
+   invoice.
+
+One more binding, read rather than probed, because the schema settles it: a UBL
+credit note has **no `cac:ProjectReference`**. BT-11 cannot be expressed on that
+document by any means, which is what `ATW-CREDIT-NOTE-PROJECT-REFERENCE-UNBOUND`
+reports. The CII binding keeps it.
+
+### Previously recorded result (seven fixtures)
+
 Run on 2026-08-11 with validator 1.6.2 and XRechnung configuration 3.0.2
-(2026-01-31), against all seven committed fixtures:
+(2026-01-31), against the seven fixtures that existed then:
 
 | Fixture | Syntax | Scenario matched | XSD | Schematron EN 16931 | Schematron XRechnung CIUS | Acceptance |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -309,15 +417,15 @@ documents come back completely silent.
 
 ## Scope of the claim
 
-Passing KoSIT on seven fixtures means our *output* is conformant for the paths
+Passing KoSIT on eleven fixtures means our *output* is conformant for the paths
 those fixtures exercise. It does **not** mean our *rule engine* has reached
-schematron parity: the engine raises 262 rule ids reachable from caller input
+schematron parity: the engine raises 265 rule ids reachable from caller input
 (the number the site publishes, harvested by executing the library), but that
 is a count of what we implement across EN 16931, the XRechnung CIUS and Peppol
 BIS 3 — not a fraction of what the XRechnung schematron asserts, which nothing
 in this repo measures. No ratio is quoted here for that reason; the previous
 "126 of ~180" predated v0.2.0 and was never re-derived. This script exercises
-seven documents, so calling it a parity suite would be wrong either way.
+eleven documents, so calling it a parity suite would be wrong either way.
 
 One boundary the table above cannot state for itself: **there is no PDF here.**
 Factur-X and ZUGFeRD are this CII XML embedded in a PDF/A-3 container, and this
@@ -325,8 +433,16 @@ package emits the XML only. KoSIT judges XML, so a clean run says nothing about
 a container we do not build. The `facturx-en16931` profile is also not covered
 by this run at all: its specification identifier is `urn:cen.eu:en16931:2017`,
 which matches no XRechnung scenario, so a Factur-X-profile document would be
-reported as "no scenario matched" rather than validated. Only the four
+reported as "no scenario matched" rather than validated. Only the six
 `xrechnung-cii` fixtures are judged by a CII schematron.
+
+A second boundary, new with the credit notes: **self-billing is not covered.**
+UBL has `SelfBilledInvoice` and `SelfBilledCreditNote` root elements, and this
+package emits neither. BT-3 `389` (self-billed invoice) and `261` (self-billed
+credit note) generate an ordinary `Invoice` and an ordinary `CreditNote`
+respectively — which is what EN 16931's UBL binding asks for, and both are
+accepted above — but the self-billing *workflow*, where the buyer issues the
+document, is a process this library has nothing to say about.
 
 A document our engine accepts can still be rejected by KoSIT. Treat `validateInput` as a fast, teaching-oriented pre-flight and
 KoSIT as the authority. Closing that gap is tracked as schematron parity on the

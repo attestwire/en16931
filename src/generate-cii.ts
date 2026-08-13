@@ -7,14 +7,12 @@ import {
   formatPrice,
 } from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
+import { resolveTypeCode } from "./document-type.js";
 import {
-  CREDIT_NOTE_TYPE_CODES,
   CUSTOMIZATION_IDS,
-  DEFAULT_INVOICE_TYPE_CODE,
   GenerationError,
   INVOICED_OBJECT_DOCUMENT_TYPE_CODE,
   PROFILE_IDS,
-  UnsupportedDocumentTypeError,
   type GenerateOptions,
 } from "./generate.js";
 import type {
@@ -337,10 +335,18 @@ function invoicedObjectNode(identifier: {
  * const xml = generateCii({ ...invoice, profile: "xrechnung-cii" });
  * ```
  *
- * Throws `UnsupportedCiiProfileError` for a UBL-only profile and
- * `UnsupportedDocumentTypeError` for a credit-note BT-3, rather than emitting a
- * document that would be rejected downstream. Both extend `GenerationError` and
- * carry a stable `code`.
+ * Throws `UnsupportedCiiProfileError` for a UBL-only profile, rather than
+ * emitting a document that would be rejected downstream. It extends
+ * `GenerationError` and carries a stable `code`.
+ *
+ * **Credit notes need nothing special here.** CII has no separate credit-note
+ * document: one root element, `rsm:CrossIndustryInvoice`, carries both, and the
+ * type code goes into `ram:TypeCode` exactly as it always did. Setting
+ * `invoiceTypeCode: "381"` produces a credit note, and the only difference in
+ * the emitted XML is those three digits. That asymmetry with UBL — where the
+ * same input produces a different root element, namespace and line element — is
+ * the whole reason the document type lives on BT-3 in the input model rather
+ * than in a syntax-specific option.
  *
  * Totals are always computed from the lines and the document allowances and
  * charges by the same `computeTotals` the UBL path uses — the function never
@@ -357,10 +363,7 @@ export function generateCii(
   if (!(CII_GENERATABLE_PROFILES as readonly string[]).includes(inv?.profile)) {
     throw new UnsupportedCiiProfileError(String(inv?.profile));
   }
-  const typeCode = (inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE).trim();
-  if (CREDIT_NOTE_TYPE_CODES.has(typeCode)) {
-    throw new UnsupportedDocumentTypeError(typeCode);
-  }
+  const typeCode = resolveTypeCode(inv.invoiceTypeCode);
 
   const totals = computeTotals(inv);
   const currency = (inv.currency || "EUR").toUpperCase();
@@ -815,7 +818,7 @@ export function generateCii(
       // …, IncludedNote, …
       groupAlways("rsm:ExchangedDocument", [
         el("ram:ID", inv.invoiceNumber),
-        el("ram:TypeCode", inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE),
+        el("ram:TypeCode", typeCode),
         dateNode("ram:IssueDateTime", inv.issueDate),
         // BT-21 has a real element here. UBL has none, which is why its binding
         // prefixes the code onto the note text as "#CODE#…"; CII does not, and

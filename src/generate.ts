@@ -1,4 +1,10 @@
 import {
+  CREDIT_NOTE_TYPE_CODES,
+  DEFAULT_INVOICE_TYPE_CODE,
+  documentKindOf,
+  resolveTypeCode,
+} from "./document-type.js";
+import {
   computeTotals,
   effectiveAllowanceChargeRate,
   effectiveRate,
@@ -20,18 +26,37 @@ import type {
 } from "./types.js";
 
 /**
- * JSON → XRechnung UBL 2.1 Invoice.
+ * JSON → XRechnung UBL 2.1 Invoice or CreditNote.
  *
  * UBL uses an `xsd:sequence` content model, so the order of children is part of
  * schema validity. Every builder below emits children in the order given by
- * `UBL-Invoice-2.1.xsd` and `UBL-CommonAggregateComponents-2.1.xsd`; the
- * sequence is quoted in a comment above each builder. Do not reorder them to
- * make a diff read better — a document whose children are alphabetical, or
- * merely "logical", is rejected by the schema before any business rule runs.
+ * `UBL-Invoice-2.1.xsd`, `UBL-CreditNote-2.1.xsd` and
+ * `UBL-CommonAggregateComponents-2.1.xsd`; the sequence is quoted in a comment
+ * above each builder. Do not reorder them to make a diff read better — a
+ * document whose children are alphabetical, or merely "logical", is rejected by
+ * the schema before any business rule runs.
+ *
+ * The two root sequences are *not* the same sequence with one element renamed,
+ * which is the trap in adding credit-note support. Diffed element by element
+ * from the two `maindoc` schemas, `CreditNote` differs from `Invoice` in five
+ * ways that matter to this generator:
+ *
+ *   1. there is no `cbc:DueDate` at all — BT-9 moves into
+ *      `cac:PaymentMeans/cbc:PaymentDueDate`, which `UBL-CR-412` forbids on an
+ *      invoice and permits on a credit note;
+ *   2. `cbc:TaxPointDate` comes *before* the type code rather than after the
+ *      note;
+ *   3. the document references run OrderReference, BillingReference, Despatch,
+ *      Receipt, **Contract, Additional**, Statement, Originator — where the
+ *      invoice runs Despatch, Receipt, Statement, Originator, **Contract,
+ *      Additional**;
+ *   4. there is no `cac:ProjectReference`, so BT-11 has nowhere to go;
+ *   5. lines are `cac:CreditNoteLine` carrying `cbc:CreditedQuantity`.
  */
 
 const NS = {
   inv: "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2",
+  cn: "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2",
   cac: "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
   cbc: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
 } as const;
@@ -56,8 +81,18 @@ export const PROFILE_IDS: Record<Profile, string> = {
   "facturx-en16931": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
 };
 
-/** Default BT-3 invoice type code: 380 = commercial invoice (UNTDID 1001). */
-export const DEFAULT_INVOICE_TYPE_CODE = "380";
+/**
+ * Re-exported from `document-type.ts`, which is where the document-type
+ * decision now lives — both parsers and three rule families need it, and none
+ * of them should have to import the generator to get it.
+ */
+export {
+  CREDIT_NOTE_TYPE_CODES,
+  DEFAULT_INVOICE_TYPE_CODE,
+  documentKindOf,
+  isCreditNote,
+  type DocumentKind,
+} from "./document-type.js";
 
 /**
  * UNTDID 1153 code marking an `AdditionalDocumentReference` as the invoiced
@@ -83,15 +118,6 @@ export const UBL_GENERATABLE_PROFILES = [
 ] as const satisfies readonly Profile[];
 
 export type UblGeneratableProfile = (typeof UBL_GENERATABLE_PROFILES)[number];
-
-/**
- * BT-3 codes that denote a credit note rather than an invoice.
- *
- * In UBL these are not an `Invoice` with a different type code — they are a
- * separate `CreditNote` document with its own root element, namespace and line
- * element. See `UnsupportedDocumentTypeError`.
- */
-export const CREDIT_NOTE_TYPE_CODES = new Set(["381", "261", "262", "296", "308", "396"]);
 
 /**
  * Base class for a document this build refuses to emit.
@@ -134,25 +160,28 @@ export class UnsupportedProfileError extends GenerationError {
   }
 }
 
-/** Thrown when BT-3 asks for a document type that is not a UBL `Invoice`. */
+/**
+ * Thrown when BT-3 asks for a document type that is not a UBL `Invoice`.
+ *
+ * ⚠ **Nothing throws this any more.** It existed for one reason — a credit-note
+ * BT-3 — and 0.5.0 generates credit notes, so the refusal it announced is gone.
+ * The class is kept, exported, and left in the union of things `GenerationError`
+ * covers because removing an exported symbol breaks every `instanceof` and every
+ * `import` a caller already wrote, and because a document type that cannot be
+ * expressed in UBL 2.1 may well turn up again (a debit note, `UBL-DebitNote-2.1`,
+ * is the obvious candidate and has no EN 16931 binding at all). A caller
+ * branching on it will simply never take that branch.
+ */
 export class UnsupportedDocumentTypeError extends GenerationError {
   readonly invoiceTypeCode: string;
 
   constructor(invoiceTypeCode: string) {
     super(
       "unsupported_document_type",
-      `Credit notes are not yet supported: invoiceTypeCode "${invoiceTypeCode}" denotes a ` +
-        `credit note, and a UBL credit note is not an Invoice with a different BT-3 — it is a ` +
-        `separate CreditNote document (root element ubl:CreditNote in the ` +
-        `urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2 namespace, with ` +
-        `cac:CreditNoteLine / cbc:CreditedQuantity in place of cac:InvoiceLine / ` +
-        `cbc:InvoicedQuantity). Emitting an ubl:Invoice carrying BT-3 = ${invoiceTypeCode} ` +
-        `produces a document that is rejected by the EN 16931 schematron. ` +
-        `Until the CreditNote generator ships, either issue the document as a corrected ` +
-        `invoice ("384", together with the preceding invoice reference BT-25, which this ` +
-        `build now models as precedingInvoices) where your process allows it, or generate ` +
-        `the credit note with another tool. Set invoiceTypeCode to "380" (commercial ` +
-        `invoice) for the ordinary case.`,
+      `invoiceTypeCode "${invoiceTypeCode}" asks for a document type this build cannot ` +
+        `express in UBL 2.1. Note that credit notes are no longer in that category: since ` +
+        `0.5.0 a credit-note BT-3 (381 and the rest of the UNTDID 1001 credit-note list) ` +
+        `emits a ubl:CreditNote document, and nothing in this package raises this error.`,
     );
     this.invoiceTypeCode = invoiceTypeCode;
   }
@@ -388,12 +417,24 @@ function taxTotalNode(totals: InvoiceTotals, currency: string): XmlNode {
 }
 
 /**
- * Generate an XRechnung 3.0 UBL 2.1 Invoice document.
+ * Generate an XRechnung 3.0 UBL 2.1 `Invoice` — or `CreditNote`.
  *
- * Throws `UnsupportedProfileError` for a non-UBL profile and
- * `UnsupportedDocumentTypeError` for a credit-note BT-3, rather than emitting a
- * document that would be rejected downstream. Both extend `GenerationError` and
- * carry a stable `code`.
+ * Which one comes out is decided by BT-3 and by nothing else. Set
+ * `invoiceTypeCode` to `"381"` and you get a `ubl:CreditNote`: different root
+ * element, different namespace, `cbc:CreditNoteTypeCode`, `cac:CreditNoteLine`
+ * and `cbc:CreditedQuantity`, with every other business term in the same place.
+ * There is no `generateCreditNote` function and no second entry point, because
+ * there is no second *input*: a credit note is the same semantic model with one
+ * field changed, and a caller who has an invoice-shaped payload should be one
+ * field away from a credit note rather than one API away.
+ *
+ * ```ts
+ * const creditNote = generateXRechnungUBL({ ...invoice, invoiceTypeCode: "381" });
+ * ```
+ *
+ * Throws `UnsupportedProfileError` for a non-UBL profile rather than emitting a
+ * document that would be rejected downstream. It extends `GenerationError` and
+ * carries a stable `code`.
  *
  * Totals are always computed from the lines and the document allowances and
  * charges — the function never echoes caller-supplied totals into the XML, so a
@@ -405,15 +446,13 @@ export function generateXRechnungUBL(
   inv: InvoiceInput,
   options: GenerateOptions = {},
 ): string {
-  // Refuse before doing any work: a wrong syntax or a wrong document type is
-  // not something the rest of this function can compensate for.
+  // Refuse before doing any work: a wrong syntax is not something the rest of
+  // this function can compensate for.
   if (!(UBL_GENERATABLE_PROFILES as readonly string[]).includes(inv?.profile)) {
     throw new UnsupportedProfileError(String(inv?.profile));
   }
-  const typeCode = (inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE).trim();
-  if (CREDIT_NOTE_TYPE_CODES.has(typeCode)) {
-    throw new UnsupportedDocumentTypeError(typeCode);
-  }
+  const typeCode = resolveTypeCode(inv.invoiceTypeCode);
+  const creditNote = documentKindOf(inv.invoiceTypeCode) === "credit-note";
 
   const totals = computeTotals(inv);
   const currency = (inv.currency || "EUR").toUpperCase();
@@ -438,6 +477,15 @@ export function generateXRechnungUBL(
   // LineExtensionAmount, AccountingCost, cac:InvoicePeriod,
   // cac:OrderLineReference, cac:DocumentReference, cac:AllowanceCharge,
   // cac:Item, cac:Price.
+  //
+  // cac:CreditNoteLine is the same sequence with cbc:CreditedQuantity in place
+  // of cbc:InvoicedQuantity. (It also swaps cac:TaxTotal and
+  // cac:AllowanceCharge relative to the invoice line, which costs nothing here:
+  // EN 16931 has no line-level VAT total, so this generator emits none.)
+  const lineElement = creditNote ? "cac:CreditNoteLine" : "cac:InvoiceLine";
+  const quantityElement = creditNote
+    ? "cbc:CreditedQuantity"
+    : "cbc:InvoicedQuantity";
   const lines = inv.lines.map((line, index) => {
     const net = totals.lineNetAmounts[index] ?? 0;
     // One source of truth for the rate. `effectiveRate` is what `computeTotals`
@@ -465,10 +513,10 @@ export function generateXRechnungUBL(
             }),
           ]);
 
-    return groupAlways("cac:InvoiceLine", [
+    return groupAlways(lineElement, [
       el("cbc:ID", line.id),
       el("cbc:Note", line.note),
-      el("cbc:InvoicedQuantity", formatNumber(line.quantity, 4), {
+      el(quantityElement, formatNumber(line.quantity, 4), {
         unitCode: line.unitCode,
       }),
       el("cbc:LineExtensionAmount", formatAmount(net), {
@@ -570,6 +618,19 @@ export function generateXRechnungUBL(
         el("cbc:PaymentMeansCode", inv.payment.meansCode, {
           name: inv.payment.meansName,
         }),
+        // BT-9 on a credit note. UBL's CreditNote has no cbc:DueDate of its
+        // own, and EN 16931's UBL binding puts the payment due date here
+        // instead — which is why UBL-CR-412 ("A UBL invoice should not include
+        // the PaymentMeans PaymentDueDate") carries the explicit `or
+        // ../cn:CreditNote` exemption. Emitting it on an invoice would trip
+        // that rule; omitting it on a credit note would drop BT-9 on the floor.
+        //
+        // A due date with no payment instructions has nowhere to go at all,
+        // because cbc:PaymentMeansCode is mandatory in UBL's PaymentMeansType,
+        // so there is no lawful cac:PaymentMeans to hang it off. That case is
+        // reported to the caller as ATW-CREDIT-NOTE-DUE-DATE-UNBOUND rather
+        // than silently dropped.
+        creditNote ? el("cbc:PaymentDueDate", inv.dueDate) : null,
         el("cbc:PaymentID", inv.payment.remittanceInformation),
         inv.payment.card
           ? groupAlways("cac:CardAccount", [
@@ -692,76 +753,111 @@ export function generateXRechnungUBL(
     }),
   ]);
 
-  // Root children in UBL Invoice sequence order.
-  const root = groupAlways(
-    "ubl:Invoice",
-    [
-      el("cbc:CustomizationID", customizationId),
-      el("cbc:ProfileID", profileId),
-      el("cbc:ID", inv.invoiceNumber),
-      el("cbc:IssueDate", inv.issueDate),
-      el("cbc:DueDate", inv.dueDate),
-      el(
-        "cbc:InvoiceTypeCode",
-        inv.invoiceTypeCode ?? DEFAULT_INVOICE_TYPE_CODE,
-      ),
-      el("cbc:Note", note),
-      el("cbc:TaxPointDate", inv.taxPointDate),
-      el("cbc:DocumentCurrencyCode", currency),
-      el("cbc:TaxCurrencyCode", taxCurrency),
-      el("cbc:AccountingCost", inv.buyerAccountingReference),
-      el("cbc:BuyerReference", inv.buyerReference),
-      inv.invoicingPeriod
-        ? periodNode("cac:InvoicePeriod", inv.invoicingPeriod)
-        : null,
-      inv.orderReference || inv.salesOrderReference
-        ? groupAlways("cac:OrderReference", [
-            el("cbc:ID", inv.orderReference),
-            el("cbc:SalesOrderID", inv.salesOrderReference),
-          ])
-        : null,
-      ...(inv.precedingInvoices ?? []).map((reference) =>
-        groupAlways("cac:BillingReference", [
-          groupAlways("cac:InvoiceDocumentReference", [
-            el("cbc:ID", reference.invoiceNumber),
-            el("cbc:IssueDate", reference.issueDate),
-          ]),
+  // The document references, built once and ordered per root element below.
+  // The two sequences interleave these differently, and getting it wrong is an
+  // XSD rejection rather than a business-rule finding — the schema check runs
+  // first, so the report says "invalid content" and names no BT at all.
+  const despatchReference = inv.despatchAdviceReference
+    ? group("cac:DespatchDocumentReference", [
+        el("cbc:ID", inv.despatchAdviceReference),
+      ])
+    : null;
+  const receiptReference = inv.receivingAdviceReference
+    ? group("cac:ReceiptDocumentReference", [
+        el("cbc:ID", inv.receivingAdviceReference),
+      ])
+    : null;
+  const originatorReference = inv.tenderOrLotReference
+    ? group("cac:OriginatorDocumentReference", [
+        el("cbc:ID", inv.tenderOrLotReference),
+      ])
+    : null;
+  const contractReference = inv.contractReference
+    ? group("cac:ContractDocumentReference", [
+        el("cbc:ID", inv.contractReference),
+      ])
+    : null;
+  // BT-18 shares cac:AdditionalDocumentReference with BG-24 and is told apart
+  // by DocumentTypeCode 130.
+  const additionalReferences = [
+    inv.invoicedObjectIdentifier
+      ? groupAlways("cac:AdditionalDocumentReference", [
+          el("cbc:ID", inv.invoicedObjectIdentifier.value, {
+            schemeID: inv.invoicedObjectIdentifier.schemeId,
+          }),
+          el("cbc:DocumentTypeCode", INVOICED_OBJECT_DOCUMENT_TYPE_CODE),
+        ])
+      : null,
+    ...(inv.supportingDocuments ?? []).map(supportingDocumentNode),
+  ];
+
+  const commonHead = [
+    el("cbc:CustomizationID", customizationId),
+    el("cbc:ProfileID", profileId),
+    el("cbc:ID", inv.invoiceNumber),
+    el("cbc:IssueDate", inv.issueDate),
+  ];
+
+  const commonAfterTypeCode = [
+    el("cbc:DocumentCurrencyCode", currency),
+    el("cbc:TaxCurrencyCode", taxCurrency),
+    el("cbc:AccountingCost", inv.buyerAccountingReference),
+    el("cbc:BuyerReference", inv.buyerReference),
+    inv.invoicingPeriod
+      ? periodNode("cac:InvoicePeriod", inv.invoicingPeriod)
+      : null,
+    inv.orderReference || inv.salesOrderReference
+      ? groupAlways("cac:OrderReference", [
+          el("cbc:ID", inv.orderReference),
+          el("cbc:SalesOrderID", inv.salesOrderReference),
+        ])
+      : null,
+    // BG-3. The same element on both documents: EN 16931 binds the preceding
+    // *invoice* reference to cac:BillingReference/cac:InvoiceDocumentReference
+    // whichever document is doing the referencing, and UBL-CR-039 forbids the
+    // CreditNoteDocumentReference sibling outright. A credit note pointing at
+    // the invoice it corrects is the ordinary case, and this is where it goes.
+    ...(inv.precedingInvoices ?? []).map((reference) =>
+      groupAlways("cac:BillingReference", [
+        groupAlways("cac:InvoiceDocumentReference", [
+          el("cbc:ID", reference.invoiceNumber),
+          el("cbc:IssueDate", reference.issueDate),
         ]),
-      ),
-      inv.despatchAdviceReference
-        ? group("cac:DespatchDocumentReference", [
-            el("cbc:ID", inv.despatchAdviceReference),
-          ])
-        : null,
-      inv.receivingAdviceReference
-        ? group("cac:ReceiptDocumentReference", [
-            el("cbc:ID", inv.receivingAdviceReference),
-          ])
-        : null,
-      inv.tenderOrLotReference
-        ? group("cac:OriginatorDocumentReference", [
-            el("cbc:ID", inv.tenderOrLotReference),
-          ])
-        : null,
-      inv.contractReference
-        ? group("cac:ContractDocumentReference", [
-            el("cbc:ID", inv.contractReference),
-          ])
-        : null,
-      // BT-18 shares cac:AdditionalDocumentReference with BG-24 and is told
-      // apart by DocumentTypeCode 130.
-      inv.invoicedObjectIdentifier
-        ? groupAlways("cac:AdditionalDocumentReference", [
-            el("cbc:ID", inv.invoicedObjectIdentifier.value, {
-              schemeID: inv.invoicedObjectIdentifier.schemeId,
-            }),
-            el("cbc:DocumentTypeCode", INVOICED_OBJECT_DOCUMENT_TYPE_CODE),
-          ])
-        : null,
-      ...(inv.supportingDocuments ?? []).map(supportingDocumentNode),
-      inv.projectReference
-        ? group("cac:ProjectReference", [el("cbc:ID", inv.projectReference)])
-        : null,
+      ]),
+    ),
+    despatchReference,
+    receiptReference,
+  ];
+
+  // Root children, in the sequence order of whichever document this is.
+  const root = groupAlways(
+    creditNote ? "ubl:CreditNote" : "ubl:Invoice",
+    [
+      ...commonHead,
+      // The credit note has no cbc:DueDate (BT-9 moved into cac:PaymentMeans
+      // above) and puts cbc:TaxPointDate before the type code.
+      creditNote ? null : el("cbc:DueDate", inv.dueDate),
+      creditNote ? el("cbc:TaxPointDate", inv.taxPointDate) : null,
+      el(creditNote ? "cbc:CreditNoteTypeCode" : "cbc:InvoiceTypeCode", typeCode),
+      el("cbc:Note", note),
+      creditNote ? null : el("cbc:TaxPointDate", inv.taxPointDate),
+      ...commonAfterTypeCode,
+      // Contract and Additional come before Originator on a credit note and
+      // after it on an invoice. BT-11 (cac:ProjectReference) exists only on the
+      // invoice: the credit note has no such element, so a project reference is
+      // dropped and reported as ATW-CREDIT-NOTE-PROJECT-REFERENCE-UNBOUND.
+      ...(creditNote
+        ? [contractReference, ...additionalReferences, originatorReference]
+        : [
+            originatorReference,
+            contractReference,
+            ...additionalReferences,
+            inv.projectReference
+              ? group("cac:ProjectReference", [
+                  el("cbc:ID", inv.projectReference),
+                ])
+              : null,
+          ]),
       groupAlways("cac:AccountingSupplierParty", [
         partyNode(inv.seller, {
           sepaCreditorIdentifier: inv.payment?.directDebit?.creditorIdentifier,
@@ -832,7 +928,7 @@ export function generateXRechnungUBL(
       ...lines,
     ],
     {
-      "xmlns:ubl": NS.inv,
+      "xmlns:ubl": creditNote ? NS.cn : NS.inv,
       "xmlns:cac": NS.cac,
       "xmlns:cbc": NS.cbc,
     },

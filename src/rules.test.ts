@@ -1078,34 +1078,41 @@ describe("XRechnung CIUS (BR-DE-*)", () => {
 
   it("BR-DE-17 accepts the default 380 and the credit-note code 381", () => {
     expect(rulesOf(base)).not.toContain("BR-DE-17");
-    // 381 is legal under BR-DE-17; it is refused separately, as a library
-    // limitation, by ATW-CREDIT-NOTE-UNSUPPORTED.
+    // 381 is legal under BR-DE-17, and since 0.5.0 it is legal here too: it
+    // generates a ubl:CreditNote. KoSIT's test is one test over both elements
+    // and one eight-code list.
     expect(rulesOf({ ...base, invoiceTypeCode: "381" })).not.toContain(
       "BR-DE-17",
     );
   });
 
-  it("ATW-CREDIT-NOTE-UNSUPPORTED: a credit note is fatal and says why", () => {
+  // ⚠ Replaced 2026-08-13. Two tests stood here asserting that BT-3 = 381 was
+  // a fatal ATW-CREDIT-NOTE-UNSUPPORTED finding. That rule is gone, along with
+  // the limitation it described, and a rule id that no longer exists cannot be
+  // tested for — so what is asserted instead is the property that used to be
+  // impossible: a credit note validates clean.
+  it("a credit note is a valid document, with no library-limitation finding", () => {
     const result = validateInput({ ...base, invoiceTypeCode: "381" });
-    expect(result.valid).toBe(false);
-    const err = result.errors.find(
-      (e) => e.rule === "ATW-CREDIT-NOTE-UNSUPPORTED",
-    );
-    expect(err).toBeDefined();
-    expect(err!.field).toBe("BT-3");
-    expect(err!.message).toContain("CreditNote");
-    expect(err!.message).toContain("not yet supported");
-    expect(err!.fix).toContain("384");
-    // A library limitation, so it must not pretend to be a regulator rule page.
-    expect(err!.docsUrl).not.toContain("attestwire.com/rules");
+    expect(result.valid).toBe(true);
+    const ids = [...result.errors, ...result.warnings].map((e) => e.rule);
+    expect(ids).not.toContain("ATW-CREDIT-NOTE-UNSUPPORTED");
+    expect(ids).not.toContain("BR-CL-01");
+    expect(ids).not.toContain("BR-DE-17");
   });
 
-  it("ATW-CREDIT-NOTE-UNSUPPORTED does not fire for ordinary invoices", () => {
-    for (const code of [undefined, "380", "384", "326", "389"]) {
-      expect(rulesOf({ ...base, invoiceTypeCode: code })).not.toContain(
-        "ATW-CREDIT-NOTE-UNSUPPORTED",
-      );
-    }
+  it("the whole rule set is silent about a well-formed credit note but for the advisory", () => {
+    // The point of the credit-note work: nothing in EN 16931 treats a credit
+    // note as a second class of document, so nothing here does either. The one
+    // finding is `information`, which never affects `valid`.
+    const result = validateInput({
+      ...base,
+      invoiceTypeCode: "381",
+      precedingInvoices: [{ invoiceNumber: "2026-000142" }],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.information.map((e) => e.rule)).not.toContain(
+      "ATW-CREDIT-NOTE-NO-PRECEDING-INVOICE",
+    );
   });
 
   it("BR-DE-27: a phone number with too few digits is a warning", () => {

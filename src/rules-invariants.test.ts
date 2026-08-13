@@ -139,6 +139,29 @@ const BATTERY: [string, InvoiceInput][] = [
   ["badInvoiceType", withInvoice({ invoiceTypeCode: "999" })],
   ["emptyInvoiceType", withInvoice({ invoiceTypeCode: "" })],
   ["creditNoteType", withInvoice({ invoiceTypeCode: "381" })],
+  // The credit-note battery. `creditNoteType` above is a *clean* credit note —
+  // it fires the advisory and nothing else — so each ATW- credit-note finding
+  // needs a fixture of its own that breaks exactly one thing.
+  ["creditNoteWithReference", withInvoice({
+    invoiceTypeCode: "381",
+    precedingInvoices: [{ invoiceNumber: "2026-000142", issueDate: "2026-08-09" }],
+  })],
+  ["creditNoteNegative", withInvoice({
+    invoiceTypeCode: "381",
+    lines: [cleanLine({ quantity: -10 })],
+    precedingInvoices: [{ invoiceNumber: "2026-000142" }],
+  })],
+  ["creditNoteDueDateUnbound", withInvoice({
+    invoiceTypeCode: "381",
+    dueDate: "2026-09-08",
+    payment: undefined,
+    precedingInvoices: [{ invoiceNumber: "2026-000142" }],
+  })],
+  ["creditNoteProjectReference", withInvoice({
+    invoiceTypeCode: "381",
+    projectReference: "PRJ-ERECHNUNG-2026",
+    precedingInvoices: [{ invoiceNumber: "2026-000142" }],
+  })],
   ["correctedInvoice", withInvoice({ invoiceTypeCode: "384" })],
   ["badCountry", withInvoice({
     seller: { ...clean.seller, address: { ...clean.seller.address, countryCode: "UK" } },
@@ -1003,10 +1026,14 @@ describe("every emitted TeachingError", () => {
   });
 
   it("supplies an absolute XPath, when it supplies one", () => {
+    // Two roots since 0.5.0: `/ubl:CreditNote` is a different document from
+    // `/ubl:Invoice`, and an XPath naming the wrong one resolves to nothing in
+    // the file the reader has open. A finding that can only arise on a credit
+    // note must say so.
     for (const { fixture, error } of harvested) {
       if (error.xpath === undefined) continue;
       const where = `${fixture} / ${error.rule}`;
-      expect(error.xpath, where).toMatch(/^\/ubl:Invoice/);
+      expect(error.xpath, where).toMatch(/^\/ubl:(Invoice|CreditNote)/);
       expect(error.xpath, where).not.toMatch(/\s/);
     }
   });
@@ -1124,7 +1151,11 @@ describe("rule coverage", () => {
       "BR-DE-7", "BR-DE-8", "BR-DE-9", "BR-DE-10", "BR-DE-11", "BR-DE-15",
       "BR-DE-16", "BR-DE-17", "BR-DE-27", "BR-DE-28",
       "PEPPOL-EN16931-R010", "PEPPOL-EN16931-R020",
-      "ATW-CREDIT-NOTE-UNSUPPORTED",
+      // ATW-CREDIT-NOTE-UNSUPPORTED stood here until 2026-08-13. It was a
+      // library limitation, not a regulation rule, and 0.5.0 removed the
+      // limitation: a credit note generates, parses and validates. A rule id
+      // that no longer exists cannot be fired, and leaving it in this list
+      // would assert that the gap is still open.
     ];
     for (const rule of expected) expect(firedIds, rule).toContain(rule);
   });

@@ -345,6 +345,107 @@ export const discountedXRechnung: InvoiceInput = {
 };
 
 /**
+ * A minimal credit note: the invoice above, credited in full.
+ *
+ * One field separates this from `minimalXRechnung` in substance — BT-3 is "381"
+ * rather than "380" — and that one field changes the *document*: UBL emits
+ * `ubl:CreditNote` in the CreditNote-2 namespace with `cbc:CreditNoteTypeCode`
+ * and `cac:CreditNoteLine` / `cbc:CreditedQuantity`, while CII emits the same
+ * `rsm:CrossIndustryInvoice` with `ram:TypeCode` 381. Holding the two side by
+ * side is what makes that asymmetry visible in `fixtures/`.
+ *
+ * Three things about it are deliberate:
+ *
+ *   - **The amounts are positive.** EN 16931 credit notes state positive figures
+ *     and let the document type carry the direction. A fixture with negative
+ *     line totals would be teaching the wrong idiom in the most visible place
+ *     the package has.
+ *   - **BG-3 names the invoice being credited.** No rule requires it — BR-DE-26
+ *     fires on BT-3 = 384 and nothing else — but a credit note that does not say
+ *     what it credits cannot be reconciled by the buyer, so the ordinary case is
+ *     the one worth shipping.
+ *   - **BT-9 is present, with payment instructions.** That is the pair the UBL
+ *     credit-note binding needs: the due date has no `cbc:DueDate` to live in
+ *     and goes into `cac:PaymentMeans/cbc:PaymentDueDate`, which is a real
+ *     difference from the invoice document and one only a fixture will catch.
+ */
+export const creditNoteXRechnung: InvoiceInput = {
+  ...minimalXRechnung,
+  invoiceNumber: "2026-G00021",
+  invoiceTypeCode: "381",
+  note: "Gutschrift zur Rechnung 2026-000142. Die Leistung wurde nicht erbracht.",
+  precedingInvoices: [
+    { invoiceNumber: "2026-000142", issueDate: "2026-08-09" },
+  ],
+  payment: {
+    ...minimalXRechnung.payment!,
+    remittanceInformation: "2026-G00021",
+  },
+  paymentTerms: "Der Betrag wird innerhalb von 14 Tagen erstattet.",
+};
+
+/**
+ * A partial credit note with the awkward shapes on it: the `discounted`
+ * invoice's structure, credited.
+ *
+ * It mirrors `discountedXRechnung` deliberately — a line allowance (BG-27), a
+ * document allowance (BG-20) and a document charge (BG-21) in the 19% group, and
+ * two VAT rates so the breakdown has two groups — so the two documents can be
+ * diffed against each other and every difference is either the type code, the
+ * root element or the line element. What it drops is the prepayment (BT-113) and
+ * the rounding amount (BT-114): both are lawful on a credit note and neither
+ * means anything on one, and a fixture should not model a thing nobody does.
+ *
+ * The arithmetic, written out because it is the point of the fixture:
+ *
+ *   BT-106  1 500.00 + 99.80 + 270.00                    = 1 869.80
+ *   BT-107  document allowance, 3% of 1 770.00           =    53.10
+ *   BT-108  document charge, restocking                  =    24.90
+ *   BT-109  1 869.80 − 53.10 + 24.90                     = 1 841.60
+ *   BG-23   S 19%: 1 500.00 + 270.00 − 53.10 + 24.90     = 1 741.80 → VAT 330.94
+ *           S  7%: 99.80                                 =    99.80 → VAT   6.99
+ *   BT-110  330.94 + 6.99                                =   337.93
+ *   BT-112  1 841.60 + 337.93                            = 2 179.53
+ *   BT-115  2 179.53                                     = 2 179.53
+ *
+ * Every one of those figures is a *credit*: the seller owes the buyer 2 179.53,
+ * and the document says so with the type code, not with a minus sign.
+ */
+export const creditNoteDiscountXRechnung: InvoiceInput = {
+  ...discountedXRechnung,
+  invoiceNumber: "2026-G00022",
+  invoiceTypeCode: "381",
+  note: "Teilgutschrift zur Rechnung 2026-000144 wegen Mängelrüge.",
+  noteSubjectCode: "AAI",
+  precedingInvoices: [
+    { invoiceNumber: "2026-000144", issueDate: "2026-08-09" },
+  ],
+  // BT-113 and BT-114 removed: a prepayment against a credit note, and a
+  // rounding adjustment on a refund, are shapes nobody issues.
+  paidAmount: undefined,
+  roundingAmount: undefined,
+  // BT-11 has no element on a UBL CreditNote at all (see
+  // ATW-CREDIT-NOTE-PROJECT-REFERENCE-UNBOUND). The invoice this mirrors carries
+  // one; carrying it here would make the fixture emit a warning, and a committed
+  // fixture is asserted to produce no findings of any severity.
+  projectReference: undefined,
+  payment: {
+    ...discountedXRechnung.payment!,
+    remittanceInformation: "2026-G00022",
+  },
+  paymentTerms: "Der Betrag wird innerhalb von 14 Tagen erstattet.",
+  charges: [
+    {
+      amount: 24.9,
+      vatCategory: "S",
+      vatRate: 19,
+      reason: "Wiedereinlagerung",
+      reasonCode: "FC",
+    },
+  ],
+};
+
+/**
  * The same three invoices, in the CII syntax.
  *
  * They are the UBL fixtures with `profile` switched, and that is the point: one
@@ -368,6 +469,27 @@ export const reverseChargeXRechnungCii: InvoiceInput = {
 
 export const discountedXRechnungCii: InvoiceInput = {
   ...discountedXRechnung,
+  profile: "xrechnung-cii",
+};
+
+/**
+ * The two credit notes in CII, on the same terms: `profile` switched and
+ * nothing else.
+ *
+ * These are the pair that shows what "CII has no separate credit-note document"
+ * means in practice. Diff `xrechnung-cii-credit-note.xml` against
+ * `xrechnung-cii-minimal.xml` and the structural difference is three digits in
+ * `ram:TypeCode`; diff the UBL twins and it is the root element, the namespace,
+ * the type-code element, the line element, the quantity element, the position of
+ * the tax point date and the home of BT-9.
+ */
+export const creditNoteXRechnungCii: InvoiceInput = {
+  ...creditNoteXRechnung,
+  profile: "xrechnung-cii",
+};
+
+export const creditNoteDiscountXRechnungCii: InvoiceInput = {
+  ...creditNoteDiscountXRechnung,
   profile: "xrechnung-cii",
 };
 

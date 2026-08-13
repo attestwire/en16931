@@ -341,6 +341,32 @@ export function parseXml(
     if (source.startsWith("<!--", i)) {
       const end = source.indexOf("-->", i + 4);
       if (end < 0) fail("xml_unterminated_comment", "Unterminated comment");
+      // XML 1.0 forbids the literal string "--" anywhere inside a comment.
+      // "-->" is the only terminator there is, so a comment carrying "--" has
+      // no single reading: a writer who meant it as text and a reader who takes
+      // it as the start of the terminator disagree about where the comment ends
+      // — and therefore about how much of the document is markup. Refusing is
+      // the only answer that cannot silently drop or resurrect content.
+      const body = source.slice(i + 4, end);
+      const dashes = body.indexOf("--");
+      if (dashes >= 0) {
+        fail(
+          "xml_bad_comment",
+          `A comment contains "--" ${dashes + 4} characters in, which XML 1.0 does ` +
+            `not permit anywhere inside a comment`,
+        );
+      }
+      // The same rule seen from the other end: a comment may not finish with a
+      // hyphen, because that writes the close as "--->". Single hyphens
+      // separated by other characters are legal and stay legal — "<!-- a- -b -->"
+      // parses.
+      if (body.endsWith("-")) {
+        fail(
+          "xml_bad_comment",
+          `A comment ends "--->" ${body.length + 4} characters in; a comment may not ` +
+            `end with a hyphen`,
+        );
+      }
       i = end + 3;
       continue;
     }
@@ -518,6 +544,37 @@ export function parseXml(
       const [ans, alocal] = resolve(a.qname, true);
       return { namespace: ans, local: alocal, qname: a.qname, value: a.value };
     });
+
+    // XML 1.0 well-formedness: no element may carry the same attribute twice.
+    // "The same" is the expanded name — namespace URI plus local name — not the
+    // text as written, so `a:x` and `b:x` are one attribute written twice when
+    // both prefixes are bound to one URI, while the same local name under two
+    // genuinely different namespaces is legal and stays accepted. That is why
+    // this runs here rather than over `rawAttrs`: only after `resolve` is the
+    // namespace context of this element known.
+    //
+    // Accepting a duplicate is not a cosmetic fault. `attr()` returns the first
+    // match, so a document stating two different @currencyID or @schemeID values
+    // on one element would be read by position, and whichever value lost is
+    // gone from the invoice with nothing raised.
+    const seen = new Map<string, string>();
+    for (const a of attributes) {
+      // NUL separates the two halves unambiguously: it is refused as an illegal
+      // character everywhere else, so it cannot be smuggled into a namespace URI
+      // to forge or hide a collision.
+      const key = `${a.namespace}\u0000${a.local}`;
+      const first = seen.get(key);
+      if (first !== undefined) {
+        fail(
+          "xml_duplicate_attribute",
+          first === a.qname
+            ? `<${qname}> carries the attribute ${a.qname} twice`
+            : `<${qname}> carries both ${first} and ${a.qname}, which are the same ` +
+                `attribute once their prefixes are resolved`,
+        );
+      }
+      seen.set(key, a.qname);
+    }
 
     // The `[n]` index counts preceding siblings of the same name. Counting them
     // by rescanning `parent.el.children` is O(siblings) per element and so

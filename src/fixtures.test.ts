@@ -10,6 +10,10 @@ import {
   computeTotals,
 } from "./index.js";
 import {
+  creditNoteDiscountXRechnung,
+  creditNoteDiscountXRechnungCii,
+  creditNoteXRechnung,
+  creditNoteXRechnungCii,
   discountedXRechnung,
   discountedXRechnungCii,
   extendedXRechnungCii,
@@ -27,6 +31,8 @@ const cases: [string, InvoiceInput][] = [
   ["xrechnung-ubl-minimal.xml", minimalXRechnung],
   ["xrechnung-ubl-reverse-charge.xml", reverseChargeXRechnung],
   ["xrechnung-ubl-discount.xml", discountedXRechnung],
+  ["xrechnung-ubl-credit-note.xml", creditNoteXRechnung],
+  ["xrechnung-ubl-credit-note-discount.xml", creditNoteDiscountXRechnung],
 ];
 
 const ciiCases: [string, InvoiceInput][] = [
@@ -34,6 +40,8 @@ const ciiCases: [string, InvoiceInput][] = [
   ["xrechnung-cii-reverse-charge.xml", reverseChargeXRechnungCii],
   ["xrechnung-cii-discount.xml", discountedXRechnungCii],
   ["xrechnung-cii-extended.xml", extendedXRechnungCii],
+  ["xrechnung-cii-credit-note.xml", creditNoteXRechnungCii],
+  ["xrechnung-cii-credit-note-discount.xml", creditNoteDiscountXRechnungCii],
 ];
 
 describe("committed CII fixtures", () => {
@@ -53,13 +61,15 @@ describe("committed CII fixtures", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("the CII and UBL fixtures are the same three invoices in two syntaxes", () => {
+  it("the CII and UBL fixtures are the same documents in two syntaxes", () => {
     // The point of the pairing: one InvoiceInput, two bindings. If these ever
     // diverge on anything but `profile`, the comparison stops meaning anything.
     const pairs: [InvoiceInput, InvoiceInput][] = [
       [minimalXRechnung, minimalXRechnungCii],
       [reverseChargeXRechnung, reverseChargeXRechnungCii],
       [discountedXRechnung, discountedXRechnungCii],
+      [creditNoteXRechnung, creditNoteXRechnungCii],
+      [creditNoteDiscountXRechnung, creditNoteDiscountXRechnungCii],
     ];
     for (const [ubl, cii] of pairs) {
       expect(cii).toEqual({ ...ubl, profile: "xrechnung-cii" });

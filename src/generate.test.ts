@@ -655,20 +655,33 @@ describe("generateXRechnungUBL — refusals", () => {
     expect(err.message).toContain("CII");
   });
 
-  it("throws on a credit-note type code rather than emitting ubl:Invoice", () => {
-    let caught: unknown;
-    try {
-      generateXRechnungUBL({ ...minimal, invoiceTypeCode: "381" });
-    } catch (e) {
-      caught = e;
+  // ⚠ Replaced 2026-08-13. Until 0.4.0 this test asserted that a credit-note
+  // BT-3 threw UnsupportedDocumentTypeError rather than emitting an
+  // ubl:Invoice. Both halves of that were right at the time: an ubl:Invoice
+  // carrying BT-3 = 381 fails BR-CL-01, so refusing was better than emitting
+  // one. 0.5.0 emits the *third* option — the ubl:CreditNote the code actually
+  // asks for — so the refusal has nothing left to protect against. The
+  // assertion that survives unchanged is the one that mattered: BT-3 = 381
+  // never produces an ubl:Invoice.
+  it("emits a ubl:CreditNote, not an ubl:Invoice, for a credit-note type code", () => {
+    const xml = generateXRechnungUBL({ ...minimal, invoiceTypeCode: "381" });
+    expect(xml).toContain("<ubl:CreditNote");
+    expect(xml).not.toContain("<ubl:Invoice");
+    expect(xml).toContain(
+      'xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"',
+    );
+    expect(textOf(xml, "cbc:CreditNoteTypeCode")).toBe("381");
+    expect(xml).not.toContain("cbc:InvoiceTypeCode");
+  });
+
+  it("throws nothing at all for any code on the credit-note list", () => {
+    // The refusal set was six hand-picked codes; the routing set is derived
+    // from BR-CL-01's credit-note half, so it also covers the four this build
+    // used to emit as an ubl:Invoice that KoSIT then rejected.
+    for (const code of ["381", "261", "262", "296", "308", "396", "83", "420", "458", "532"]) {
+      const xml = generateXRechnungUBL({ ...minimal, invoiceTypeCode: code });
+      expect(textOf(xml, "cbc:CreditNoteTypeCode"), code).toBe(code);
     }
-    const err = caught as UnsupportedDocumentTypeError;
-    expect(err).toBeInstanceOf(UnsupportedDocumentTypeError);
-    expect(err).toBeInstanceOf(GenerationError);
-    expect(err.code).toBe("unsupported_document_type");
-    expect(err.invoiceTypeCode).toBe("381");
-    expect(err.message).toContain("credit note");
-    expect(err.message).toContain("CreditNote");
   });
 
   it("still generates the non-credit-note codes BR-DE-17 allows", () => {
