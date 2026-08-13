@@ -1,8 +1,10 @@
 import {
   REASON_FORBIDDEN_CATEGORIES,
+  VAT_RATE_DECIMALS,
   computeTotals,
   lineNetAmount,
   round2,
+  roundTo,
 } from "./totals.js";
 import {
   ALL_CATEGORIES,
@@ -116,8 +118,16 @@ const taxableBaseFor = (
 ): number => {
   const matchesRate = (declared: number | undefined): boolean => {
     if (rate === undefined) return true;
+    // The rate is normalised to the precision BT-119 is written at before the
+    // group is formed (see VAT_RATE_DECIMALS in totals.ts), so the comparison
+    // has to be made against the normalised value or a rate like 16.665 lands
+    // in no group at all and this rule reports a phantom BR-S-08. Restated
+    // here rather than imported, to keep the check independent of the
+    // arithmetic it is checking.
     const effective = RATED_CATEGORIES.includes(category)
-      ? (declared ?? 0)
+      ? typeof declared === "number" && Number.isFinite(declared)
+        ? roundTo(declared, VAT_RATE_DECIMALS)
+        : 0
       : category === "O"
         ? undefined
         : 0;

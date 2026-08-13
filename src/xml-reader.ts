@@ -69,6 +69,35 @@ export class TreeReader {
     });
   }
 
+  /**
+   * A leaf that turns out to hold child elements.
+   *
+   * `el.text` is `""` for any element with children — `parseXml` refuses mixed
+   * content and leaves a container's text empty — so reading such an element as
+   * a value yields an empty string *and* loses everything inside it. Marking it
+   * consumed used to stop `sweep` from ever mentioning the content:
+   * `<ram:ID><x:real>2026-000142</x:real></ram:ID>` produced
+   * `invoiceNumber === ""` with `x:real` reported nowhere, which is precisely
+   * the "nothing is dropped silently" promise this class exists to keep.
+   *
+   * It is now reported twice over: once for the container, saying the value
+   * came back empty, and once per child through the ordinary sweep.
+   */
+  private noteContainerReadAsLeaf(el: XmlElement): void {
+    this.visited.add(el);
+    this.unmapped.push({
+      path: el.path,
+      name: el.qname,
+      namespace: el.namespace,
+      kind: "unknown",
+      reason:
+        `<${el.qname}> was read as a text value, but it contains ${el.children.length} ` +
+        `child element(s). An element with children has no text of its own, so the ` +
+        `value read from it is empty. Neither EN 16931 syntax nests elements here; the ` +
+        `content below is listed separately.`,
+    });
+  }
+
   /** First matching child element, marked as read — for attribute access. */
   leafEl(
     parent: XmlElement,
@@ -77,7 +106,10 @@ export class TreeReader {
   ): XmlElement | undefined {
     this.visited.add(parent);
     const el = firstChild(parent, namespace, local);
-    if (el) this.consumed.add(el);
+    if (el) {
+      this.consumed.add(el);
+      if (el.children.length > 0) this.noteContainerReadAsLeaf(el);
+    }
     return el;
   }
 
@@ -98,7 +130,10 @@ export class TreeReader {
   ): XmlElement[] {
     this.visited.add(parent);
     const found = childrenNamed(parent, namespace, local);
-    for (const el of found) this.consumed.add(el);
+    for (const el of found) {
+      this.consumed.add(el);
+      if (el.children.length > 0) this.noteContainerReadAsLeaf(el);
+    }
     return found;
   }
 
@@ -154,11 +189,14 @@ export class TreeReader {
     const walk = (el: XmlElement): void => {
       if (!this.visited.has(el)) return;
       for (const child of el.children) {
-        if (this.consumed.has(child)) continue;
+        // `visited` is checked BEFORE `consumed`, so an element that is both —
+        // a leaf read for its text that turned out to have children — still
+        // gets walked into. The other order hid that content completely.
         if (this.visited.has(child)) {
           walk(child);
           continue;
         }
+        if (this.consumed.has(child)) continue;
         this.unmapped.push({
           path: child.path,
           name: child.qname,

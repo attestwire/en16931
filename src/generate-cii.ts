@@ -1,4 +1,11 @@
-import { computeTotals, formatAmount, formatNumber } from "./totals.js";
+import {
+  computeTotals,
+  effectiveAllowanceChargeRate,
+  effectiveRate,
+  formatAmount,
+  formatNumber,
+  formatPrice,
+} from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
 import {
   CREDIT_NOTE_TYPE_CODES,
@@ -373,7 +380,11 @@ export function generateCii(
   //   SpecifiedLineTradeSettlement
   const lines = inv.lines.map((line, index) => {
     const net = totals.lineNetAmounts[index] ?? 0;
-    const rate = line.vatCategory === "O" ? undefined : (line.vatRate ?? 0);
+    // One source of truth for the rate. `effectiveRate` is what `computeTotals`
+    // grouped and computed BT-117 from, and it normalises to the precision the
+    // rate is written at — so BT-119 and BT-117 can no longer come from two
+    // different numbers (finding 8).
+    const rate = effectiveRate(line);
     const zeroRated = ["Z", "E", "AE", "K", "G"].includes(line.vatCategory);
 
     return groupAlways("ram:IncludedSupplyChainTradeLineItem", [
@@ -433,7 +444,8 @@ export function generateCii(
         line.grossUnitPrice === undefined
           ? null
           : groupAlways("ram:GrossPriceProductTradePrice", [
-              el("ram:ChargeAmount", formatAmount(line.grossUnitPrice)),
+              // BT-148, a price: no two-decimal cap (finding 7).
+              el("ram:ChargeAmount", formatPrice(line.grossUnitPrice)),
               line.baseQuantity === undefined
                 ? null
                 : el("ram:BasisQuantity", formatNumber(line.baseQuantity, 4), {
@@ -441,16 +453,18 @@ export function generateCii(
                   }),
               groupAlways("ram:AppliedTradeAllowanceCharge", [
                 indicatorNode("ram:ChargeIndicator", false),
+                // BT-147, the discount off that price.
                 el(
                   "ram:ActualAmount",
-                  formatAmount(
+                  formatPrice(
                     line.priceDiscount ?? line.grossUnitPrice - line.unitPrice,
                   ),
                 ),
               ]),
             ]),
         groupAlways("ram:NetPriceProductTradePrice", [
-          el("ram:ChargeAmount", formatAmount(line.unitPrice)),
+          // BT-146, the item net price.
+          el("ram:ChargeAmount", formatPrice(line.unitPrice)),
           line.baseQuantity === undefined
             ? null
             : el("ram:BasisQuantity", formatNumber(line.baseQuantity, 4), {
@@ -741,16 +755,22 @@ export function generateCii(
     inv.invoicingPeriod
       ? periodNode("ram:BillingSpecifiedPeriod", inv.invoicingPeriod)
       : null,
+    // ⚠ `effectiveAllowanceChargeRate`, not `entry.vatRate ?? 0` (finding 11).
+    // The line path already normalised; this one did not, so a document
+    // allowance written `{ vatCategory: "E", vatRate: 19 }` emitted
+    // `RateApplicablePercent 19.00` against an `E @ 0.00` breakdown — the
+    // breakdown forces zero for Z/E/AE/K/G and the allowance did not, which is
+    // a BR-E-06 violation the two halves of the document disagree about.
     ...(inv.allowances ?? []).map((entry) =>
       allowanceChargeNode(entry, false, {
         category: entry.vatCategory,
-        rate: entry.vatCategory === "O" ? undefined : (entry.vatRate ?? 0),
+        rate: effectiveAllowanceChargeRate(entry),
       }),
     ),
     ...(inv.charges ?? []).map((entry) =>
       allowanceChargeNode(entry, true, {
         category: entry.vatCategory,
-        rate: entry.vatCategory === "O" ? undefined : (entry.vatRate ?? 0),
+        rate: effectiveAllowanceChargeRate(entry),
       }),
     ),
     // ram:SpecifiedTradePaymentTerms — schema order: ID, FromEventCode,

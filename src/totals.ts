@@ -43,12 +43,108 @@ export function formatAmount(value: number): string {
   return (rounded === 0 ? 0 : rounded).toFixed(2);
 }
 
-/** Render a quantity or percentage: trims to at most 4 decimals, no exponent. */
+/**
+ * Round half-up, away from zero, to an arbitrary number of decimals.
+ *
+ * The `toPrecision(15)` step is the same one `round2` uses and for the same
+ * reason: it discards the binary representation error before the rounding
+ * decision, so the caller's decimal literal is what gets rounded.
+ */
+export function roundTo(value: number, decimals: number): number {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`Cannot round non-finite number: ${value}`);
+  }
+  if (value === 0) return 0;
+  const factor = 10 ** decimals;
+  const sign = value < 0 ? -1 : 1;
+  const scaled = Number((Math.abs(value) * factor).toPrecision(15));
+  return (sign * Math.round(scaled)) / factor;
+}
+
+/**
+ * Render a quantity or percentage at a fixed number of decimals.
+ *
+ * ⚠ `toFixed` alone is not enough, and this used to use it alone.
+ * `(16.665).toFixed(2)` is `"16.66"` — toFixed works from the binary value, so
+ * it both truncates and disagrees with half-up, which is the exact trap
+ * `round2`'s docblock six lines above warns about. That mattered because the
+ * VAT rate was rendered here while the VAT amount was computed from the
+ * unrounded rate: a rate of 16.665 emitted BT-119 `16.66` against a BT-117
+ * computed at 16.665%, and KoSIT rejected the document under BR-CO-17 and
+ * BR-S-09 once the base was large enough for the discrepancy to clear the
+ * ±0.02 tolerance (about 20,000). The rate is now normalised through
+ * {@link roundTo} before `computeTotals` groups on it, so the two come from one
+ * number, and this function rounds the same way.
+ */
 export function formatNumber(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) {
     throw new RangeError(`Cannot format non-finite number: ${value}`);
   }
-  return (value === 0 ? 0 : value).toFixed(decimals);
+  const rounded = roundTo(value, decimals);
+  return (rounded === 0 ? 0 : rounded).toFixed(decimals);
+}
+
+/**
+ * Maximum decimals kept on a unit price. See {@link formatPrice}.
+ *
+ * Eight is not a rule from anywhere — EN 16931 sets no cap on BT-146 — it is a
+ * ceiling on how much floating-point noise can reach the document. A price with
+ * more than eight decimals is beyond what a double represents cleanly at
+ * invoice magnitudes anyway.
+ */
+export const MAX_PRICE_DECIMALS = 8;
+
+/**
+ * Render a unit price (BT-146 item net price, BT-147 item price discount,
+ * BT-148 item gross price) at its natural precision, never below two decimals.
+ *
+ * ⚠ These three terms were rendered with `formatAmount` until 0.4.0, which
+ * force-rounds to two decimals. There is no BR-DEC rule capping BT-146 — see
+ * the docblock in `rules-decimals.ts`, which says so explicitly — and per-unit
+ * pricing routinely needs more: per-kilo, per-kWh, per-thousand-impressions.
+ *
+ * The damage was silent rather than loud. `quantity: 10000, unitPrice: 0.0345`
+ * emitted a price of `0.03` beside a correctly computed line total of `345.00`,
+ * so the document said 10000 × 0.03 = 345.00 and the price a human reads was
+ * wrong by 71%. KoSIT *accepts* that document — no EN 16931 rule ties BT-146 to
+ * BT-131 — so nothing downstream would ever have reported it. Our own
+ * `generate → parse → validate` round trip did fail it, with five BR-CO
+ * findings, which is how it surfaced.
+ *
+ * Two decimals is a floor, not a cap: `150` renders `"150.00"` so the common
+ * case is unchanged and every committed fixture is byte-identical.
+ */
+export function formatPrice(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`Cannot format non-finite price: ${value}`);
+  }
+  if (value === 0) return "0.00";
+  // `toFixed` switches to exponent notation at 1e21, and `xs:decimal` has no
+  // exponent form — `formatPrice(1e22)` produced the string "1e+22." before
+  // this guard, which is not a number in any syntax. Refuse loudly rather than
+  // write it: no invoice has a unit price of a sextillion, and a document
+  // carrying that text is rejected by every validator with a message that
+  // points at the wrong thing.
+  if (Math.abs(value) >= 1e21) {
+    throw new RangeError(
+      `Cannot format the price ${value}: it is at or above 1e21, where JavaScript ` +
+        `switches to exponent notation and xs:decimal has no exponent form.`,
+    );
+  }
+  const rounded = roundTo(value, MAX_PRICE_DECIMALS);
+  if (rounded === 0) {
+    // Smaller than the last decimal we keep. Say so as zero rather than as
+    // exponent notation, which is not valid in an XSD decimal.
+    return "0.00";
+  }
+  // `toFixed` at a fixed width never produces exponent notation for the
+  // magnitudes an invoice carries, and `rounded` is already snapped to the
+  // grid, so the digits beyond it are zeros to be trimmed.
+  const fixed = rounded.toFixed(MAX_PRICE_DECIMALS);
+  const [whole, decimals = ""] = fixed.split(".");
+  const trimmed = decimals.replace(/0+$/, "");
+  const kept = trimmed.length < 2 ? decimals.slice(0, 2) : trimmed;
+  return `${whole}.${kept}`;
 }
 
 /** Categories whose VAT rate is fixed at zero (BR-AE-05, BR-Z-05, BR-E-05, BR-IC-05, BR-G-05). */
@@ -90,11 +186,27 @@ export const DEFAULT_EXEMPTION_REASONS: Partial<Record<VatCategory, string>> = {
   O: "Not subject to VAT",
 };
 
-/** Effective VAT rate for a line: categories with a fixed zero rate ignore a stray input. */
+/**
+ * Decimals kept on a VAT rate (BT-119, BT-152, BT-96/BT-103's category rate).
+ *
+ * The rate is rendered with `formatNumber(rate)` — two decimals — so this is
+ * where the *computed* VAT amount has to be pinned as well. Until 0.4.0 it was
+ * not: BT-117 was computed from the caller's unrounded rate while BT-119 was
+ * written truncated, and a rate of 16.665 on a base of 100,000 produced
+ * `RateApplicablePercent 16.66` against `CalculatedAmount 16665.00` — a KoSIT
+ * REJECT under BR-CO-17 and BR-S-09, in both syntaxes.
+ */
+export const VAT_RATE_DECIMALS = 2;
+
+/**
+ * Effective VAT rate for a line: categories with a fixed zero rate ignore a
+ * stray input, and every rate is normalised to the precision it is written at.
+ */
 export function effectiveRate(line: InvoiceLine): number | undefined {
   if (NO_RATE_CATEGORIES.includes(line.vatCategory)) return undefined;
   if (ZERO_RATE_CATEGORIES.includes(line.vatCategory)) return 0;
-  return line.vatRate ?? 0;
+  const rate = line.vatRate ?? 0;
+  return Number.isFinite(rate) ? roundTo(rate, VAT_RATE_DECIMALS) : rate;
 }
 
 /**
@@ -109,7 +221,8 @@ export function effectiveAllowanceChargeRate(
 ): number | undefined {
   if (NO_RATE_CATEGORIES.includes(entry.vatCategory)) return undefined;
   if (ZERO_RATE_CATEGORIES.includes(entry.vatCategory)) return 0;
-  return entry.vatRate ?? 0;
+  const rate = entry.vatRate ?? 0;
+  return Number.isFinite(rate) ? roundTo(rate, VAT_RATE_DECIMALS) : rate;
 }
 
 /** Σ of a line's BG-27 allowances or BG-28 charges, each rounded first. */

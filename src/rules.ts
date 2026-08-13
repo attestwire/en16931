@@ -1,7 +1,14 @@
-import { computeTotals, round2 } from "./totals.js";
+import { COUNTRY_CODES_SET } from "./codelists/country.js";
+import { computeTotals, effectiveRate, round2 } from "./totals.js";
 import { CREDIT_NOTE_TYPE_CODES, DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
 import { extendedRules } from "./rules-extended.js";
-import { documentAllowanceCharges, linesOf } from "./rule-kit.js";
+import {
+  CATEGORY_RULE_INFIX,
+  documentAllowanceCharges,
+  linesOf,
+  withinAbsoluteTolerance,
+  withinSignedTolerance,
+} from "./rule-kit.js";
 import type {
   InvoiceInput,
   Party,
@@ -48,8 +55,120 @@ const blank = (v: string | undefined | null): boolean =>
  */
 const EMAIL_SHAPE = /^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$/;
 
-/** ISO 3166-1 alpha-2 prefix, plus Greece's "EL" derogation (BR-CO-09). */
-const VAT_PREFIX = /^(EL|[A-Z]{2})/;
+/**
+ * The country prefixes BR-CO-09 admits on a VAT identifier: every ISO 3166-1
+ * alpha-2 code, plus Greece's "EL" derogation.
+ *
+ * ⚠ This set is NOT the same as BR-CL-14's, and the two must not be merged or
+ * derived from one another. BR-CL-14 checks a *country code* element and does
+ * not admit "EL"; BR-CO-09 checks the *prefix of a VAT number* and does. That
+ * one-element difference is the whole reason a Greek invoice is well formed
+ * with BT-31 = "EL123456789" and BT-40 = "GR" at the same time. Collapsing the
+ * two sets breaks Greece in one direction or the other.
+ *
+ * Verified against the XRechnung 3.0.2 configuration
+ * (`EN16931-UBL-validation.xsl`): BR-CO-09's literal list is 252 codes and
+ * BR-CL-14's is 251, the difference is exactly "EL", and BR-CL-14's list is
+ * `COUNTRY_CODES` element for element.
+ *
+ * Until 0.4.0 this was `/^(EL|[A-Z]{2})/`, which only asserted "two letters".
+ * A made-up prefix such as "ZZ123456789" passed here and was rejected by
+ * KoSIT under this same rule id — a false `valid: true` on a compliance
+ * check, which is the worst direction for the error to point.
+ */
+const VAT_PREFIX_CODES: ReadonlySet<string> = new Set([
+  ...COUNTRY_CODES_SET,
+  "EL",
+]);
+
+/**
+ * ⚠ The two syntaxes do not agree, and this build must not pretend they do.
+ *
+ * UBL (`EN16931-UBL-validation.xsl`, BR-CO-09):
+ *
+ *     contains(' 1A AD … ZW ', substring(cbc:CompanyID, 1, 2))
+ *
+ * CII (`EN16931-CII-validation.xsl`, BR-CO-09):
+ *
+ *     contains(' 1A AD … ZW ', concat(' ', substring(., 1, 2), ' '))
+ *
+ * Three differences follow, all of them observed against KoSIT 1.6.2 with the
+ * XRechnung 3.0.2 configuration:
+ *
+ *  1. **The CII needle is space-wrapped; the UBL needle is not.** In UBL the
+ *     two characters are looked for anywhere in the list *including across a
+ *     token boundary*, so `"D "` matches (it is inside `"AD "`) and `" D"`
+ *     matches (it is inside `" DE"`). A VAT number written `"D E123456789"` or
+ *     `" DE123456789"` is therefore genuinely **accepted by KoSIT in UBL and
+ *     rejected in CII**. That is not a defect in the schematron we get to
+ *     round off; it is the rule.
+ *  2. **Neither test folds case, and neither strips whitespace.** Until this
+ *     fix we did both, up front, so `"de123456789"` reported `valid: true`
+ *     here and was rejected by KoSIT under BR-CO-09 in *both* syntaxes.
+ *  3. **The two literal lists are not the same list.** UBL carries `SS` and
+ *     not `AN`; CII carries `AN` and not `SS`. Both are 252 tokens.
+ *
+ * The lists are built from `COUNTRY_CODES` (the BR-CL-14 codelist, 251 codes,
+ * generated from the same upstream artefact) plus the documented deltas.
+ * `src/rules.test.ts` pins both against the schematron literals, verbatim.
+ *
+ * Note the `contains` semantics are independent of token order: the only
+ * two-character substrings of `' A B C '` are the tokens themselves, each
+ * token's last character followed by a space, and a space followed by each
+ * token's first character. Rebuilding the list in a different order cannot
+ * change any verdict.
+ */
+const brCo09List = (tokens: readonly string[]): string =>
+  ` ${tokens.join(" ")} `;
+
+/** UBL BR-CO-09: BR-CL-14's codes, plus `EL`, minus nothing. */
+const UBL_VAT_PREFIX_LIST = brCo09List([...VAT_PREFIX_CODES]);
+
+/** CII BR-CO-09: the same, but with `AN` present and `SS` absent. */
+const CII_VAT_PREFIX_LIST = brCo09List(
+  [...VAT_PREFIX_CODES].filter((c) => c !== "SS").concat("AN"),
+);
+
+/**
+ * Syntaxes a profile can be emitted in. `en16931` is the awkward one: both
+ * `generateXRechnungUBL` and `generateCii` accept it, so an input carrying it
+ * may become either document and has to satisfy both rules. Reporting only the
+ * laxer of the two would hand a caller `valid: true` on an input that KoSIT
+ * rejects the moment they call the other generator.
+ */
+const SYNTAXES_FOR_PROFILE: Record<string, readonly ("ubl" | "cii")[]> = {
+  "xrechnung-ubl": ["ubl"],
+  "peppol-bis-3": ["ubl"],
+  "xrechnung-cii": ["cii"],
+  "facturx-en16931": ["cii"],
+  en16931: ["ubl", "cii"],
+};
+
+/**
+ * BR-CO-09 exactly as the schematron evaluates it, per syntax.
+ *
+ * `substring(x, 1, 2)` on a value shorter than two characters returns what
+ * there is; `slice(0, 2)` does the same. No trimming, no case folding — see
+ * the note above.
+ */
+const vatPrefixAcceptedBy = (syntax: "ubl" | "cii", value: string): boolean => {
+  const prefix = value.slice(0, 2);
+  return syntax === "ubl"
+    ? UBL_VAT_PREFIX_LIST.includes(prefix)
+    : CII_VAT_PREFIX_LIST.includes(` ${prefix} `);
+};
+
+/**
+ * Which syntaxes would refuse this VAT identifier under BR-CO-09. Empty means
+ * every syntax the profile can be emitted in accepts it.
+ */
+const vatPrefixRejectedBy = (
+  profile: string,
+  value: string,
+): readonly ("ubl" | "cii")[] =>
+  (SYNTAXES_FOR_PROFILE[profile] ?? ["ubl", "cii"]).filter(
+    (syntax) => !vatPrefixAcceptedBy(syntax, value),
+  );
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Human-readable names for the VAT categories, used in generated messages. */
@@ -107,6 +226,23 @@ const SELLER_TAX_ID_RULES: {
     category: "E",
     rule: "BR-E-02",
     why: "An exemption is claimed against a specific national provision, which only a registered taxable person can invoke.",
+  },
+  {
+    // ⚠ Finding 13. BR-AE-02 has two halves and only the buyer half was
+    // enforced, so an `en16931` or `peppol-bis-3` invoice with reverse-charge
+    // lines and no seller identifier at all returned `valid: true` with zero
+    // errors. Only XRechnung caught it, and then under the wrong id (BR-DE-16).
+    //
+    // The seller half is in the EN 16931 schematron, not a CIUS, so it applies
+    // to every profile. Verbatim from `EN16931-UBL-validation.xsl`, the rule
+    // fires unless
+    //   exists(//cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID)
+    //   or exists(//cac:TaxRepresentativeParty/cac:PartyTaxScheme[…'VAT']/cbc:CompanyID)
+    // — note the seller half takes *any* PartyTaxScheme, so BT-32 satisfies it,
+    // which is why this is not a `vatIdOnly` rule.
+    category: "AE",
+    rule: "BR-AE-02",
+    why: "Under reverse charge you charge no VAT, but the supply is still yours and the authority still has to attribute it to you — the buyer's self-assessed input is matched against a named supplier.",
   },
   {
     category: "K",
@@ -511,7 +647,20 @@ const baseInputRules: RuleFn[] = [
   },
 
   // --- BR-CO-09: VAT identifier country prefixes ---------------------------
-
+  //
+  // The rule names three identifiers, not two: the Seller VAT identifier
+  // (BT-31), the Seller tax representative VAT identifier (BT-63) and the
+  // Buyer VAT identifier (BT-48). BT-63 was left out until 0.4.0 on the belief
+  // that the input model had no BG-11 group. It has carried
+  // `taxRepresentative` since 0.2.0 — see types.ts — so an unprefixed
+  // representative number passed here and was then rejected by KoSIT.
+  //
+  // The schematron context differs by syntax — `//cac:PartyTaxScheme[…'VAT']`
+  // in UBL, `//ram:SpecifiedTaxRegistration/ram:ID[@schemeID='VA']` in CII —
+  // and so does the test itself. See `vatPrefixAcceptedBy` above: this build
+  // used to fold case and strip whitespace before the lookup, and the
+  // schematron does neither, so `"de123456789"` was reported valid here and
+  // rejected by KoSIT in both syntaxes.
   (inv) => {
     const out: TeachingError[] = [];
     const check = (
@@ -519,17 +668,63 @@ const baseInputRules: RuleFn[] = [
       field: `BT-${number}`,
       who: string,
       path: string,
+      example: string,
     ) => {
-      if (blank(value)) return;
-      const normalised = value!.replace(/\s/g, "").toUpperCase();
-      if (!VAT_PREFIX.test(normalised)) {
+      // Deliberately NOT `blank()`. The generators emit the identifier element
+      // whenever the string is truthy, so a value of `" "` reaches the
+      // document and the schematron context fires on it. Probed: `" "` is
+      // rejected by KoSIT under BR-CO-09 in CII and accepted in UBL (the
+      // unwrapped needle finds a space in the list), and `""` emits no element
+      // at all and is accepted by both.
+      if (value === undefined || value === null || value === "") return;
+      const raw = value;
+      const rejectedBy = vatPrefixRejectedBy(inv.profile, raw);
+      if (rejectedBy.length > 0) {
+        // The prefix exactly as the schematron sees it: no trimming, no
+        // upper-casing. Reporting the folded form would describe a value the
+        // validator never looks at.
+        const prefix = raw.slice(0, 2);
+        // Several different failures wear the same rule id, and they need
+        // different sentences. A number with no prefix at all ("123456789") is
+        // self-evident once named. A number whose prefix *looks* like a country
+        // and is not ("ZZ123456789") is not: without saying that the prefix is
+        // looked up in the code list, the reader sees two capital letters where
+        // the message asks for two capital letters.
+        const looksLikeACode = /^[A-Z]{2}$/.test(prefix);
+        const upper = prefix.toUpperCase();
+        // A lower-case or space-broken prefix is the commonest way to trip
+        // this, and the least obvious: the value looks right to a human.
+        const casing =
+          !looksLikeACode && /^[A-Za-z]{2}$/.test(prefix) && VAT_PREFIX_CODES.has(upper)
+            ? ` The lookup is case-sensitive — "${upper}" is in the list and "${prefix}" is not, so write the prefix in capitals.`
+            : "";
+        const spacing =
+          casing === "" && /\s/.test(prefix)
+            ? ` The first two characters are "${prefix}" — there is whitespace inside the prefix. The lookup takes the first two characters literally and does not strip it.`
+            : "";
+        // "UK" is the one wrong prefix common enough to be worth naming: it is
+        // reserved in ISO 3166-1 and never assigned, so a British VAT number
+        // written "UK123456789" is refused for that reason alone.
+        const detail = casing || spacing || (
+          !looksLikeACode
+            ? ""
+            : prefix === "UK"
+              ? ` The United Kingdom is "GB" in ISO 3166-1 — "UK" is a reserved code and is in no version of the list.`
+              : ` The prefix is looked up in the code list, not just checked for being two letters, and "${prefix}" is not in it.`
+        );
+        // When the two syntaxes disagree, say which one refuses it rather than
+        // leaving the caller to discover it on the other generator.
+        const syntaxNote =
+          rejectedBy.length === 1 && (SYNTAXES_FOR_PROFILE[inv.profile]?.length ?? 0) > 1
+            ? ` This value is refused in ${rejectedBy[0] === "cii" ? "CII" : "UBL"} syntax and accepted in the other: the two schematrons word the same rule differently, and the "en16931" profile can be emitted as either, so it has to satisfy both.`
+            : "";
         out.push({
           rule: "BR-CO-09",
           field,
           severity: "fatal",
-          message: `The ${who} VAT identifier (${field}) must start with a country prefix in accordance with ISO 3166-1 alpha-2, but "${value}" does not. Greece is the one exception: it uses the prefix "EL" rather than "GR".`,
+          message: `The ${who} VAT identifier (${field}) must start with a country prefix in accordance with ISO 3166-1 alpha-2, but "${value}" does not.${detail}${syntaxNote} Greece is the one exception: it uses the prefix "EL" rather than "GR".`,
           fix: `Prefix the number with the issuing country's two-letter code — a German number 123456789 becomes "DE123456789". Store it prefixed; do not add the prefix only at render time.`,
-          example: `"vatId": "DE123456789"`,
+          example,
           xpath: path,
           docsUrl: `${DOCS}/BR-CO-09`,
         });
@@ -540,12 +735,21 @@ const baseInputRules: RuleFn[] = [
       "BT-31",
       "seller",
       "/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID",
+      `"vatId": "DE123456789"`,
     );
     check(
       inv.buyer?.vatId,
       "BT-48",
       "buyer",
       "/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID",
+      `"vatId": "DE123456789"`,
+    );
+    check(
+      inv.taxRepresentative?.vatId,
+      "BT-63",
+      "seller tax representative",
+      "/ubl:Invoice/cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID",
+      `"taxRepresentative": { "name": "Fiscal Rep France SARL", "vatId": "FR12345678901" }`,
     );
     return out;
   },
@@ -794,14 +998,40 @@ const baseInputRules: RuleFn[] = [
       });
     };
 
-    compare(
-      declared.lineExtensionAmount,
-      computed.lineExtensionAmount,
-      "BR-CO-10",
-      "BT-106",
-      "the sum of invoice line net amounts (BT-106) to equal Σ BT-131",
-      "This is a pure addition check, so a mismatch means either a line is missing from your total or a line amount was rounded differently.",
-    );
+    // One finding per rule id per document. The schematron defines BR-CO-10 and
+    // BR-CO-14 once each, and each of them is a sum: BT-106 = Σ BT-131 and
+    // BT-110 = Σ BT-117. When the document states its own summands, the
+    // stated-versus-stated check in the next rule is the one that matches what
+    // KoSIT does — it sums what is written on the lines and in the breakdown,
+    // not what they ought to compute to — so it owns the id and this
+    // derived-value twin stands down rather than emitting a second finding
+    // under the same name with a different delta. A caller reading
+    // `errors: ['BR-CO-14', 'BR-CO-14']` sees one rule contradicting itself.
+    //
+    // Nothing is lost by standing down: the only document the stated check
+    // passes and this one would fail is one whose lines are internally
+    // consistent with a stated total but whose own arithmetic is wrong, which
+    // is PEPPOL-EN16931-R120 (reported per line) and is not a BR-CO-10
+    // violation at all — KoSIT accepts it under BR-CO-10.
+    const statesLineNetAmounts =
+      declared.lineNetAmounts?.some(
+        (value) => typeof value === "number" && Number.isFinite(value),
+      ) ?? false;
+    const statesGroupTaxAmounts =
+      declared.subtotals?.some(
+        (sub) => typeof sub.taxAmount === "number" && Number.isFinite(sub.taxAmount),
+      ) ?? false;
+
+    if (!statesLineNetAmounts) {
+      compare(
+        declared.lineExtensionAmount,
+        computed.lineExtensionAmount,
+        "BR-CO-10",
+        "BT-106",
+        "the sum of invoice line net amounts (BT-106) to equal Σ BT-131",
+        "This is a pure addition check, so a mismatch means either a line is missing from your total or a line amount was rounded differently.",
+      );
+    }
     compare(
       declared.taxExclusiveAmount,
       computed.taxExclusiveAmount,
@@ -810,14 +1040,16 @@ const baseInputRules: RuleFn[] = [
       "the invoice total without VAT (BT-109) to equal Σ BT-131 − document allowances (BT-107) + document charges (BT-108)",
       "BT-107 and BT-108 are separate disclosures, not a net figure: a document allowance and a document charge of the same size leave BT-109 unchanged and still both appear. Check that your own BT-109 subtracts the allowances and adds the charges, in that order.",
     );
-    compare(
-      declared.taxAmount,
-      computed.taxAmount,
-      "BR-CO-14",
-      "BT-110",
-      "the invoice total VAT amount (BT-110) to equal Σ VAT category tax amounts (BT-117)",
-      "VAT is computed per category-and-rate group and rounded there (BR-CO-17), then summed. Computing VAT on the document total instead of per group is the usual cause of a one-cent break.",
-    );
+    if (!statesGroupTaxAmounts) {
+      compare(
+        declared.taxAmount,
+        computed.taxAmount,
+        "BR-CO-14",
+        "BT-110",
+        "the invoice total VAT amount (BT-110) to equal Σ VAT category tax amounts (BT-117)",
+        "VAT is computed per category-and-rate group and rounded there (BR-CO-17), then summed. Computing VAT on the document total instead of per group is the usual cause of a one-cent break.",
+      );
+    }
     compare(
       declared.taxInclusiveAmount,
       computed.taxInclusiveAmount,
@@ -834,6 +1066,247 @@ const baseInputRules: RuleFn[] = [
       "the amount due for payment (BT-115) to equal BT-112 − paid amount (BT-113) + rounding amount (BT-114)",
       "BT-113 (paid amount) is subtracted and BT-114 (rounding amount) is added — and BT-114 is signed, so a rounding-down carries a negative value. A payable amount that equals BT-112 on an invoice with a deposit is the usual shape of this failure.",
     );
+    return out;
+  },
+
+  // --- BR-CO-10 / BR-*-08 / BR-CO-17 against declared line and group figures
+  //
+  // Finding 9. `declaredTotals` used to carry only the six document totals, so
+  // a stated line net amount (BT-131) and a stated VAT breakdown (BT-116,
+  // BT-117) reached nothing: both parsers recorded them as `unmapped`
+  // "recomputed" notes and threw the values away. The consequence was a
+  // document with three fatal schematron violations — BT-131 77.77 where the
+  // arithmetic says 99.99, BT-116 55.55, BT-117 11.11 — validating here as
+  // `valid: true` with zero errors, while KoSIT REJECTED it with
+  // `[BR-CO-10, BR-CO-14, BR-S-08, PEPPOL-EN16931-R120]` in both syntaxes.
+  //
+  // Probed 2026-08-12, KoSIT 1.6.2 / XRechnung 3.0.2. The four ids below are
+  // the ones the validator actually returned, not the ones the rule text
+  // suggests.
+  (inv) => {
+    const declared = inv.declaredTotals;
+    if (!declared) return null;
+    const lines = linesOf(inv);
+    if (lines.length === 0) return null;
+
+    let computed;
+    try {
+      computed = computeTotals(inv);
+    } catch {
+      return null; // a malformed line is already reported by BR-22 / BR-26
+    }
+
+    const out: TeachingError[] = [];
+
+    // --- PEPPOL-EN16931-R120: BT-131 = BT-129 × BT-146 / BT-149 − ΣBT-136 + ΣBT-141
+    //
+    // Gated the way KoSIT gates it. The rule lives in the Peppol schematron,
+    // and the XRechnung 3.0.2 configuration embeds it — verified, not assumed:
+    // an XRechnung document with a corrupt BT-131 came back carrying this id.
+    // Plain `en16931` has no equivalent rule, and BR-CO-10 below catches the
+    // same corruption there through the sum.
+    const declaredLines = declared.lineNetAmounts;
+    if (declaredLines && (isPeppol(inv) || isXRechnung(inv))) {
+      for (const [index, stated] of declaredLines.entries()) {
+        if (typeof stated !== "number" || !Number.isFinite(stated)) continue;
+        const derived = computed.lineNetAmounts[index];
+        if (derived === undefined) continue;
+        // The Peppol rule's own slack: `u:slack(exp, val, 0.02)`, i.e. 0.02 of
+        // the invoice currency (0.5 for HUF). Not an exact comparison — a
+        // sender who rounded the price rather than the line is inside it.
+        const slack = inv.currency?.toUpperCase() === "HUF" ? 0.5 : 0.02;
+        if (Math.abs(stated - derived) <= slack) continue;
+        const line = lines[index];
+        out.push({
+          rule: "PEPPOL-EN16931-R120",
+          field: "BT-131",
+          severity: "fatal",
+          message: `Line ${line?.id ?? index + 1} states a net amount (BT-131) of ${round2(stated).toFixed(2)}, but its own quantity, price and line-level allowances and charges compute to ${derived.toFixed(2)} — a difference of ${round2(round2(stated) - derived) > 0 ? "+" : ""}${round2(round2(stated) - derived).toFixed(2)} ${inv.currency}. The line net amount is not a figure you get to state independently: it is BT-129 × (BT-146 / BT-149) − Σ BT-136 + Σ BT-141.`,
+          fix: `Either correct the quantity (BT-129), the item net price (BT-146), the base quantity (BT-149) or the line allowances and charges so they produce ${round2(stated).toFixed(2)}, or drop declaredTotals.lineNetAmounts and let the library compute the line. Round the line once, at the end, to two decimals — rounding the price first is the usual cause of a one-cent break.`,
+          example: `"quantity": ${line?.quantity ?? 1}, "unitPrice": ${line?.unitPrice ?? 0}`,
+          xpath: `/ubl:Invoice/cac:InvoiceLine[${index + 1}]/cbc:LineExtensionAmount`,
+          docsUrl: `${DOCS}/PEPPOL-EN16931-R120`,
+        });
+      }
+    }
+
+    // --- BR-CO-10: BT-106 = Σ BT-131, using the amounts the document states.
+    //
+    // The schematron sums what is written on the lines, not what the lines
+    // ought to compute to, so when the document states its line amounts they
+    // are the summands. Without this, a stated BT-106 that matched the *derived*
+    // line total passed while KoSIT compared it against the *stated* one.
+    if (declaredLines && declaredLines.some((value) => typeof value === "number")) {
+      const statedSum = round2(
+        declaredLines.reduce<number>(
+          (sum, value) =>
+            typeof value === "number" && Number.isFinite(value)
+              ? sum + round2(value)
+              : sum,
+          0,
+        ),
+      );
+      const target =
+        typeof declared.lineExtensionAmount === "number" &&
+        Number.isFinite(declared.lineExtensionAmount)
+          ? round2(declared.lineExtensionAmount)
+          : computed.lineExtensionAmount;
+      if (statedSum !== target) {
+        out.push({
+          rule: "BR-CO-10",
+          field: "BT-106",
+          severity: "fatal",
+          message: `BR-CO-10 requires the sum of invoice line net amounts (BT-106) to equal Σ BT-131. The lines state ${statedSum.toFixed(2)} between them, against a BT-106 of ${target.toFixed(2)} — a difference of ${round2(statedSum - target) > 0 ? "+" : ""}${round2(statedSum - target).toFixed(2)} ${inv.currency}.`,
+          fix: `Correct whichever of the two is wrong. The sum is of the *stated* line amounts, each rounded to two decimals first, so a line whose own arithmetic is also wrong shows up separately as PEPPOL-EN16931-R120.`,
+          example: `"declaredTotals": { "lineExtensionAmount": ${statedSum.toFixed(2)} }`,
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount",
+          docsUrl: `${DOCS}/BR-CO-10`,
+        });
+      }
+    }
+
+    // --- BR-{S,Z,E,AE,IC,G,O,AF,AG}-08 and BR-CO-17, per breakdown group.
+    const declaredSubtotals = declared.subtotals;
+    if (declaredSubtotals && declaredSubtotals.length > 0) {
+      const key = (category: string | undefined, rate: number | undefined) =>
+        `${category ?? ""}|${rate === undefined ? "" : round2(rate)}`;
+      const computedByKey = new Map(
+        computed.subtotals.map((sub) => [key(sub.category, sub.rate), sub]),
+      );
+
+      // The group's taxable amount as the document *states* it: the computed
+      // group total, with each line's contribution swapped for the amount that
+      // line writes. The document allowances and charges in the group are
+      // already in the computed figure and are stated nowhere else, so they
+      // carry through untouched.
+      //
+      // This is the same principle as BR-CO-10 above — the schematron sums what
+      // is written on the lines, not what they ought to compute to — and the
+      // `-08` family has to follow it or it contradicts its own neighbour.
+      // Comparing a stated BT-116 against the *derived* group total reported a
+      // BR-S-08 that KoSIT does not: 80 lines each stating a cent or two more
+      // than their own arithmetic gives, every one of them inside
+      // PEPPOL-EN16931-R120's own 0.02 slack and so legitimate individually,
+      // put the group 1.60 out and tripped a rule the document does not break.
+      const statedGroupDelta = new Map<string, number>();
+      if (declaredLines) {
+        for (const [index, statedLine] of declaredLines.entries()) {
+          if (typeof statedLine !== "number" || !Number.isFinite(statedLine)) continue;
+          const derived = computed.lineNetAmounts[index];
+          const line = lines[index];
+          if (derived === undefined || !line) continue;
+          const groupKey = key(line.vatCategory, effectiveRate(line));
+          statedGroupDelta.set(
+            groupKey,
+            round2((statedGroupDelta.get(groupKey) ?? 0) + (round2(statedLine) - derived)),
+          );
+        }
+      }
+
+      for (const stated of declaredSubtotals) {
+        const groupKey = key(stated.category, stated.rate);
+        const computedGroup = computedByKey.get(groupKey);
+        const match = computedGroup
+          ? {
+              ...computedGroup,
+              taxableAmount: round2(
+                computedGroup.taxableAmount + (statedGroupDelta.get(groupKey) ?? 0),
+              ),
+            }
+          : undefined;
+
+        // BT-116, against what the lines in that group state between them.
+        // The `-08` family's tolerance is the schematron's own ±1 whole unit
+        // of currency, signed on both sides — see `withinSignedTolerance`.
+        // Comparing exactly here would reject documents KoSIT accepts.
+        if (
+          match &&
+          typeof stated.taxableAmount === "number" &&
+          Number.isFinite(stated.taxableAmount) &&
+          !withinSignedTolerance(round2(stated.taxableAmount), match.taxableAmount)
+        ) {
+          const rule = stated.category
+            ? `BR-${CATEGORY_RULE_INFIX[stated.category] ?? "S"}-08`
+            : "BR-S-08";
+          const delta = round2(round2(stated.taxableAmount) - match.taxableAmount);
+          out.push({
+            rule,
+            field: "BT-116",
+            severity: "fatal",
+            message: `The VAT breakdown for category ${stated.category ?? "?"}${stated.rate === undefined ? "" : ` at ${stated.rate}%`} states a taxable amount (BT-116) of ${round2(stated.taxableAmount).toFixed(2)}, but the lines and document allowances and charges in that group come to ${match.taxableAmount.toFixed(2)} between them — a difference of ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ${inv.currency}. ${rule} requires the two to agree, and the summands are the line amounts the document states (BT-131), not what those lines compute to.`,
+            fix: `BT-116 is Σ BT-131 for the group, less the document allowances (BT-92) in it and plus the document charges (BT-99) in it. Correct the group's lines, or drop declaredTotals.subtotals and let the library compute the breakdown.`,
+            example: `"declaredTotals": { "subtotals": [{ "category": "${stated.category ?? "S"}", "taxableAmount": ${match.taxableAmount.toFixed(2)} }] }`,
+            xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount",
+            docsUrl: `${DOCS}/${rule}`,
+          });
+        }
+
+        // BT-117, against the group's own stated base and rate.
+        //
+        // ⚠ The tolerance is a whole unit of currency, not a cent. The
+        // schematron writes `abs(BT-117) - 1 < expected and abs(BT-117) + 1 >
+        // expected`, with `expected` computed from `abs(BT-116)`, plus a
+        // separate branch: where `round(BT-119) = 0`, `round(BT-117)` must be
+        // 0. A first draft of this rule used ±0.02 and reported BR-CO-17 on a
+        // document KoSIT accepts — the probe caught it. `rules-vat.ts` applies
+        // the same helpers to the *computed* breakdown; this applies them to
+        // the *stated* one, which is where a parsed document's corruption is.
+        if (
+          typeof stated.taxAmount === "number" &&
+          Number.isFinite(stated.taxAmount) &&
+          typeof stated.taxableAmount === "number" &&
+          Number.isFinite(stated.taxableAmount) &&
+          typeof stated.rate === "number" &&
+          Number.isFinite(stated.rate)
+        ) {
+          const expected = round2((Math.abs(stated.taxableAmount) * stated.rate) / 100);
+          const ok =
+            Math.round(stated.rate) === 0
+              ? Math.round(stated.taxAmount) === 0
+              : withinAbsoluteTolerance(stated.taxAmount, expected);
+          if (!ok) {
+            const signed = round2((stated.taxableAmount * stated.rate) / 100);
+            out.push({
+              rule: "BR-CO-17",
+              field: "BT-117",
+              severity: "fatal",
+              message: `BR-CO-17 requires the VAT category tax amount (BT-117) to equal BT-116 × (BT-119 / 100). This group states ${round2(stated.taxAmount).toFixed(2)} against a stated taxable amount of ${round2(stated.taxableAmount).toFixed(2)} at ${stated.rate}%, which is ${signed.toFixed(2)} ${inv.currency}. The rule's tolerance is a whole unit of currency, exclusive, so this is outside it.`,
+              fix: `Compute BT-117 from the group's own BT-116 and BT-119, rounded half-up to two decimals. A rate carrying more decimals than BT-119 is written to is the usual cause: normalise the rate first, then compute the amount from the normalised rate, so the two come from one number.`,
+              example: `"vatRate": ${stated.rate}`,
+              xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount",
+              docsUrl: `${DOCS}/BR-CO-17`,
+            });
+          }
+        }
+      }
+
+      // --- BR-CO-14: BT-110 = Σ BT-117, over the *stated* groups.
+      const statedTaxAmounts = declaredSubtotals.filter(
+        (sub) => typeof sub.taxAmount === "number" && Number.isFinite(sub.taxAmount),
+      );
+      if (statedTaxAmounts.length > 0) {
+        const statedSum = round2(
+          statedTaxAmounts.reduce((sum, sub) => sum + round2(sub.taxAmount!), 0),
+        );
+        const target =
+          typeof declared.taxAmount === "number" && Number.isFinite(declared.taxAmount)
+            ? round2(declared.taxAmount)
+            : computed.taxAmount;
+        if (statedSum !== target) {
+          out.push({
+            rule: "BR-CO-14",
+            field: "BT-110",
+            severity: "fatal",
+            message: `BR-CO-14 requires the invoice total VAT amount (BT-110) to equal Σ BT-117. The breakdown groups state ${statedSum.toFixed(2)} between them, against a BT-110 of ${target.toFixed(2)} — a difference of ${round2(statedSum - target) > 0 ? "+" : ""}${round2(statedSum - target).toFixed(2)} ${inv.currency}.`,
+            fix: `Add the stated BT-117 of every breakdown group, each rounded to two decimals, and use that as BT-110. VAT is rounded per group and then summed, never computed on the document total.`,
+            example: `"declaredTotals": { "taxAmount": ${statedSum.toFixed(2)} }`,
+            xpath: "/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount",
+            docsUrl: `${DOCS}/BR-CO-14`,
+          });
+        }
+      }
+    }
+
     return out;
   },
 

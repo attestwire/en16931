@@ -1,4 +1,11 @@
-import { computeTotals, formatAmount, formatNumber } from "./totals.js";
+import {
+  computeTotals,
+  effectiveAllowanceChargeRate,
+  effectiveRate,
+  formatAmount,
+  formatNumber,
+  formatPrice,
+} from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
 import type {
   DocumentAllowanceCharge,
@@ -272,7 +279,8 @@ function documentAllowanceChargeNode(
   isCharge: boolean,
   currency: string,
 ): XmlNode {
-  const rate = entry.vatCategory === "O" ? undefined : (entry.vatRate ?? 0);
+  // Same normalisation the breakdown was computed with (finding 8, 11).
+  const rate = effectiveAllowanceChargeRate(entry);
   return groupAlways("cac:AllowanceCharge", [
     el("cbc:ChargeIndicator", isCharge ? "true" : "false"),
     el("cbc:AllowanceChargeReasonCode", entry.reasonCode),
@@ -432,7 +440,11 @@ export function generateXRechnungUBL(
   // cac:Item, cac:Price.
   const lines = inv.lines.map((line, index) => {
     const net = totals.lineNetAmounts[index] ?? 0;
-    const rate = line.vatCategory === "O" ? undefined : (line.vatRate ?? 0);
+    // One source of truth for the rate. `effectiveRate` is what `computeTotals`
+    // grouped and computed BT-117 from, and it normalises to the precision the
+    // rate is written at — so BT-119 and BT-117 can no longer come from two
+    // different numbers (finding 8).
+    const rate = effectiveRate(line);
     const zeroRated = ["Z", "E", "AE", "K", "G"].includes(line.vatCategory);
 
     // BT-147/BT-148: a gross price with a discount is expressed as an
@@ -442,12 +454,13 @@ export function generateXRechnungUBL(
         ? null
         : groupAlways("cac:AllowanceCharge", [
             el("cbc:ChargeIndicator", "false"),
+            // BT-147 and BT-148 are prices too, and carry no decimal cap.
             el(
               "cbc:Amount",
-              formatAmount(line.priceDiscount ?? line.grossUnitPrice - line.unitPrice),
+              formatPrice(line.priceDiscount ?? line.grossUnitPrice - line.unitPrice),
               { currencyID: currency },
             ),
-            el("cbc:BaseAmount", formatAmount(line.grossUnitPrice), {
+            el("cbc:BaseAmount", formatPrice(line.grossUnitPrice), {
               currencyID: currency,
             }),
           ]);
@@ -534,7 +547,9 @@ export function generateXRechnungUBL(
       ]),
       // cac:Price — schema order: PriceAmount, BaseQuantity, cac:AllowanceCharge.
       groupAlways("cac:Price", [
-        el("cbc:PriceAmount", formatAmount(line.unitPrice), {
+        // BT-146. `formatPrice`, never `formatAmount`: EN 16931 puts no
+        // two-decimal cap on a unit price (finding 7).
+        el("cbc:PriceAmount", formatPrice(line.unitPrice), {
           currencyID: currency,
         }),
         line.baseQuantity === undefined

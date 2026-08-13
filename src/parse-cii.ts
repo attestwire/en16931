@@ -38,6 +38,7 @@ import {
 } from "./xml-parse.js";
 import { set, TreeReader } from "./xml-reader.js";
 import type {
+  DeclaredTaxSubtotal,
   DeclaredTotals,
   DeliverToAddress,
   DocumentAllowanceCharge,
@@ -359,12 +360,19 @@ function readReferencedDocument(
   return { kind: "supporting", document };
 }
 
-function readLine(r: Reader, el: XmlElement): InvoiceLine {
+/** A line, plus the BT-131 the document states for it (finding 9). */
+interface ReadLineResult {
+  line: InvoiceLine;
+  declaredNetAmount?: number;
+}
+
+function readLine(r: Reader, el: XmlElement): ReadLineResult {
   const lineDocument = r.grp(el, "AssociatedDocumentLineDocument");
   const product = r.grp(el, "SpecifiedTradeProduct");
   const agreement = r.grp(el, "SpecifiedLineTradeAgreement");
   const deliveryGroup = r.grp(el, "SpecifiedLineTradeDelivery");
   const settlement = r.grp(el, "SpecifiedLineTradeSettlement");
+  let declaredNetAmount: number | undefined;
 
   const quantity = deliveryGroup
     ? r.ramEl(deliveryGroup, "BilledQuantity")
@@ -482,17 +490,14 @@ function readLine(r: Reader, el: XmlElement): InvoiceLine {
       settlement,
       "SpecifiedTradeSettlementLineMonetarySummation",
     );
+    // The figure the document states for BT-131 is kept, in
+    // declaredTotals.lineNetAmounts, and compared against the derived one.
+    // Until 0.4.0 it was recorded as an unmapped "recomputed" note and thrown
+    // away, so a line whose stated total disagreed with its own arithmetic
+    // validated with zero errors while KoSIT rejected the document under
+    // BR-CO-10 and PEPPOL-EN16931-R120.
     if (summation) {
-      const total = firstChild(summation, RAM, "LineTotalAmount");
-      if (total) {
-        r.note(
-          total,
-          "recomputed",
-          "BT-131 is computed from the quantity, the price and the line allowances and " +
-            "charges. Compare it with computeTotals(invoice).lineNetAmounts if you want " +
-            "to know whether the document's own arithmetic agrees.",
-        );
-      }
+      declaredNetAmount = r.num(summation, "LineTotalAmount");
     }
 
     for (const reference of r.grpAll(settlement, "AdditionalReferencedDocument")) {
@@ -516,7 +521,9 @@ function readLine(r: Reader, el: XmlElement): InvoiceLine {
     if (account) set(line, "buyerAccountingReference", r.ram(account, "ID"));
   }
 
-  return line;
+  const result: ReadLineResult = { line };
+  if (declaredNetAmount !== undefined) result.declaredNetAmount = declaredNetAmount;
+  return result;
 }
 
 /**
@@ -837,25 +844,23 @@ export function parseCiiInvoice(
     // which are free text, and BT-7 / BT-8.
     const exemptionReasons: Partial<Record<VatCategory, string>> = {};
     const exemptionReasonCodes: Partial<Record<VatCategory, string>> = {};
+    const declaredSubtotals: DeclaredTaxSubtotal[] = [];
     let taxPointDate: string | undefined;
     let taxPointCode: string | undefined;
     for (const tax of r.grpAll(settlement, "ApplicableTradeTax")) {
       const category = (r.ram(tax, "CategoryCode") ?? "") as VatCategory;
       r.ram(tax, "TypeCode");
-      r.num(tax, "RateApplicablePercent");
-      const calculated = firstChild(tax, RAM, "CalculatedAmount");
-      if (calculated) {
-        r.note(calculated, "recomputed", "BT-117 is computed from BT-116 and BT-119.");
-      }
-      const basis = firstChild(tax, RAM, "BasisAmount");
-      if (basis) {
-        r.note(
-          basis,
-          "recomputed",
-          "BT-116 is computed per (category, rate) group from the lines and the " +
-            "document allowances and charges.",
-        );
-      }
+      // BT-116, BT-117, BT-118 and BT-119 are kept as *declared* figures and
+      // compared against the computed breakdown. Until 0.4.0 BT-116 and BT-117
+      // were noted as "recomputed" and discarded, so a corrupt VAT basis or VAT
+      // amount reached `valid: true` with zero errors while KoSIT rejected the
+      // same document under BR-S-08 (or its per-category sibling) and BR-CO-14.
+      const stated: DeclaredTaxSubtotal = {};
+      if (category !== ("" as VatCategory)) stated.category = category;
+      set(stated, "rate", r.num(tax, "RateApplicablePercent"));
+      set(stated, "taxAmount", r.num(tax, "CalculatedAmount"));
+      set(stated, "taxableAmount", r.num(tax, "BasisAmount"));
+      if (Object.keys(stated).length > 0) declaredSubtotals.push(stated);
       const reason = r.ram(tax, "ExemptionReason");
       if (reason !== undefined) exemptionReasons[category] = reason;
       const reasonCode = r.ram(tax, "ExemptionReasonCode");
@@ -866,6 +871,7 @@ export function parseCiiInvoice(
       });
       taxPointCode ??= r.ram(tax, "DueDateTypeCode");
     }
+    if (declaredSubtotals.length > 0) declared.subtotals = declaredSubtotals;
     if (Object.keys(exemptionReasons).length > 0) {
       invoice.vatExemptionReasons = exemptionReasons;
     }
@@ -908,14 +914,30 @@ export function parseCiiInvoice(
 
       // BT-110 and BT-111 are one element twice over, told apart only by
       // @currencyID. The VAT accounting currency is BT-6.
+      //
+      // ⚠ Matching on @currencyID alone is wrong when BT-6 equals BT-5, which
+      // is legal and not rare. The *first* element then matched BT-111, so
+      // `declared.taxAmount` was never set and BR-CO-14 silently did not run —
+      // a corrupt BT-110 validated as `valid: true`. BT-110 is mandatory and
+      // BT-111 is not, so position decides the ambiguous case: the first
+      // TaxTotalAmount is always BT-110, and only a later one can be BT-111.
+      // When the two currencies genuinely differ, @currencyID still decides,
+      // so a document that writes BT-111 first is read correctly too.
+      const accountingCurrency = invoice.vatAccountingCurrency;
+      const currenciesDiffer =
+        accountingCurrency !== undefined &&
+        accountingCurrency !== invoice.currency?.toUpperCase();
+      let taxTotalIndex = 0;
       for (const amount of r.ramAll(summation, "TaxTotalAmount")) {
         const value = Number(amount.text.trim());
         if (!Number.isFinite(value)) continue;
         const currencyId = attr(amount, "currencyID")?.toUpperCase();
-        if (
-          invoice.vatAccountingCurrency !== undefined &&
-          currencyId === invoice.vatAccountingCurrency
-        ) {
+        const inAccountingCurrency =
+          accountingCurrency !== undefined &&
+          currencyId === accountingCurrency &&
+          (currenciesDiffer || taxTotalIndex > 0);
+        taxTotalIndex += 1;
+        if (inAccountingCurrency) {
           invoice.taxAmountInAccountingCurrency = value;
         } else if (declared.taxAmount === undefined) {
           declared.taxAmount = value;
@@ -949,9 +971,14 @@ export function parseCiiInvoice(
 
   if (Object.keys(declared).length > 0) invoice.declaredTotals = declared;
 
-  invoice.lines = r
+  const readLines = r
     .grpAll(transaction, "IncludedSupplyChainTradeLineItem")
     .map((line) => readLine(r, line));
+  invoice.lines = readLines.map((read) => read.line);
+  if (readLines.some((read) => read.declaredNetAmount !== undefined)) {
+    declared.lineNetAmounts = readLines.map((read) => read.declaredNetAmount);
+    invoice.declaredTotals = declared;
+  }
 
   r.sweep(root);
 

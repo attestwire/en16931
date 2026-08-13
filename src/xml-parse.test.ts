@@ -104,6 +104,36 @@ describe("parseXml: the accepted subset", () => {
     expect(attr(root, "b")).toBe("Meier & Söhne");
   });
 
+  it("decodes each reference exactly once, so a decoded entity is never rescanned", () => {
+    // `decodeEntities` is one left-to-right scan that appends to a separate
+    // buffer, which is what makes this true: the "&" that comes out of `&amp;`
+    // lands in the output and is never looked at again. A `.replace()` chain
+    // would decode `&amp;` first and then find the `&lt;` it just created, so
+    // `&amp;lt;` — the correct escaping of the literal text "&lt;" — would come
+    // back as "<". Applying a decode to its own output is how an escaped
+    // document silently becomes a different document.
+    expect(parseXml(`<a>&amp;amp;lt;</a>`).text).toBe("&amp;lt;");
+    expect(parseXml(`<a>&amp;lt;</a>`).text).toBe("&lt;");
+  });
+
+  it("does not turn an escaped numeric reference into the digits of an amount", () => {
+    // The case that makes the ordering load-bearing rather than pedantic: an
+    // invoice line whose text reads `1&#48;0` is escaped on the wire as
+    // `1&amp;#48;0`. Decoded once that is the seven characters "1&#48;0";
+    // decoded twice it is "100", and a monetary amount has been corrupted by
+    // the parser with nothing raised.
+    expect(parseXml(`<a>1&amp;#48;0</a>`).text).toBe("1&#48;0");
+    expect(parseXml(`<a>1&#48;0</a>`).text).toBe("100");
+  });
+
+  it("decodes an attribute value once as well", () => {
+    // Attribute values go through the same function, and BT-6 and BT-5 both
+    // live in an attribute (@currencyID), so the same corruption is reachable
+    // there.
+    expect(attr(parseXml(`<a b="&amp;amp;lt;"/>`), "b")).toBe("&amp;lt;");
+    expect(attr(parseXml(`<a b="1&amp;#48;0"/>`), "b")).toBe("1&#48;0");
+  });
+
   it("gives every element a path, indexing repeated siblings", () => {
     const root = parseXml(`<a><b><c/></b><b/><d/></a>`);
     expect(root.path).toBe("/a");
@@ -189,10 +219,43 @@ describe("parseXml: security defences", () => {
 
   it("has limits that are documented constants, not magic numbers", () => {
     expect(DEFAULT_XML_LIMITS).toEqual({
-      maxCharacters: 10_000_000,
+      maxCharacters: 400_000,
       maxDepth: 100,
-      maxElements: 200_000,
+      maxElements: 50_000,
+      maxAttributes: 256,
     });
+  });
+
+  // Regression, finding 3. The default character cap used to be 10,000,000,
+  // which a measurement put at ~81 MB retained heap and ~306 MB RSS — over the
+  // 128 MB a Workers isolate gets. The cap must stay in the low hundreds of
+  // thousands, and must stay overridable for a caller who has the headroom.
+  it("keeps the default size cap inside a Workers isolate's budget", () => {
+    expect(DEFAULT_XML_LIMITS.maxCharacters).toBeLessThanOrEqual(1_000_000);
+    // At ~250-400 bytes retained per element and four characters per element,
+    // the cap bounds retained memory at roughly 40 MB.
+    const worstCaseElements = DEFAULT_XML_LIMITS.maxCharacters / 4;
+    expect(worstCaseElements * 400).toBeLessThan(64 * 1024 * 1024);
+    // Still overridable upwards.
+    const big = `<a>${"x".repeat(DEFAULT_XML_LIMITS.maxCharacters)}</a>`;
+    expect(codeOf(() => parseXml(big))).toBe("xml_too_large");
+    expect(() =>
+      parseXml(big, { maxCharacters: DEFAULT_XML_LIMITS.maxCharacters * 4 }),
+    ).not.toThrow();
+  });
+
+  // Regression, finding 4. The per-element attribute count was uncapped, so a
+  // root carrying 20,000 xmlns: declarations was accepted and every descendant
+  // paid for it.
+  it("caps the number of attributes on one element", () => {
+    const many = `<a ${Array.from({ length: 300 }, (_, n) => `x${n}="1"`).join(" ")}/>`;
+    expect(codeOf(() => parseXml(many))).toBe("xml_too_many_attributes");
+    expect(() => parseXml(many, { maxAttributes: 500 })).not.toThrow();
+    // A realistic root, with its handful of namespace declarations, is nowhere
+    // near the cap.
+    expect(() =>
+      parseXml(`<a xmlns="urn:d" xmlns:b="urn:b" xmlns:c="urn:c" id="1"/>`),
+    ).not.toThrow();
   });
 
   it("refuses control characters that XML 1.0 does not permit", () => {
@@ -204,6 +267,115 @@ describe("parseXml: security defences", () => {
     );
     // Tab, newline and carriage return are legal.
     expect(() => parseXml("<a>\t\r\n</a>")).not.toThrow();
+  });
+});
+
+describe("parseXml: prototype-chain lookups (findings 1 and 5)", () => {
+  // Regression, finding 1. The predefined-entity table was an object literal,
+  // so `PREDEFINED[name]` also answered to every Object.prototype member. A
+  // document whose invoice number was `&constructor;` parsed clean, validated
+  // `valid: true` with zero findings, and carried the text
+  // "function Object() { [native code] }" as its BT-1.
+  it("refuses an entity that is only an Object.prototype member", () => {
+    // All four fit inside the `semi - amp > 12` length guard, so the guard
+    // never saved us.
+    for (const name of ["constructor", "toString", "valueOf", "__proto__"]) {
+      expect(codeOf(() => parseXml(`<a>&${name};</a>`))).toBe(
+        "xml_entity_forbidden",
+      );
+      expect(codeOf(() => parseXml(`<a b="&${name};"/>`))).toBe(
+        "xml_entity_forbidden",
+      );
+    }
+    // Longer prototype members are refused too, by the length guard.
+    for (const name of ["hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable"]) {
+      expect(() => parseXml(`<a>&${name};</a>`)).toThrow(ParseError);
+    }
+    // The five real ones still decode — the control.
+    expect(parseXml(`<a>&amp;&lt;&gt;&quot;&apos;</a>`).text).toBe(`&<>"'`);
+    expect(parseXml(`<a>&#65;&#x42;</a>`).text).toBe("AB");
+  });
+
+  // Regression, finding 5. `nsMap[prefix]` had the same hole: `constructor`
+  // resolved to a function, so the element got a namespace that was not a
+  // string instead of being refused as unbound.
+  it("refuses a prefix that is only an Object.prototype member", () => {
+    for (const prefix of ["constructor", "toString", "valueOf", "__proto__"]) {
+      expect(codeOf(() => parseXml(`<${prefix}:a/>`))).toBe("xml_unbound_prefix");
+      expect(codeOf(() => parseXml(`<a ${prefix}:b="1"/>`))).toBe(
+        "xml_unbound_prefix",
+      );
+    }
+    // Declared explicitly, such a prefix is ordinary and must still work.
+    const root = parseXml(`<constructor:a xmlns:constructor="urn:c"/>`);
+    expect(root.namespace).toBe("urn:c");
+    expect(typeof root.namespace).toBe("string");
+  });
+
+  it("gives every element a string namespace, never an inherited member", () => {
+    const root = parseXml(`<a xmlns="urn:d"><b/></a>`);
+    expect(typeof root.namespace).toBe("string");
+    expect(typeof root.children[0]!.namespace).toBe("string");
+  });
+});
+
+describe("parseXml: sibling path indexing (finding 2)", () => {
+  // Regression, finding 2. The `[n]` index was computed by rescanning every
+  // sibling, which is quadratic: 200,000 flat elements took over two minutes,
+  // and maxElements did not bound it because the cap is checked only once an
+  // element is already being built. The assertion here is on the paths, not on
+  // the clock — a timing assertion would be flaky on shared CI.
+  it("numbers repeated siblings exactly as before", () => {
+    const root = parseXml(`<r><x/><y/><x/><x/><y/></r>`);
+    expect(root.children.map((c) => c.path)).toEqual([
+      "/r/x",
+      "/r/y",
+      "/r/x[2]",
+      "/r/x[3]",
+      "/r/y[2]",
+    ]);
+  });
+
+  it("counts siblings per parent, not per document", () => {
+    const root = parseXml(`<r><p><x/><x/></p><p><x/><x/></p></r>`);
+    const paths: string[] = [];
+    const walk = (el: (typeof root)): void => {
+      paths.push(el.path);
+      el.children.forEach(walk);
+    };
+    walk(root);
+    expect(paths).toEqual([
+      "/r",
+      "/r/p",
+      "/r/p/x",
+      "/r/p/x[2]",
+      "/r/p[2]",
+      "/r/p[2]/x",
+      "/r/p[2]/x[2]",
+    ]);
+  });
+
+  it("indexes by qname, so a re-bound prefix is still counted separately", () => {
+    const root = parseXml(
+      `<r xmlns:a="urn:a" xmlns:b="urn:a"><a:x/><b:x/><a:x/></r>`,
+    );
+    expect(root.children.map((c) => c.path)).toEqual([
+      "/r/a:x",
+      "/r/b:x",
+      "/r/a:x[2]",
+    ]);
+  });
+
+  it("indexes a large flat document correctly, and in linear time", () => {
+    const n = 20_000;
+    const root = parseXml(`<r>${"<x/>".repeat(n)}</r>`, {
+      maxElements: n + 10,
+      maxCharacters: n * 4 + 100,
+    });
+    expect(root.children).toHaveLength(n);
+    expect(root.children[0]!.path).toBe("/r/x");
+    expect(root.children[1]!.path).toBe("/r/x[2]");
+    expect(root.children[n - 1]!.path).toBe(`/r/x[${n}]`);
   });
 });
 

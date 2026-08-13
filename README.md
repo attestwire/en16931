@@ -226,11 +226,33 @@ refuses everything outside it, rather than accepting more and hoping.
 | No DTD processing | any `<!DOCTYPE` or `<!ENTITY` in the document is refused (`xml_doctype_forbidden`, `xml_entity_declaration_forbidden`) | **XXE** — an external entity that reads a local file or makes a network request. Also the declaration half of billion-laughs. The check runs on the raw text, so a DOCTYPE inside a CDATA section is refused too. |
 | No custom entity expansion | only `&amp; &lt; &gt; &quot; &apos;` and numeric character references are decoded (`xml_entity_forbidden`) | **Billion laughs.** An unknown entity is refused, never silently dropped — dropping one would change the text of a tax document without saying so. |
 | Depth cap | 100 elements (`xml_too_deep`) | Deeply nested documents. A UBL invoice nests about eight levels. |
-| Size cap | 10,000,000 characters (`xml_too_large`) | Memory exhaustion from a very large upload. Roughly a 10 MB ASCII document — far above any real invoice, including one with an embedded PDF. |
-| Element cap | 200,000 elements (`xml_too_many_elements`) | A flat document of millions of tiny elements, which passes both caps above. |
+| Size cap | 400,000 characters (`xml_too_large`) | Memory exhaustion from a very large upload. |
+| Element cap | 50,000 elements (`xml_too_many_elements`) | A flat document of millions of tiny elements, which passes both caps above. |
+| Attribute cap | 256 per element (`xml_too_many_attributes`) | A root carrying tens of thousands of `xmlns:` declarations, each of which enters the namespace map every descendant lookup uses. |
 
-All three numbers are the defaults in `DEFAULT_XML_LIMITS` and can be raised per
-call: `parseUblInvoice(xml, { maxCharacters: 20_000_000 })`.
+All four numbers are the defaults in `DEFAULT_XML_LIMITS` and can be raised per
+call: `parseUblInvoice(xml, { maxCharacters: 2_000_000 })`.
+
+**What the caps protect, and what they cost.** They are memory limits, chosen
+from measurement rather than from how big a file "feels". Every element in the
+parsed tree retains roughly 250–400 bytes — the object, its four name strings,
+its attribute array and its children array — and the smallest element that can
+appear in a document is four characters (`<x/>`). So the size cap is really an
+element cap in disguise: 400,000 characters is at most about 100,000 elements,
+or about 25–40 MB retained.
+
+The cost is that an unusually large invoice is refused rather than parsed. The
+largest fixture in this repository is under 10 kB and a thousand-line invoice
+lands around 300 kB, so this is not a limit ordinary use meets — but a document
+carrying a base64 attachment can exceed it, and that is the case to raise
+`maxCharacters` for, deliberately.
+
+⚠ **Changed in 0.4.0.** The size cap was 10,000,000 characters and the element
+cap 200,000. Measured on Node 22, a legal document at the old size cap retained
+about 81 MB of heap and about 306 MB of RSS — over the 128 MB a Cloudflare
+Workers isolate is allowed, so a single such request was killed rather than
+rejected. A 785 kB body already retained about 47 MB. If you run this on a
+server with real memory and you know why you need it, raise the option.
 
 The reader also refuses mixed content (an element holding both text and child
 elements), unbound namespace prefixes, and control characters XML 1.0 does not
@@ -406,7 +428,7 @@ is `1.00`, and `(2.675).toFixed(2)` is `"2.67"`. Both are wrong for tax.
 | **CII (D16B) ingestion** | `parseCiiInvoice` reads a `CrossIndustryInvoice` back into the input model — every element the CII generator emits, resolved by namespace URI rather than by prefix, in any element order. Round-tripped over every committed CII fixture: parse then regenerate returns the identical document, and it validates identically. Same hardened XML reader and same security limits as the UBL path. Anything not carried into the model is returned in `unmapped`. |
 | **BT coverage** | BT-1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161. |
 | **Arithmetic** | BT-131 = quantity × (BT-146 / BT-149) − Σ BT-136 + Σ BT-141; BT-106 = Σ BT-131; BT-107 = Σ BT-92; BT-108 = Σ BT-99; BT-109 = BT-106 − BT-107 + BT-108; the BG-23 taxable amount per (category, rate) group nets document allowances out and charges in; BT-117 from BT-116 × BT-119; BT-110 = Σ BT-117; BT-112 = BT-109 + BT-110; BT-115 = BT-112 − BT-113 + BT-114. Per-line half-up rounding, and sums taken over the rounded values. BT-107 and BT-108 stay separate sums even where the breakdown nets them — that asymmetry is the standard's. |
-| **Rules** | 287 regulation rules with teaching errors (enumerated below), plus four library-limitation findings (`ATW-CREDIT-NOTE-UNSUPPORTED`, `ATW-DECLARED-TOTAL-NOT-FINITE`, `ATW-VAT-CATEGORY-UNSUPPORTED`, `ATW-DATE-NOT-A-CALENDAR-DATE`) — 291 distinct rule ids. 251 are reachable from caller input; the other 40 constrain the library's own computed arithmetic and cannot be tripped by any input, which is what they are for. |
+| **Rules** | 287 regulation rules with teaching errors (enumerated below), plus four library-limitation findings (`ATW-CREDIT-NOTE-UNSUPPORTED`, `ATW-DECLARED-TOTAL-NOT-FINITE`, `ATW-VAT-CATEGORY-UNSUPPORTED`, `ATW-DATE-NOT-A-CALENDAR-DATE`) — 291 distinct rule ids. 262 are reachable from caller input; the other 29 constrain the library's own computed arithmetic and cannot be tripped by any input, which is what they are for. Both figures are read off a test run, not typed: `src/rules-invariants.test.ts` fires a battery of deliberately-broken invoices, and every rule id in the source must be either fired by it or named in that file's `ARITHMETIC_INVARIANTS` list with the reason no input can reach it. A rule that is neither fails the suite. (251 before 0.4.0: `PEPPOL-EN16931-R120`, `BR-CO-17` and all nine members of the `-08` family became reachable once `declaredTotals` started carrying the stated BT-131, BT-116 and BT-117 instead of discarding them. It then read 254 for a few hours on 2026-08-12, because the battery fired only one member of the `-08` family and the count was taken from the battery. Reachability is a property of the rule, not of the battery that happens to exercise it, and reading it the other way put "you cannot trip this rule" on eight pages that a caller can trip. `BR-Z-08`, `BR-E-08`, `BR-AE-08`, `BR-IC-08`, `BR-G-08`, `BR-O-08`, `BR-AF-08` and `BR-AG-08` each have their own fixture now, and the guard is completeness rather than a number, so the same mistake cannot pass again.) |
 | **KoSIT conformance of the fixtures** | Checked on release against the official validator 1.6.2 / XRechnung 3.0.2 config — for UBL: the UBL 2.1 XSD, the EN 16931 schematron and the XRechnung CIUS schematron; for CII: the UN/CEFACT D16B XSD, the EN 16931 CII schematron and the XRechnung CII schematron. Seven documents, not a parity suite — **run 2026-08-11, `Acceptable: 7 Rejected: 0`, zero findings** (see `scripts/kosit-check.md`, which also records the two findings the CII run caught first). Run `./scripts/kosit-check.sh` yourself before relying on it. |
 
 Rules implemented, by family. This list is maintained by hand; the
@@ -427,9 +449,11 @@ Rules implemented, by family. This list is maintained by hand; the
 - **VAT categories** — the `-01` (breakdown cardinality), `-02` (seller
   identification), `-03`/`-04` (allowance and charge identification), `-05`
   (line rate), `-06`/`-07` (allowance and charge rate), `-08` (taxable amount),
-  `-09` (VAT amount) and `-10` (exemption reason) rules for all seven
+  `-09` (VAT amount) and `-10` (exemption reason) rules for all nine
   categories: `BR-S-*`, `BR-Z-*`, `BR-E-*`, `BR-AE-*`, `BR-IC-*`, `BR-G-*`,
-  `BR-O-*` (the intra-community family is `BR-IC-*`, for category K). The `-10`
+  `BR-O-*`, `BR-AF-*`, `BR-AG-*`. Three of the nine are not named after the
+  code BT-151 carries: category K is `BR-IC-*`, L is `BR-AF-*` and M is
+  `BR-AG-*`, which is why `CATEGORY_RULE_INFIX` exists. The `-10`
   rules cut both ways: on the exempting categories they require an exemption
   reason, and on S and Z they forbid one. On top of those sit `BR-IC-11`,
   `BR-IC-12`, `BR-O-11`, `BR-O-12`, `BR-O-13` and `BR-O-14`.
@@ -513,11 +537,40 @@ Each list is a side-effect-free module exporting a frozen array and a `Set`. The
 whole set is 16.6 kB gzipped, 6.0 kB of which is the unit list; a bundler that
 sees no reference to a list drops it.
 
+### Where the two syntaxes disagree
+
+UBL and CII are not two spellings of one rule set. Where the reference
+schematrons word the same rule differently, this build follows each one rather
+than picking a compromise, so the verdict depends on `profile`.
+
+The clearest case is **BR-CO-09**, the country prefix on a VAT identifier. UBL
+tests `contains(' 1A AD … ZW ', substring(cbc:CompanyID,1,2))`; CII wraps the
+needle in spaces, `concat(' ', substring(.,1,2), ' ')`. Neither folds case and
+neither strips whitespace, and the two literal lists are not even the same list
+— UBL carries `SS` and not `AN`, CII carries `AN` and not `SS`. So:
+
+| BT-31 | UBL | CII |
+| --- | --- | --- |
+| `DE123456789` | accepted | accepted |
+| `de123456789` | **refused** | **refused** |
+| `D E123456789` | accepted (`"D "` is inside `"AD "`) | **refused** |
+| ` DE123456789` | accepted (`" D"` is inside `" DE"`) | **refused** |
+| `SS123456789` | accepted | **refused** |
+| `AN123456789` | **refused** | accepted |
+
+All of these were put to the KoSIT validator in both syntaxes; the table is the
+validator's answers, not a reading of the rule text. The `en16931` profile can
+be emitted as either syntax, so an input carrying it has to satisfy both.
+
 ### Not implemented yet
+
+The list below is what is known to be missing, not a survey of what is. Four
+coverage gaps were found in the two days before 0.4.0 and none of them had a row
+here beforehand.
 
 | Area | Status |
 | --- | --- |
-| **Full schematron parity** | This build implements every EN 16931 core rule, every XRechnung CIUS rule and every Peppol BIS Billing 3.0 rule that the input model can express. What remains is bounded and named in the rows below: category `B`, the Extension and CVD profiles, four rules the regulator does not test either, and the rules the generator controls. `validateInput` is still a fast pre-flight over the JSON input model, **not** an authority — it reads your input, not the XML a receiver will judge, so a document it accepts can in principle still be rejected by KoSIT. If you want the authoritative answer without running Java, the [hosted API](https://api.attestwire.com/docs) is the same engine, zero setup. |
+| **Full schematron parity** | Not reached, and this table is not a complete account of the gap. The build implements a large part of EN 16931 core, the XRechnung CIUS and Peppol BIS Billing 3.0 — 262 rule ids reachable from caller input — and the rows below name the exclusions we know about. They are not exhaustive: four separate coverage gaps were found in the two days before 0.4.0 (the seller half of `BR-AE-02`, `BR-CO-09` on BT-63, `BR-CL-14` on BT-69, and declared-versus-computed checks on BT-131, BT-116 and BT-117), none of which appeared in any earlier version of this list. Nothing in this repository measures coverage against the schematron, so treat an absent row as "not yet noticed", not as "does not exist". `validateInput` is still a fast pre-flight over the JSON input model, **not** an authority — it reads your input, not the XML a receiver will judge, so a document it accepts can in principle still be rejected by KoSIT. If you want the authoritative answer without running Java, the [hosted API](https://api.attestwire.com/docs) is the same engine, zero setup. |
 | **VAT category B (split payment)** | `L` (IGIC) and `M` (IPSI) ship with their full `BR-AF-*` and `BR-AG-*` families. `B` does not. It is the one code of the ten with no `-01`/`-05`/`-08`/`-09`/`-10` family — only `BR-B-01` and `BR-B-02`, both of which exist to confine it to domestic Italian invoices — so expressing it would mean emitting rule ids the regulation does not define, or carving it out of every per-category loop for the sake of two checks. A line carrying `"B"` is a fatal `ATW-VAT-CATEGORY-UNSUPPORTED` finding rather than a silent pass. |
 | **XRechnung Extension and CVD profiles** | `BR-DEX-*` and `BR-DE-CVD-*` apply to customization ids this build does not emit. |
 | **Rules that cannot be tested mechanically** | `BR-CO-05`, `BR-CO-06`, `BR-CO-07` and `BR-CO-08` require a reason code and a reason text to "indicate the same type of allowance". The reference schematron binds all four to `true()` — the regulator does not test them either. `BR-CO-25` is absent from both the reference schematron and Peppol's, so implementing it would reject documents the authority accepts. |
@@ -527,6 +580,7 @@ sees no reference to a list drops it.
 | **CII credit notes** | A CII credit note is an invoice with a credit-note BT-3 rather than a separate root element, so the CII path is closer to supporting one than the UBL path is — but the input model and much of the rule set are still written for an invoice, so `generateCii` refuses the same six codes. |
 | **Peppol rules inside the XRechnung schematron** | KoSIT's XRechnung schematron — both the UBL and the CII one — includes a few `PEPPOL-EN16931-*` assertions (`R040` among them). This build gates its Peppol rules on `profile: "peppol-bis-3"`, so those do not run for an XRechnung input here even though KoSIT runs them. Found by the 2026-08-11 CII run; recorded in `scripts/kosit-check.md`. |
 | **Credit notes** | `invoiceTypeCode: "381"` is a fatal `ATW-CREDIT-NOTE-UNSUPPORTED` finding and generation throws. A UBL credit note is a separate `CreditNote` document (root `ubl:CreditNote`, `cac:CreditNoteLine`, `cbc:CreditedQuantity`), not an `Invoice` with a different BT-3. |
+| **`BR-CO-09` under the generic `en16931` profile** | The rule's list of accepted VAT prefixes is not the same list in the two syntaxes: UBL carries `SS` and not `AN`, CII carries `AN` and not `SS`. `profile: "en16931"` can be emitted as either document, so a value has to satisfy **both** lists — reporting only the laxer one would hand you `valid: true` on an input KoSIT rejects the moment you call the other generator. The cost is the other direction: `SS123456789` (South Sudan, a real ISO 3166-1 code) is a fatal `BR-CO-09` here under `en16931`, clean under `xrechnung-ubl`, and the UBL document carrying it is accepted by KoSIT. If you emit UBL only, say so with `profile: "xrechnung-ubl"` or `"peppol-bis-3"` and the rule is evaluated against the UBL list alone. The same applies to `AN` for a CII-only emitter. |
 | **VIES lookups** | Out of scope for this package. |
 
 ## Fixtures
@@ -572,7 +626,7 @@ drift shows up as a test failure rather than a stale file.
 
 ```bash
 npm install
-npm test      # 1,040 tests
+npm test      # unit tests, the committed fixtures, and the rule-coverage battery
 npm run build
 ```
 

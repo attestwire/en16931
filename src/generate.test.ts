@@ -6,6 +6,10 @@ import {
   GenerationError,
   UnsupportedProfileError,
   UnsupportedDocumentTypeError,
+  generateCii,
+  parseCiiInvoice,
+  parseUblInvoice,
+  validateInput,
 } from "./index.js";
 import type { InvoiceInput } from "./types.js";
 
@@ -1123,5 +1127,103 @@ describe("generated UBL: item detail and the VAT accounting currency", () => {
       totals.taxExclusiveAmount.toFixed(2),
     );
     expect(textOf(monetary, "cbc:PayableAmount")).toBe(totals.payableAmount.toFixed(2));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Findings 7, 8 and 11, both syntaxes. Every expectation here was put to KoSIT
+// 1.6.2 with the XRechnung 3.0.2 configuration on 2026-08-12; findings 7 and 8
+// shipped in 0.3.0.
+// ---------------------------------------------------------------------------
+
+describe("prices and rates in the emitted document (findings 7, 8, 11)", () => {
+  const priced = (patch: Partial<InvoiceInput["lines"][number]>): InvoiceInput => ({
+    ...minimal,
+    lines: [{ ...minimal.lines[0]!, ...patch }],
+  });
+
+  it("writes BT-146 at its own precision, not rounded to two decimals", () => {
+    // Before: `<cbc:PriceAmount>0.03</cbc:PriceAmount>` beside a line total of
+    // 345.00, so the document read 10000 x 0.03 = 345.00. KoSIT accepted it —
+    // no rule ties BT-146 to BT-131 — so nothing downstream would have caught
+    // the 71% error in the price a human reads.
+    const inv = priced({ quantity: 10000, unitPrice: 0.0345 });
+    const ubl = generateXRechnungUBL(inv);
+    expect(ubl).toContain(`<cbc:PriceAmount currencyID="EUR">0.0345</cbc:PriceAmount>`);
+    expect(ubl).toContain(
+      `<cbc:LineExtensionAmount currencyID="EUR">345.00</cbc:LineExtensionAmount>`,
+    );
+    const cii = generateCii({ ...inv, profile: "xrechnung-cii" });
+    expect(cii).toContain("<ram:ChargeAmount>0.0345</ram:ChargeAmount>");
+    expect(cii).toContain("<ram:LineTotalAmount>345.00</ram:LineTotalAmount>");
+  });
+
+  it("round-trips a fractional price through generate → parse → validate", () => {
+    // The round trip is what surfaced this: it came back `valid: false` with
+    // five BR-CO failures, because the parser read 0.03 and recomputed 300.00.
+    const inv = priced({ quantity: 10000, unitPrice: 0.0345 });
+    for (const [xml, parse] of [
+      [generateXRechnungUBL(inv), parseUblInvoice],
+      [generateCii({ ...inv, profile: "xrechnung-cii" }), parseCiiInvoice],
+    ] as const) {
+      const parsed = parse(xml).invoice;
+      expect(parsed.lines[0]!.unitPrice).toBe(0.0345);
+      expect(validateInput(parsed).errors).toEqual([]);
+    }
+  });
+
+  it("writes BT-147 and BT-148 at their own precision too", () => {
+    const inv = priced({
+      quantity: 1000,
+      unitPrice: 0.0345,
+      grossUnitPrice: 0.0405,
+      priceDiscount: 0.006,
+    });
+    expect(generateXRechnungUBL(inv)).toContain(
+      `<cbc:BaseAmount currencyID="EUR">0.0405</cbc:BaseAmount>`,
+    );
+    expect(generateXRechnungUBL(inv)).toContain(
+      `<cbc:Amount currencyID="EUR">0.006</cbc:Amount>`,
+    );
+    const cii = generateCii({ ...inv, profile: "xrechnung-cii" });
+    expect(cii).toContain("<ram:ChargeAmount>0.0405</ram:ChargeAmount>");
+    expect(cii).toContain("<ram:ActualAmount>0.006</ram:ActualAmount>");
+  });
+
+  it("writes BT-119 and BT-117 from one number", () => {
+    // Before: `Percent 16.66` (toFixed truncates; half-up is 16.67, so it was
+    // wrong twice) against a VAT amount computed at the full 16.665%. KoSIT
+    // REJECTED with [BR-CO-17, BR-S-09] in both syntaxes once the base cleared
+    // the rule's ±1 tolerance, which it does above roughly 20,000.
+    const inv = priced({ quantity: 1, unitPrice: 100000, vatRate: 16.665 });
+    const ubl = generateXRechnungUBL(inv);
+    expect(ubl).toContain("<cbc:Percent>16.67</cbc:Percent>");
+    expect(ubl).toContain(`<cbc:TaxAmount currencyID="EUR">16670.00</cbc:TaxAmount>`);
+    expect(ubl).not.toContain("16.66<");
+    const cii = generateCii({ ...inv, profile: "xrechnung-cii" });
+    expect(cii).toContain("<ram:RateApplicablePercent>16.67</ram:RateApplicablePercent>");
+    expect(cii).toContain("<ram:CalculatedAmount>16670.00</ram:CalculatedAmount>");
+    // And the document validates, which it did not before.
+    expect(validateInput(inv).errors).toEqual([]);
+  });
+
+  it("zero-normalises a document allowance's rate the way the breakdown does", () => {
+    // Finding 11: the line path normalised and the document path did not, so
+    // an allowance in an exempt category emitted 19.00 against an E @ 0.00
+    // breakdown — the two halves of one document disagreeing.
+    const inv: InvoiceInput = {
+      ...minimal,
+      lines: [{ ...minimal.lines[0]!, vatCategory: "E", vatRate: 0 }],
+      allowances: [{ amount: 10, reason: "Rabatt", vatCategory: "E", vatRate: 19 }],
+      vatExemptionReasons: { E: "Exempt under Article 132 of Directive 2006/112/EC" },
+    };
+    const ubl = generateXRechnungUBL(inv);
+    expect(ubl).not.toContain("<cbc:Percent>19.00</cbc:Percent>");
+    const cii = generateCii({ ...inv, profile: "xrechnung-cii" });
+    expect(cii).not.toContain("<ram:RateApplicablePercent>19.00</ram:RateApplicablePercent>");
+    // Both documents are ACCEPTABLE to KoSIT, zero findings, in both syntaxes.
+    expect(cii.match(/<ram:RateApplicablePercent>[^<]*</g)?.every((m) => m.includes("0.00"))).toBe(
+      true,
+    );
   });
 });

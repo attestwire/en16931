@@ -329,7 +329,44 @@ export interface EmbeddedAttachment {
   content: string;
 }
 
+/**
+ * One BG-23 VAT breakdown group exactly as the document states it.
+ *
+ * Separate from {@link TaxSubtotal}, which is what the library *computes*.
+ * Keeping the two apart is the point: the whole value of reading these is
+ * being able to compare them.
+ */
+export interface DeclaredTaxSubtotal {
+  /** BT-118 VAT category code, as written. */
+  category?: VatCategory;
+  /** BT-119 VAT category rate, as written. */
+  rate?: number;
+  /** BT-116 VAT category taxable amount, as written. */
+  taxableAmount?: number;
+  /** BT-117 VAT category tax amount, as written. */
+  taxAmount?: number;
+}
+
 export interface DeclaredTotals {
+  /**
+   * BT-131 invoice line net amount, as stated on each line, in document order.
+   * `undefined` where a line states none.
+   *
+   * ⚠ Until 0.4.0 the parsers recorded BT-131 as an `unmapped` "recomputed"
+   * note and nothing compared it, so a document whose line total disagreed
+   * with its own quantity × price — and with the BT-106 it was summed into —
+   * validated `valid: true` with zero errors. KoSIT rejects that document
+   * under BR-CO-10 and PEPPOL-EN16931-R120.
+   */
+  lineNetAmounts?: (number | undefined)[];
+  /**
+   * BG-23 VAT breakdown, as stated, in document order.
+   *
+   * ⚠ Same history as `lineNetAmounts`: BT-116 and BT-117 were noted and
+   * discarded, so a corrupt VAT basis or VAT amount was reported as valid.
+   * KoSIT rejects under BR-S-08 (and its per-category siblings) and BR-CO-14.
+   */
+  subtotals?: DeclaredTaxSubtotal[];
   /** BT-106 sum of invoice line net amounts. */
   lineExtensionAmount?: number;
   /** BT-107 sum of allowances on document level. */

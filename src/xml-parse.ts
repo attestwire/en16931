@@ -50,10 +50,24 @@ export interface XmlLimits {
    * Maximum length of the input, in characters (UTF-16 code units).
    *
    * Stops a very large upload from being turned into an even larger object
-   * graph before anything can reject it. 10 million characters is roughly a
-   * 10 MB ASCII document — far above any real invoice, including one carrying
-   * an embedded PDF, and far below anything that threatens a Node or Workers
-   * heap.
+   * graph before anything can reject it. The number is chosen from measured
+   * retained memory, not from the input size: every element in the tree costs
+   * roughly 250–400 bytes retained (the `XmlElement` object, its `qname`,
+   * `local`, `namespace` and `path` strings, its attribute array, and its
+   * children array), and the smallest element that can appear in a document is
+   * four characters (`<x/>`). A document at the cap can therefore hold on the
+   * order of 100,000 elements and retain roughly 25–40 MB.
+   *
+   * The earlier default of 10,000,000 was measured, on Node 22, to retain
+   * about 81 MB of heap and about 306 MB of RSS for a document made entirely
+   * of legal elements — well over the 128 MB a Cloudflare Workers isolate is
+   * allowed, so a single such request would be killed rather than rejected.
+   * A 785 KB body already retained about 47 MB.
+   *
+   * 400,000 characters is still far above any real invoice: the largest
+   * fixture in this repository is under 10 KB, and an invoice with a thousand
+   * line items lands around 300 KB. Raise it deliberately, with the memory
+   * arithmetic above in mind, if you must parse something larger.
    */
   maxCharacters: number;
   /**
@@ -70,16 +84,28 @@ export interface XmlLimits {
    *
    * A second, independent ceiling: a flat document of millions of tiny
    * elements passes both the size and the depth check but still builds an
-   * object per element. 200,000 is far more than an invoice with thousands of
-   * lines needs.
+   * object per element. At roughly 250–400 bytes retained per element, 50,000
+   * elements is about 12–20 MB — comfortable inside a 128 MB isolate, and far
+   * more than an invoice needs (a UBL line item is about twenty elements, so
+   * this is a thousand-line invoice with room to spare).
    */
   maxElements: number;
+  /**
+   * Maximum number of attributes on a single element.
+   *
+   * Namespace declarations are attributes, and each one enters the in-scope
+   * namespace map. Without a cap, a root element carrying tens of thousands of
+   * `xmlns:` declarations builds a map that every descendant lookup walks.
+   * A UBL or CII root declares under a dozen; 256 is generous.
+   */
+  maxAttributes: number;
 }
 
 export const DEFAULT_XML_LIMITS: XmlLimits = {
-  maxCharacters: 10_000_000,
+  maxCharacters: 400_000,
   maxDepth: 100,
-  maxElements: 200_000,
+  maxElements: 50_000,
+  maxAttributes: 256,
 };
 
 export interface XmlAttribute {
@@ -142,11 +168,30 @@ const XML_URI = "http://www.w3.org/XML/1998/namespace";
 
 interface Frame {
   el: XmlElement;
-  /** prefix → namespace URI, with "" holding the default namespace. */
+  /**
+   * prefix → namespace URI, with "" holding the default namespace.
+   *
+   * Null-prototype, and chained to the parent's map with `Object.create`
+   * rather than copied. Chaining keeps declaring a prefix O(1) instead of
+   * O(declarations in scope); the null root keeps `Object.prototype` members
+   * (`constructor`, `toString`, …) from resolving as if they were declared
+   * namespace prefixes.
+   */
   nsMap: Record<string, string>;
-  /** Own declarations, so a child only copies the map when it declares one. */
-  declared: boolean;
+  /**
+   * qname → number of children seen so far with that name, so the `[n]` path
+   * index is O(1) per element instead of a rescan of every sibling.
+   */
+  counts: Map<string, number>;
   text: string[];
+}
+
+/** A namespace map with no prototype at all — see {@link Frame.nsMap}. */
+function emptyNsMap(): Record<string, string> {
+  const map: Record<string, string> = Object.create(null);
+  map[""] = "";
+  map["xml"] = XML_URI;
+  return map;
 }
 
 /**
@@ -410,19 +455,35 @@ export function parseXml(
         fail("xml_bad_attribute", `The value of ${aname} contains an unescaped '<'`);
       }
       rawAttrs.push({ qname: aname, value: decode(raw, `The value of ${aname}`) });
+      // Defence: per-element attribute cap. Namespace declarations are
+      // attributes, and an element carrying tens of thousands of them builds a
+      // namespace map that every descendant lookup has to walk.
+      if (rawAttrs.length > lim.maxAttributes) {
+        throw new XmlSecurityError(
+          "xml_too_many_attributes",
+          `<${qname}> carries more than ${lim.maxAttributes} attributes. Raise the ` +
+            `maxAttributes option only if a document this unusual is genuinely ` +
+            `expected; an EN 16931 element carries a handful.`,
+        );
+      }
       i = end + 1;
     }
 
     // Namespace declarations first: an element's own prefix may be declared on
     // the element itself.
-    let nsMap = parent ? parent.nsMap : { "": "", xml: XML_URI };
+    let nsMap = parent ? parent.nsMap : emptyNsMap();
     let declared = false;
     for (const a of rawAttrs) {
       const isDefault = a.qname === "xmlns";
       const isPrefixed = a.qname.startsWith("xmlns:");
       if (!isDefault && !isPrefixed) continue;
       if (!declared) {
-        nsMap = { ...nsMap };
+        // Chain, do not copy: copying the inherited map on every element that
+        // declares a prefix is quadratic in the number of declarations in
+        // scope. `Object.create` is O(1) and lookups still find inherited
+        // prefixes, because the whole chain is ours and bottoms out at a
+        // null-prototype map.
+        nsMap = Object.create(nsMap) as Record<string, string>;
         declared = true;
       }
       const prefix = isDefault ? "" : a.qname.slice(6);
@@ -458,8 +519,17 @@ export function parseXml(
       return { namespace: ans, local: alocal, qname: a.qname, value: a.value };
     });
 
-    const siblings = parent ? parent.el.children : [];
-    const sameName = siblings.filter((c) => c.qname === qname).length;
+    // The `[n]` index counts preceding siblings of the same name. Counting them
+    // by rescanning `parent.el.children` is O(siblings) per element and so
+    // quadratic over the document: a flat 200,000-element file took over two
+    // minutes, entirely inside this one line, and no cap bounded it because
+    // maxElements is only checked once the element is already being built.
+    // A per-frame tally is O(1) and produces byte-identical paths.
+    let sameName = 0;
+    if (parent) {
+      sameName = parent.counts.get(qname) ?? 0;
+      parent.counts.set(qname, sameName + 1);
+    }
     const step = sameName > 0 ? `${qname}[${sameName + 1}]` : qname;
     const path = parent ? `${parent.el.path}/${step}` : `/${qname}`;
 
@@ -485,7 +555,7 @@ export function parseXml(
       continue;
     }
 
-    const frame: Frame = { el, nsMap, declared, text: [] };
+    const frame: Frame = { el, nsMap, counts: new Map(), text: [] };
     stack.push(frame);
 
     // Defence: nesting depth cap. Without it, a few kilobytes of open tags
@@ -533,13 +603,27 @@ function closeFrame(frame: Frame): void {
   frame.el.text = text;
 }
 
-const PREDEFINED: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-};
+/**
+ * The five predefined entities, and nothing else.
+ *
+ * Null-prototype on purpose. As an object literal this table also answered to
+ * every member of `Object.prototype`: `&constructor;` resolved to the `Object`
+ * constructor and was substituted into the document as the string
+ * `"function Object() { [native code] }"`, so an invoice number written
+ * `&constructor;` parsed, validated and was billed for without a single
+ * finding. `&toString;`, `&valueOf;` and `&__proto__;` did the same. Every one
+ * of those names is short enough to pass the length guard in `decodeEntities`.
+ */
+const PREDEFINED: Record<string, string> = Object.assign(
+  Object.create(null) as Record<string, string>,
+  {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+  },
+);
 
 /**
  * Decode the five predefined entities and numeric character references.
@@ -578,8 +662,10 @@ function decodeEntities(raw: string, where: string): string {
 }
 
 function resolveEntity(name: string, where: string): string {
-  const predefined = PREDEFINED[name];
-  if (predefined !== undefined) return predefined;
+  // Own-property check as well as the null prototype: two independent guards,
+  // because getting this wrong substitutes attacker-chosen text into a tax
+  // document without raising anything.
+  if (Object.hasOwn(PREDEFINED, name)) return PREDEFINED[name]!;
 
   if (name.startsWith("#")) {
     const hex = name[1] === "x" || name[1] === "X";

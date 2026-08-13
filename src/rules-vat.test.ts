@@ -9,7 +9,9 @@ import {
   allIds,
   clean,
   cleanLine,
+  errorIds,
   findingFor,
+  findings,
   warningIds,
   withInvoice,
   withLine,
@@ -291,5 +293,72 @@ describe("breakdown integrity (BR-45..BR-48, BR-CO-17, BR-CO-18)", () => {
     // breakdown rules must not pile on with derived noise.
     const ids = allIds(withLine({ baseQuantity: 0 }));
     expect(ids).toEqual(["BR-24"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 13. BR-AE-02 has two halves and only the buyer half was enforced.
+//
+// The seller half is in the EN 16931 schematron, not in a CIUS:
+//   exists(//cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID)
+//   or exists(//cac:TaxRepresentativeParty/cac:PartyTaxScheme[…'VAT']/cbc:CompanyID)
+// so it applies to every profile. Before this fix an `en16931` or
+// `peppol-bis-3` invoice with reverse-charge lines and no seller identifier
+// returned `valid: true` with zero errors, and only XRechnung caught it — under
+// BR-DE-16, which is a different rule about a different thing.
+//
+// Probed 2026-08-12: KoSIT REJECTED the XRechnung form with
+// [BR-AE-02, BR-DE-16] in both syntaxes, and this build now returns the same
+// two ids.
+// ---------------------------------------------------------------------------
+describe("BR-AE-02: the seller half, on every profile (finding 13)", () => {
+  const reverseCharge = (profile: InvoiceInput["profile"], seller: Partial<InvoiceInput["seller"]>): InvoiceInput => ({
+    ...clean,
+    profile,
+    seller: { ...clean.seller, ...seller },
+    lines: [cleanLine({ vatCategory: "AE", vatRate: 0 })],
+    vatExemptionReasons: { AE: "Reverse charge" },
+  });
+
+  it.each(["en16931", "peppol-bis-3", "xrechnung-ubl", "xrechnung-cii"] as const)(
+    "fires on %s when the seller carries no tax identifier at all",
+    (profile) => {
+      const ids = errorIds(
+        reverseCharge(profile, { vatId: undefined, taxRegistrationId: undefined }),
+      );
+      expect(ids).toContain("BR-AE-02");
+    },
+  );
+
+  it("is satisfied by BT-32 alone — the seller half takes any PartyTaxScheme", () => {
+    const ids = errorIds(
+      reverseCharge("en16931", { vatId: undefined, taxRegistrationId: "201/123/12345" }),
+    );
+    expect(ids).not.toContain("BR-AE-02");
+  });
+
+  it("is satisfied by a tax representative's VAT identifier", () => {
+    const ids = errorIds({
+      ...reverseCharge("en16931", { vatId: undefined, taxRegistrationId: undefined }),
+      taxRepresentative: {
+        name: "Fiscal Rep France SARL",
+        vatId: "FR12345678901",
+        address: { city: "Lyon", postalCode: "69001", countryCode: "FR" },
+      },
+    });
+    expect(ids).not.toContain("BR-AE-02");
+  });
+
+  it("still fires for the buyer half, and names the buyer terms", () => {
+    const buyerHalf = findings({
+      ...reverseCharge("en16931", {}),
+      buyer: { ...clean.buyer, vatId: undefined },
+    }).filter((e) => e.rule === "BR-AE-02");
+    expect(buyerHalf).toHaveLength(1);
+    expect(buyerHalf[0]!.field).toEqual(["BT-48", "BT-47"]);
+  });
+
+  it("says nothing on a well-formed reverse-charge invoice", () => {
+    expect(errorIds(reverseCharge("en16931", {}))).not.toContain("BR-AE-02");
   });
 });

@@ -5,6 +5,323 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-08-12
+
+Security, correctness and rule-coverage fixes from a four-lens adversarial
+review. Every defect below was reproduced before it was fixed, and most were put
+to the KoSIT validator (1.6.2, XRechnung 3.0.2 configuration 2026-01-31) in both
+syntaxes, comparing the rule ids it returns against the ones this build returns.
+
+### ⚠ Migrating from 0.3.0 — read this first
+
+**This is 0.4.0 and not 0.3.1 because it rejects input 0.3.0 accepted, and
+because the default parser caps are 25× lower.** It was written up as a patch
+and that was wrong: two of the three things below will change the answer your
+code gets from an input it is already sending. Neither is a bug fix you can take
+without looking.
+
+**1. A document that parsed in 0.3.0 can now fail with `xml_too_large`.**
+`maxCharacters` is 10,000,000 → **400,000**, `maxElements` 200,000 → **50,000**,
+and there is a new `maxAttributes` of **256** per element. The case that will
+find you is a base64-embedded attachment: base64 costs four characters per three
+bytes, so an invoice carrying a PDF of about **300 kB** lands on 400,000
+characters on its own and is refused. A thousand-line invoice with no attachment
+is around 300 kB of XML and is unaffected; the largest fixture in this package is
+under 10 kB.
+
+All four caps are still overridable per call — but **do not raise
+`maxCharacters` on Cloudflare Workers without measuring**. That is what the old
+default was hiding: measured on Node 22, a *legal* document at the old 10M cap
+retained about **81 MB of heap and about 306 MB of RSS**, against the **128 MB**
+an isolate is allowed. A request like that was not rejected, it was **killed** —
+no status code, no finding, no charge, nothing to catch. A 785 kB body already
+retained about 47 MB. On a long-lived Node process with room to spare, raise it
+deliberately and know the arithmetic; on Workers, the safer shape is to strip the
+attachment before parsing.
+
+**2. 0.3.0 emitted documents that are silently wrong, and no version of the
+library will tell you which.** If you have priced anything per unit at more than
+two decimals — per kilo, per kWh, per thousand impressions — **regenerate those
+documents**. `quantity: 10000, unitPrice: 0.0345` emitted BT-146 as `0.03`
+beside a correct line total of `345.00`: the price a human reads was wrong by
+**71%**, and **KoSIT accepts it**, because no EN 16931 rule ties BT-146 to
+BT-131. Nothing rejects these. They are simply wrong, in your customers' hands.
+
+A second one is worse than a plain rejection because it is intermittent: the VAT
+rate was truncated while the VAT amount was computed from the full rate, so
+**KoSIT REJECTS `[BR-CO-17, BR-S-09]`** — but only once the taxable base clears
+the rule's ±1 tolerance, at somewhere around **20,000**. The same 0.3.0 document
+shape passes at one invoice size and is rejected at another.
+
+**3. Input that validated before may now fail.** Every new finding is `fatal`,
+so it lands in `result.errors` and turns `result.valid` to `false`. That
+direction is the point. A validator that says yes where the portal says no is
+worse than useless — it spends the caller's trust and then loses them the
+invoice. Nobody is newly harmed by a new finding: every input that starts failing
+was already going to be rejected downstream, and now it is rejected a great deal
+earlier and with a rule id and a fix attached.
+
+**⚠ 0.3.0 is affected.** Three of these shipped in it and none is visible from
+inside the library:
+
+- **The unit price was rounded to two decimals** (BT-146, and BT-147/BT-148 with
+  it). `quantity: 10000, unitPrice: 0.0345` emitted a price of `0.03` beside a
+  correct line total of `345.00`, so the document read 10000 × 0.03 = 345.00 and
+  the price a human reads was wrong by 71%. KoSIT *accepts* that document — no
+  EN 16931 rule ties BT-146 to BT-131 — so it is silent corruption, not a
+  rejection. Anyone on 0.3.0 with per-unit pricing carrying more than two
+  decimals (per-kilo, per-kWh, per-thousand-impressions) has documents with a
+  wrong price in them. Regenerate them.
+- **The VAT rate was truncated while the VAT amount was computed from the full
+  rate.** A rate of 16.665 emitted `RateApplicablePercent 16.66` (`toFixed`
+  truncates, and half-up is 16.67, so it was wrong twice) against a
+  `CalculatedAmount` computed at 16.665%. **KoSIT REJECTS: `[BR-CO-17,
+  BR-S-09]`, both syntaxes** — but only once the base clears the rule's ±1
+  tolerance, which happens above roughly 20,000, so a 0.3.0 document can be fine
+  at one size and rejected at another.
+- **A corrupt VAT breakdown or line total validated as `valid: true`.** A
+  document stating a line net amount of 77.77 where its own lines compute 99.99,
+  a VAT basis of 55.55 and a VAT amount of 11.11 — three fatal schematron
+  violations — parsed and validated with **zero errors**. KoSIT REJECTS it with
+  `[BR-CO-10, BR-CO-14, BR-S-08, PEPPOL-EN16931-R120]` in both syntaxes.
+
+### Security
+
+- **Fixed** — **an entity reference could resolve to an `Object.prototype`
+  member and be substituted into the document.** `PREDEFINED[name]` was a lookup
+  on an object literal, so `&constructor;` resolved to the `Object` constructor
+  and was written into the invoice as the string
+  `"function Object() { [native code] }"`. End to end: a minimal XRechnung UBL
+  fixture with its invoice number replaced by `&constructor;` returned HTTP 200,
+  `valid: true`, zero findings and a charged quota, carrying that text as BT-1.
+  `&toString;`, `&valueOf;` and `&__proto__;` did the same, on both readers, and
+  all four are short enough to pass the reference-length guard. The table is now
+  null-prototype and the lookup is an own-property check — two independent
+  guards. Any name that is not one of the five and not a numeric character
+  reference reaches `xml_entity_forbidden`.
+
+- **Fixed** — **parsing was quadratic in the number of sibling elements.** The
+  `[n]` path index was computed by rescanning every preceding sibling. Measured:
+  10k elements 177 ms, 20k 799 ms, 40k 3,777 ms, and
+  `'<r>' + '<x/>'.repeat(199999) + '</r>'` — 800 kB, under every cap then in
+  force — took **125,600 ms** in `parseXml`. `maxElements` did not bound it,
+  because the cap is checked inside the loop, so *refusing* a 200,001-element
+  document cost 224 seconds. It is now a per-frame tally, O(1) per element, with
+  byte-identical paths.
+
+- **Fixed** — **the namespace map was copied per element that declared a
+  prefix**, a second and independent amplifier. 20,000 `xmlns:` declarations on
+  the root plus 6,000 children each declaring one — 536 kB — took **21,779 ms**,
+  of which the path index accounted for about 50. The map is now chained with
+  `Object.create` rather than copied, and the chain bottoms out at a
+  null-prototype map, which also fixes `nsMap[prefix]` resolving `constructor`
+  to a function instead of raising `xml_unbound_prefix`.
+
+- **Changed** — **the default XML limits are much lower, and there is a new
+  one.** `maxCharacters` 10,000,000 → **400,000**; `maxElements` 200,000 →
+  **50,000**; new `maxAttributes`, **256** per element. Measured on Node 22, a
+  legal document at the old size cap retained about 81 MB of heap and about
+  306 MB of RSS — over the 128 MB a Cloudflare Workers isolate is allowed, so
+  such a request was killed rather than rejected. A 785 kB body already retained
+  about 47 MB. The docstring that claimed 10M characters was "far below anything
+  that threatens a Node or Workers heap" said the opposite of the measurement and
+  has been replaced with the bytes-per-element arithmetic. All four remain
+  overridable per call. The largest fixture here is under 10 kB and a
+  thousand-line invoice lands around 300 kB; raise `maxCharacters` deliberately
+  if you parse documents carrying base64 attachments.
+
+### Correctness of emitted documents
+
+- **Fixed** — **BT-146, BT-147 and BT-148 are written at their own precision.**
+  A new `formatPrice()` replaces `formatAmount()` on the three price terms, with
+  two decimals as a floor rather than a cap, up to eight. EN 16931 sets no
+  BR-DEC rule on BT-146 — `rules-decimals.ts` says so explicitly — because
+  per-unit pricing legitimately needs more. Every committed fixture is
+  byte-identical.
+
+- **Fixed** — **BT-119 and BT-117 now come from one number.** The VAT rate is
+  normalised to two decimals before `computeTotals` groups on it, and
+  `formatNumber` rounds half-up through the same `toPrecision(15)`
+  normalisation `round2` uses instead of calling `toFixed` — the exact trap
+  `round2`'s own docblock warns about, six lines above the function that fell
+  into it. `16.665` now emits `Percent 16.67` against `TaxAmount 16670.00`, and
+  KoSIT accepts it.
+
+- **Fixed** — **a document-level allowance or charge no longer carries a rate
+  the breakdown does not.** The line path zero-normalised the rate for
+  categories Z/E/AE/K/G and the document path did not, so an allowance written
+  `{ vatCategory: "E", vatRate: 19 }` emitted `19.00` against an `E @ 0.00`
+  breakdown — one document contradicting itself, and a BR-E-06 violation. Both
+  syntaxes.
+
+### Rule coverage
+
+- **Fixed** — **BR-CO-09 now matches the schematron, per syntax.** It folded
+  case and stripped whitespace before the code-list lookup; the schematron does
+  neither, in either syntax, and the two syntaxes do not agree with each other.
+  `"de123456789"` was reported valid here and is rejected by KoSIT in **both**
+  syntaxes. In the other direction, `"Q 123456789"` was reported fatal here and
+  is *accepted* by KoSIT in UBL, whose `contains` needle is not space-wrapped
+  and finds `"Q "` inside `"AQ "`. The two literal lists are not even the same
+  list: UBL carries `SS` and not `AN`, CII carries `AN` and not `SS`. The rules
+  are now implemented separately, and the `en16931` profile — emittable as
+  either syntax — must satisfy both. Thirteen BT-31 values put to KoSIT in both
+  syntaxes — twenty-six probes — all agreeing on the rule ids returned; the
+  table is in `scripts/kosit-check.md`
+  and mirrored in the README. Greece is unaffected: `EL` on BT-31 with `GR` on
+  BT-40 is still accepted by both.
+
+- **Fixed** — **declared line net amounts and declared VAT breakdowns are
+  compared instead of discarded.** `DeclaredTotals` gains `lineNetAmounts`
+  (BT-131 per line) and `subtotals` (BT-116, BT-117, BT-118, BT-119 per group),
+  and both parsers populate them. They were recorded as `unmapped` "recomputed"
+  notes and thrown away, so nothing ever compared them — which is why the
+  corrupt document described above validated clean. `BR-CO-10`, `BR-CO-14`,
+  `BR-{S,Z,E,AE,IC,G,O,AF,AG}-08`, `BR-CO-17` and `PEPPOL-EN16931-R120` now run
+  against the stated figures, each with the schematron's own tolerance — a whole
+  unit of currency for the `-08` family and BR-CO-17, 0.02 for R120, exact for
+  BR-CO-10 and BR-CO-14. A first draft used ±0.02 for BR-CO-17 and reported a
+  finding on a document KoSIT accepts; the probe caught it.
+
+  Two consequences of running against the stated figures, both settled in this
+  release. First, each rule id now yields **one finding per document**: the
+  stated-versus-stated checks own `BR-CO-10` and `BR-CO-14`, and the older
+  derived-value twins stand down when the document states its summands — a
+  first cut reported `['BR-CO-14', 'BR-CO-14']` on a single corrupt BT-110,
+  same id, two deltas. Second, a document whose stated line amounts agree with
+  its stated BT-106 but whose per-line arithmetic is wrong no longer gets
+  `BR-CO-10` under the plain `en16931` profile. That matches the schematron,
+  which sums what the lines *state*: the per-line arithmetic is
+  `PEPPOL-EN16931-R120`, a Peppol rule, and it still fires under
+  `peppol-bis-3` and the XRechnung profiles. The `BR-{…}-08` family compares
+  stated against stated for the same reason — a document whose lines each
+  drift +0.02 inside R120's own slack is accepted by KoSIT, and now here too.
+
+- **Fixed** — **BR-AE-02's seller half is enforced on every profile.** Only the
+  buyer half was, so an `en16931` or `peppol-bis-3` invoice with reverse-charge
+  lines and no seller tax identifier at all returned `valid: true` with zero
+  errors. Only XRechnung caught it, via `BR-DE-16`, which is a different rule
+  about a different thing. The seller half is in the EN 16931 schematron, not a
+  CIUS, so it applies everywhere; it takes any seller `PartyTaxScheme`, so BT-32
+  satisfies it, as does a tax representative's BT-63. KoSIT REJECTS the
+  XRechnung form with `[BR-AE-02, BR-DE-16]` in both syntaxes, which is now
+  exactly what this build returns.
+
+- **Fixed** — **BT-110 no longer escapes validation when BT-6 equals BT-5.**
+  BT-110 and BT-111 are one CII element twice over, told apart only by
+  `@currencyID`. With the two currencies equal — legal, and not rare — the first
+  one was claimed as BT-111, so `declared.taxAmount` was never set and BR-CO-14
+  silently did not run. Position now decides the ambiguous case: the first
+  `TaxTotalAmount` is BT-110, and only a later one can be BT-111. `@currencyID`
+  still decides when the currencies genuinely differ. The same tiebreak was
+  added to the UBL reader, which had a partial guard.
+
+### Reading
+
+- **Fixed** — **content nested inside a consumed leaf is no longer lost
+  silently.** `leaf()` marked an element read and took its text, which is `""`
+  for any element with children, and `sweep()` then skipped it — so
+  `<ram:ID><x:real xmlns:x="urn:x">2026-000142</x:real></ram:ID>` produced
+  `invoiceNumber === ""` with `x:real` reported nowhere. That is the one thing
+  `xml-reader.ts` exists to prevent. Both the emptied container and its contents
+  are now reported in `unmapped`.
+
+  As a consequence, a clean fixture now leaves **nothing** unmapped, where it
+  previously reported three "recomputed" entries. Code that asserted those
+  entries exist will need updating.
+
+### Documentation
+
+- **Fixed** — **the reachable-rule count is 262, and is now derived rather than
+  typed.** Of the 291 rule ids, 262 can be tripped by caller input and 29
+  constrain the library's own computed arithmetic. The figure was published as
+  254 for a few hours on the day of this release, because it was taken from the
+  size of the battery in `src/rules-invariants.test.ts`, which fired only one
+  member of the nine-member per-category `-08` family. Reachability is a
+  property of the rule, not of the battery that happens to exercise it: all
+  nine members were fired from caller input, one fixture each, when this was
+  checked. Read the wrong way round, the number put "You cannot trip this rule"
+  on eight rule pages describing rules a caller can trip.
+
+  The number itself is no longer the guard. The battery now proves
+  completeness: every rule id present in `src/` must be either fired by a
+  fixture or named in `ARITHMETIC_INVARIANTS` with the reason no input reaches
+  it, and a rule that is neither fails the suite by name. A literal that has
+  been wrong twice — it read 248, then 251, then 254 — is not a guard.
+
+- **Changed** — the README no longer claims the build implements "every"
+  expressible rule, or that the limitations list is complete. Four coverage gaps
+  were found in two days and none of them had a row in that list beforehand.
+  Nothing in this repository measures coverage against the schematron, so an
+  absent row means "not yet noticed", not "does not exist".
+
+### Also in this release
+
+The three rule-coverage fixes below were made earlier on the same day.
+
+- **Fixed** — **BR-CO-09 now checks the seller tax representative VAT
+  identifier (BT-63).** The rule names three identifiers — BT-31, BT-63 and
+  BT-48 — and this build checked two. A representative VAT identifier with no
+  ISO 3166-1 country prefix, such as `123456789`, was accepted. The schematron
+  context is every `cac:PartyTaxScheme` whose tax scheme is `VAT`, wherever it
+  sits in the document, and the generator writes one under
+  `cac:TaxRepresentativeParty`.
+
+  The gap was excused by a belief that the input model had no BG-11 group.
+  That stopped being true in 0.2.0: `taxRepresentative` is in `types.ts`, and
+  the BR-\*-02 family in `rules-allowance.ts` already read `BT-63` from it.
+
+- **Fixed** — **BR-CL-14 now checks the seller tax representative country code
+  (BT-69).** Found by sweeping for the same kind of mistake. The rule applies
+  to every `cac:Country/cbc:IdentificationCode` in the document; the code
+  checked the seller (BT-40), the buyer (BT-55) and the deliver-to address
+  (BT-80), and a comment listed those three as if the list were complete. The
+  representative's address is the fourth. `taxRepresentative.address.countryCode`
+  has been in the model since 0.2.0 — BR-20 already reads it.
+
+  `cac:OriginCountry/cbc:IdentificationCode` (BT-159) is still deliberately not
+  here. The schematron gives it a template of its own at a higher priority, and
+  that is BR-CL-15.
+
+- **Fixed, and this is the one to read twice** — **BR-CO-09 now checks the VAT
+  prefix against the country code list, instead of checking that it is two
+  letters.** The test was `/^(EL|[A-Z]{2})/`. Any two capitals satisfied it, so
+  `"ZZ123456789"` was reported as valid and is rejected by KoSIT under this
+  same rule id.
+
+  **This affects every caller, not only those using a tax representative.** It
+  applies to all three identifiers — BT-31, BT-48 and BT-63. If a VAT
+  identifier in your data carries a prefix that is not a real country code, you
+  will now get a fatal `BR-CO-09` where you previously got `valid: true`. A
+  common case is `"UK123456789"`: the United Kingdom is `GB` in ISO 3166-1 and
+  `UK` is reserved and never assigned, so the message names that specifically.
+
+  **Greece still works, in both directions.** BR-CO-09 and BR-CL-14 use
+  deliberately different lists: BR-CO-09 admits `EL`, BR-CL-14 does not. So a
+  Greek seller is correct with `vatId: "EL123456789"` and
+  `address.countryCode: "GR"` at the same time, and stays correct — verified
+  against KoSIT, which accepts that invoice in both syntaxes. The two lists are
+  built separately on purpose and must not be merged.
+
+- **Verified against the regulator, not against our own reasoning.** An invoice
+  carrying an unprefixed BT-63 and an invalid BT-69 was put through the KoSIT
+  validator (1.6.2, XRechnung 3.0.2 configuration 2026-01-31) in **both**
+  syntaxes. It is rejected in each, under exactly these two rule ids and no
+  others, which is now what `validateInput` reports for the same input.
+
+  The same was done for the prefix change: a `ZZ`-prefixed invoice is rejected
+  in both syntaxes under exactly `BR-CO-09`, and a Greek `EL`/`GR` invoice is
+  accepted in both with zero findings — matching this build exactly, in all
+  four cases. The two literal code lists in the schematron were also compared
+  element by element against ours: BR-CL-14's is `COUNTRY_CODES` exactly (251
+  codes) and BR-CO-09's is that set plus `EL` and nothing else (252).
+
+- **Unchanged** — the seven committed fixtures. None carries a bad
+  representative or a made-up VAT prefix, so the conformance record stands:
+  re-run 2026-08-12, `Acceptable: 7  Rejected: 0`. This release changes which
+  inputs `validateInput` rejects and does not change a byte of what the
+  generators emit.
+
 ## [0.3.0] — 2026-08-11
 
 Adds **CII**, in both directions — and with it the German and French markets

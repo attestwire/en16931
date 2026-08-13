@@ -162,6 +162,47 @@ describe("BR-CL-14 country codes", () => {
       ),
     ).toEqual([]);
   });
+
+  // BT-69 was missing from this rule until 0.4.0. KoSIT rejects a bad value
+  // there: the schematron context is every cac:Country/cbc:IdentificationCode,
+  // and the tax representative's postal address contains one.
+  describe("the seller tax representative country (BT-69)", () => {
+    const representative = (countryCode: string) => ({
+      name: "Fiscal Rep France SARL",
+      vatId: "FR12345678901",
+      address: { city: "Lyon", postalCode: "69001", countryCode },
+    });
+
+    it("rejects a code that is in no ISO 3166-1 list", () => {
+      const inv = withInvoice({ taxRepresentative: representative("ZZ") });
+      expect(allIds(inv)).toContain("BR-CL-14");
+      const finding = findingFor(inv, "BR-CL-14")!;
+      expect(finding.field).toBe("BT-69");
+      expect(finding.severity).toBe("fatal");
+      expect(finding.fix).toContain("taxRepresentative.address.countryCode");
+      expect(finding.xpath).toBe(
+        "/ubl:Invoice/cac:TaxRepresentativeParty/cac:PostalAddress/cac:Country/cbc:IdentificationCode",
+      );
+    });
+
+    it('rejects "EL" there too, and still explains the Greek VAT prefix', () => {
+      const inv = withInvoice({ taxRepresentative: representative("EL") });
+      expect(findingFor(inv, "BR-CL-14")!.message).toContain("BR-CO-09");
+    });
+
+    it("accepts a valid representative country and stays otherwise silent", () => {
+      expect(allIds(withInvoice({ taxRepresentative: representative("FR") }))).toEqual(
+        [],
+      );
+    });
+
+    it("stays quiet when there is no representative — BR-20 owns an absent code", () => {
+      expect(allIds(withInvoice({}))).not.toContain("BR-CL-14");
+      expect(
+        allIds(withInvoice({ taxRepresentative: representative("") })),
+      ).not.toContain("BR-CL-14");
+    });
+  });
 });
 
 describe("BR-CL-16 payment means", () => {

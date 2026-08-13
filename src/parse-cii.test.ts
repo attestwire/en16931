@@ -77,12 +77,14 @@ describe("parseCiiInvoice: round trip over every committed CII fixture", () => {
     expect(after.valid).toBe(true);
   });
 
-  it.each(cases)("%s leaves nothing unknown behind", (name) => {
+  // ⚠ Changed 2026-08-12 (finding 9). BT-131, BT-116 and BT-117 used to be
+  // reported as "recomputed" and then discarded, which is why a corrupt one
+  // validated as `valid: true`. They now reach `declaredTotals` and are
+  // compared, so a clean fixture leaves nothing unmapped at all.
+  it.each(cases)("%s leaves nothing behind at all", (name) => {
     const { unmapped } = parseCiiInvoice(read(name));
-    // Everything reported must be "recomputed" — a value the model derives
-    // rather than stores. An "unknown" here means content was lost.
     expect(unknowns(unmapped)).toEqual([]);
-    expect(unmapped.length).toBeGreaterThan(0);
+    expect(unmapped).toEqual([]);
   });
 
   it.each(cases)("%s reports the document's own arithmetic as declared", (name, input) => {
@@ -310,12 +312,19 @@ describe("parseCiiInvoice: nothing is dropped silently", () => {
     );
   });
 
-  it("reports the recomputed amounts rather than storing them", () => {
-    const { unmapped } = parseCiiInvoice(minimalXml);
-    const kinds = new Set(unmapped.map((u) => u.kind));
-    expect(kinds).toEqual(new Set(["recomputed"]));
-    expect(unmapped.map((u) => u.name)).toContain("ram:LineTotalAmount");
-    expect(unmapped.map((u) => u.name)).toContain("ram:BasisAmount");
+  // ⚠ Rewritten 2026-08-12 (finding 9). The old assertion — that BT-131 and
+  // BT-116 were reported rather than stored — was the defect, not the contract:
+  // nothing compared them, so a document stating 77.77 where its own lines
+  // compute 99.99 validated with zero errors while KoSIT rejected it under
+  // BR-CO-10 and PEPPOL-EN16931-R120.
+  it("stores the stated line and breakdown amounts instead of discarding them", () => {
+    const { invoice, unmapped } = parseCiiInvoice(minimalXml);
+    expect(unmapped.map((u) => u.name)).not.toContain("ram:LineTotalAmount");
+    expect(unmapped.map((u) => u.name)).not.toContain("ram:BasisAmount");
+    const declared = invoice.declaredTotals!;
+    expect(declared.lineNetAmounts).toBeDefined();
+    expect(declared.subtotals?.[0]?.taxableAmount).toBeDefined();
+    expect(declared.subtotals?.[0]?.taxAmount).toBeDefined();
   });
 
   it("reports a number it cannot read and leaves the field unset", () => {
@@ -403,5 +412,165 @@ describe("the two syntaxes meet in the middle", () => {
     const back = parseUblInvoice(ubl).invoice;
     expect(back.invoiceNumber).toBe("2026-000144");
     expect(back.lines).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Findings 9, 10 and 12. Each verdict below was compared against KoSIT 1.6.2
+// with the XRechnung 3.0.2 configuration on 2026-08-12.
+// ---------------------------------------------------------------------------
+
+describe("declared line and breakdown amounts are compared, not discarded (finding 9)", () => {
+  const ublMinimal = generateXRechnungUBL(minimalXRechnung);
+  const ciiMinimal = generateCii(minimalXRechnungCii);
+
+  /**
+   * The exact reproduction: a valid document with a line total, a VAT basis and
+   * a VAT amount that contradict its own arithmetic and each other. KoSIT
+   * REJECTS it with `[BR-CO-10, BR-CO-14, BR-S-08, PEPPOL-EN16931-R120]` in
+   * both syntaxes. This build used to return `valid: true`, zero errors.
+   */
+  const corruptUbl = ublMinimal
+    .replace(
+      /<cbc:LineExtensionAmount currencyID="EUR">[\d.]+<\/cbc:LineExtensionAmount>\s*\n(\s*)<cac:Item>/,
+      (m) => m.replace(/>[\d.]+</, ">77.77<"),
+    )
+    .replace(
+      /<cbc:TaxableAmount currencyID="EUR">[\d.]+<\/cbc:TaxableAmount>/,
+      `<cbc:TaxableAmount currencyID="EUR">55.55</cbc:TaxableAmount>`,
+    )
+    .replace(
+      /(<cac:TaxSubtotal>[\s\S]*?)<cbc:TaxAmount currencyID="EUR">[\d.]+<\/cbc:TaxAmount>/,
+      `$1<cbc:TaxAmount currencyID="EUR">11.11</cbc:TaxAmount>`,
+    );
+
+  const corruptCii = ciiMinimal
+    .replace(/<ram:LineTotalAmount>[\d.]+<\/ram:LineTotalAmount>/, "<ram:LineTotalAmount>77.77</ram:LineTotalAmount>")
+    .replace(/<ram:BasisAmount>[\d.]+<\/ram:BasisAmount>/, "<ram:BasisAmount>55.55</ram:BasisAmount>")
+    .replace(/<ram:CalculatedAmount>[\d.]+<\/ram:CalculatedAmount>/, "<ram:CalculatedAmount>11.11</ram:CalculatedAmount>");
+
+  it.each([
+    ["UBL", corruptUbl, parseUblInvoice],
+    ["CII", corruptCii, parseCiiInvoice],
+  ] as const)(
+    "%s: returns exactly the rule ids KoSIT returns for the corrupt document",
+    (_name, xml, parse) => {
+      const result = validateInput(parse(xml).invoice);
+      expect(result.valid).toBe(false);
+      expect([...new Set(result.errors.map((e) => e.rule))].sort()).toEqual([
+        "BR-CO-10",
+        "BR-CO-14",
+        "BR-S-08",
+        "PEPPOL-EN16931-R120",
+      ]);
+    },
+  );
+
+  it.each([
+    ["UBL", ublMinimal, parseUblInvoice],
+    ["CII", ciiMinimal, parseCiiInvoice],
+  ] as const)("%s: leaves an honest document alone", (_name, xml, parse) => {
+    const result = validateInput(parse(xml).invoice);
+    expect(result.errors).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  it("carries the stated figures into declaredTotals in both syntaxes", () => {
+    for (const [xml, parse] of [
+      [ublMinimal, parseUblInvoice],
+      [ciiMinimal, parseCiiInvoice],
+    ] as const) {
+      const declared = parse(xml).invoice.declaredTotals!;
+      const invoice = parse(xml).invoice;
+      expect(declared.lineNetAmounts).toHaveLength(invoice.lines.length);
+      expect(declared.lineNetAmounts!.every((n) => typeof n === "number")).toBe(true);
+      expect(declared.subtotals!.length).toBeGreaterThan(0);
+      for (const sub of declared.subtotals!) {
+        expect(sub.category).toBe("S");
+        expect(typeof sub.rate).toBe("number");
+        expect(sub.taxableAmount).toBeGreaterThan(0);
+        expect(sub.taxAmount).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("stays inside the schematron's tolerances rather than tightening them", () => {
+    // BR-*-08 and BR-CO-17 allow a whole unit of currency, exclusive, and
+    // PEPPOL-EN16931-R120 allows 0.02. A build that compared exactly here would
+    // reject documents KoSIT accepts — which a first draft of this rule did.
+    const nearMiss = ciiMinimal.replace(
+      /<ram:CalculatedAmount>([\d.]+)<\/ram:CalculatedAmount>/,
+      (_m, value) =>
+        `<ram:CalculatedAmount>${(Number(value) + 0.5).toFixed(2)}</ram:CalculatedAmount>`,
+    );
+    const ids = validateInput(parseCiiInvoice(nearMiss).invoice).errors.map((e) => e.rule);
+    expect(ids).not.toContain("BR-CO-17");
+  });
+});
+
+describe("BT-110 when the VAT accounting currency equals the invoice currency (finding 12)", () => {
+  // BT-110 and BT-111 are one element twice over, told apart only by
+  // @currencyID. When BT-6 = BT-5 the first one used to be claimed as BT-111,
+  // so declared.taxAmount was never set and BR-CO-14 silently did not run.
+  const withSameCurrency = (xml: string) =>
+    xml.replace(
+      "<ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>",
+      "<ram:TaxCurrencyCode>EUR</ram:TaxCurrencyCode>\n      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>",
+    );
+
+  it("reads the first TaxTotalAmount as BT-110, not as BT-111", () => {
+    const xml = withSameCurrency(generateCii(minimalXRechnungCii));
+    const { invoice } = parseCiiInvoice(xml);
+    expect(invoice.vatAccountingCurrency).toBe("EUR");
+    expect(invoice.declaredTotals?.taxAmount).toBeDefined();
+  });
+
+  it("lets BR-CO-14 run on a corrupt BT-110 it used to skip", () => {
+    const xml = withSameCurrency(generateCii(minimalXRechnungCii)).replace(
+      /<ram:TaxTotalAmount currencyID="EUR">[\d.]+<\/ram:TaxTotalAmount>/,
+      `<ram:TaxTotalAmount currencyID="EUR">999.99</ram:TaxTotalAmount>`,
+    );
+    const ids = validateInput(parseCiiInvoice(xml).invoice).errors.map((e) => e.rule);
+    expect(ids).toContain("BR-CO-14");
+  });
+
+  it("still reads a genuine BT-111 in a different currency", () => {
+    const xml = generateCii({
+      ...minimalXRechnungCii,
+      vatAccountingCurrency: "SEK",
+      taxAmountInAccountingCurrency: 3255.6,
+    });
+    const { invoice } = parseCiiInvoice(xml);
+    expect(invoice.taxAmountInAccountingCurrency).toBe(3255.6);
+    expect(invoice.declaredTotals?.taxAmount).not.toBe(3255.6);
+  });
+});
+
+describe("content nested inside a consumed leaf (finding 10)", () => {
+  // `leaf()` marks an element consumed and reads `el.text`, which is "" for any
+  // element with children — so the value came back empty AND `sweep()` never
+  // mentioned what was inside. Silent data loss, on the module whose whole
+  // stated contract is that nothing is dropped silently.
+  const nested = generateCii(minimalXRechnungCii).replace(
+    /<ram:ID>2026-000142<\/ram:ID>/,
+    `<ram:ID><x:real xmlns:x="urn:x">2026-000142</x:real></ram:ID>`,
+  );
+
+  it("reports both the emptied container and the content inside it", () => {
+    const { invoice, unmapped } = parseCiiInvoice(nested);
+    expect(invoice.invoiceNumber).toBe("");
+    const inner = unmapped.find((u) => u.name === "x:real");
+    expect(inner).toBeDefined();
+    expect(inner!.text).toBe("2026-000142");
+    expect(inner!.namespace).toBe("urn:x");
+    const container = unmapped.find(
+      (u) => u.name === "ram:ID" && u.reason.includes("read as a text value"),
+    );
+    expect(container).toBeDefined();
+  });
+
+  it("leaves an ordinary leaf untouched", () => {
+    const { unmapped } = parseCiiInvoice(generateCii(minimalXRechnungCii));
+    expect(unmapped).toEqual([]);
   });
 });

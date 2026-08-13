@@ -24,6 +24,7 @@ import {
 } from "./xml-parse.js";
 import { set, TreeReader, type UnmappedElement } from "./xml-reader.js";
 import type {
+  DeclaredTaxSubtotal,
   DeclaredTotals,
   DeliverToAddress,
   DocumentAllowanceCharge,
@@ -327,7 +328,13 @@ function isCharge(r: Reader, el: XmlElement): boolean {
   return (r.cbc(el, "ChargeIndicator") ?? "").trim().toLowerCase() === "true";
 }
 
-function readLine(r: Reader, el: XmlElement): InvoiceLine {
+/** A line, plus the BT-131 the document states for it (finding 9). */
+interface ReadLineResult {
+  line: InvoiceLine;
+  declaredNetAmount?: number;
+}
+
+function readLine(r: Reader, el: XmlElement): ReadLineResult {
   const quantity = r.cbcEl(el, "InvoicedQuantity");
   const item = r.cac(el, "Item");
   const price = r.cac(el, "Price");
@@ -351,17 +358,13 @@ function readLine(r: Reader, el: XmlElement): InvoiceLine {
   };
 
   // BT-131 is derived from quantity, price and the line allowances and charges,
-  // so it has no field of its own.
-  const lineAmount = firstChild(el, CBC, "LineExtensionAmount");
-  if (lineAmount) {
-    r.note(
-      lineAmount,
-      "recomputed",
-      "BT-131 is computed from the quantity, the price and the line allowances and " +
-        "charges. Compare it with computeTotals(invoice).lineNetAmounts if you want " +
-        "to know whether the document's own arithmetic agrees.",
-    );
-  }
+  // so it has no field on InvoiceLine — but the figure the document *states*
+  // is kept, in declaredTotals.lineNetAmounts, and compared against the derived
+  // one. Recording it as an unmapped "recomputed" note and discarding it (which
+  // is what happened until 0.4.0) meant a line whose stated total disagreed
+  // with its own arithmetic validated with zero errors, while KoSIT rejected
+  // the same document under BR-CO-10 and PEPPOL-EN16931-R120.
+  const declaredNetAmount = r.number(el, CBC, "LineExtensionAmount");
 
   set(line, "note", r.cbc(el, "Note"));
   set(line, "buyerAccountingReference", r.cbc(el, "AccountingCost"));
@@ -449,7 +452,9 @@ function readLine(r: Reader, el: XmlElement): InvoiceLine {
     }
   }
 
-  return line;
+  const result: ReadLineResult = { line };
+  if (declaredNetAmount !== undefined) result.declaredNetAmount = declaredNetAmount;
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -780,20 +785,31 @@ export function parseUblInvoice(
   // model cannot derive are read here: the declared total (BT-110), and the
   // exemption reasons (BT-120 / BT-121), which are free text.
   const declared: DeclaredTotals = {};
+  const declaredSubtotals: DeclaredTaxSubtotal[] = [];
   const exemptionReasons: Partial<Record<VatCategory, string>> = {};
   const exemptionReasonCodes: Partial<Record<VatCategory, string>> = {};
   const taxCurrencyCode = invoice.vatAccountingCurrency;
+  let taxTotalIndex = 0;
   for (const taxTotal of r.cacAll(root, "TaxTotal")) {
     const amountEl = r.cbcEl(taxTotal, "TaxAmount");
     const subtotals = r.cacAll(taxTotal, "TaxSubtotal");
     const currencyId = amountEl ? attr(amountEl, "currencyID") : undefined;
+    const isFirstTaxTotal = taxTotalIndex === 0;
+    taxTotalIndex += 1;
 
     // BT-111: the same VAT total restated in the VAT accounting currency, as a
     // second cac:TaxTotal carrying nothing but the amount.
+    //
+    // The absence of a breakdown is the primary signal here, and it is a
+    // stronger one than CII has — but it is not enough on its own when BT-6
+    // equals BT-5 (see the same defect in parse-cii.ts). BT-110 is mandatory,
+    // so the first cac:TaxTotal is BT-110 whatever its currency says; only a
+    // later one can be the restatement.
     if (
       subtotals.length === 0 &&
       taxCurrencyCode !== undefined &&
-      currencyId?.toUpperCase() === taxCurrencyCode
+      currencyId?.toUpperCase() === taxCurrencyCode &&
+      (!isFirstTaxTotal || taxCurrencyCode !== invoice.currency?.toUpperCase())
     ) {
       const value = amountEl ? Number(amountEl.text.trim()) : Number.NaN;
       if (Number.isFinite(value)) invoice.taxAmountInAccountingCurrency = value;
@@ -806,27 +822,23 @@ export function parseUblInvoice(
     }
 
     for (const subtotal of subtotals) {
-      const taxable = firstChild(subtotal, CBC, "TaxableAmount");
-      if (taxable) {
-        r.note(
-          taxable,
-          "recomputed",
-          "BT-116 is computed per (category, rate) group from the lines and the " +
-            "document allowances and charges.",
-        );
-      }
-      const amount = firstChild(subtotal, CBC, "TaxAmount");
-      if (amount) {
-        r.note(
-          amount,
-          "recomputed",
-          "BT-117 is computed from BT-116 and BT-119.",
-        );
-      }
+      // BT-116 and BT-117 are kept as *declared* figures and compared against
+      // the computed breakdown. Until 0.4.0 they were noted as "recomputed"
+      // and discarded, so a corrupt VAT basis or VAT amount reached
+      // `valid: true` with zero errors while KoSIT rejected the same document
+      // under BR-S-08 (or its per-category sibling) and BR-CO-14.
+      const stated: DeclaredTaxSubtotal = {};
+      set(stated, "taxableAmount", r.num(subtotal, "TaxableAmount"));
+      set(stated, "taxAmount", r.num(subtotal, "TaxAmount"));
       const category = r.cac(subtotal, "TaxCategory");
-      if (!category) continue;
+      if (!category) {
+        if (Object.keys(stated).length > 0) declaredSubtotals.push(stated);
+        continue;
+      }
       const code = (r.cbc(category, "ID") ?? "") as VatCategory;
-      r.cbc(category, "Percent");
+      if (code !== ("" as VatCategory)) stated.category = code;
+      set(stated, "rate", r.num(category, "Percent"));
+      declaredSubtotals.push(stated);
       const scheme = r.cac(category, "TaxScheme");
       if (scheme) r.cbc(scheme, "ID");
       const reason = r.cbc(category, "TaxExemptionReason");
@@ -835,6 +847,7 @@ export function parseUblInvoice(
       if (reasonCode !== undefined) exemptionReasonCodes[code] = reasonCode;
     }
   }
+  if (declaredSubtotals.length > 0) declared.subtotals = declaredSubtotals;
   if (Object.keys(exemptionReasons).length > 0) {
     invoice.vatExemptionReasons = exemptionReasons;
   }
@@ -855,7 +868,12 @@ export function parseUblInvoice(
   }
   if (Object.keys(declared).length > 0) invoice.declaredTotals = declared;
 
-  invoice.lines = r.cacAll(root, "InvoiceLine").map((line) => readLine(r, line));
+  const readLines = r.cacAll(root, "InvoiceLine").map((line) => readLine(r, line));
+  invoice.lines = readLines.map((read) => read.line);
+  if (readLines.some((read) => read.declaredNetAmount !== undefined)) {
+    declared.lineNetAmounts = readLines.map((read) => read.declaredNetAmount);
+    invoice.declaredTotals = declared;
+  }
 
   r.sweep(root);
 

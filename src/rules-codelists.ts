@@ -109,8 +109,21 @@ export const codelistRules: RuleFn[] = [
   },
 
   // BR-CL-14: Country codes in an invoice MUST be coded using ISO code list
-  // 3166-1.  Applies to every cac:Country/cbc:IdentificationCode: seller
-  // (BT-40), buyer (BT-55) and deliver-to (BT-80).
+  // 3166-1.
+  //
+  // The schematron context is `cac:Country/cbc:IdentificationCode` — every one
+  // of them, wherever it sits. In the documents this build generates that is
+  // four elements, not three: seller (BT-40), buyer (BT-55), seller tax
+  // representative (BT-69) and deliver-to (BT-80). BT-69 was missing until
+  // 0.4.0, excused by a comment that listed the other three and called the
+  // list complete. `taxRepresentative.address.countryCode` has been in the
+  // model since 0.2.0 — BR-20 in rules-references.ts already reads it — and
+  // KoSIT rejects a bad value there under this rule id. Verified against
+  // XRechnung 3.0.2 (EN16931-UBL-validation.xsl).
+  //
+  // `cac:OriginCountry/cbc:IdentificationCode` (BT-159) is NOT here: the
+  // schematron gives it a template of its own at a higher priority, which is
+  // BR-CL-15.
   (inv) => {
     const out: TeachingError[] = [];
     const check = (
@@ -155,6 +168,13 @@ export const codelistRules: RuleFn[] = [
       "buyer",
       "buyer.address.countryCode",
       "/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode",
+    );
+    check(
+      inv.taxRepresentative?.address?.countryCode,
+      "BT-69",
+      "seller tax representative",
+      "taxRepresentative.address.countryCode",
+      "/ubl:Invoice/cac:TaxRepresentativeParty/cac:PostalAddress/cac:Country/cbc:IdentificationCode",
     );
     check(
       inv.deliverTo?.countryCode,

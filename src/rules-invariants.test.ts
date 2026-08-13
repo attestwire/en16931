@@ -1,5 +1,8 @@
+import { readFileSync, readdirSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import { inputRules, validateInput } from "./index.js";
+import { CATEGORY_RULE_INFIX } from "./rule-kit.js";
 import { clean, cleanLine, withInvoice, withLine } from "./testkit.js";
 import type { InvoiceInput, TeachingError } from "./types.js";
 
@@ -10,6 +13,15 @@ import type { InvoiceInput, TeachingError } from "./types.js";
  * `docsUrl` that does not resolve, or a message that restates the rule id has
  * technically detected the problem and has failed at the job. These tests hold
  * every rule to the same bar, including the ones added after them.
+ *
+ * ⚠ THINGS OUTSIDE THIS PACKAGE ARE GENERATED FROM THESE RULES. The rule pages
+ * on the website and `apps/api/src/rules-content.js` are both produced by
+ * running this library and publishing what it returns — nothing on them is
+ * authored by hand. So a change to a rule id, a message, a `fix` or a
+ * `docsUrl` makes those committed artefacts stale, and nothing here can tell
+ * you: this package has no idea they exist, and would not be a zero-dependency
+ * library if it did. If you change a rule, regenerate them and run the whole
+ * repository's tests, not just this package's.
  */
 
 const outOfScopeParty = {
@@ -18,11 +30,66 @@ const outOfScopeParty = {
 };
 
 /**
+ * One fixture per member of the per-category `-08` family: a stated taxable
+ * amount (BT-116) that the lines behind it cannot produce.
+ *
+ * The single line multiplies out to 10 × 150 = 1500.00, so a stated 55.55 is
+ * not a rounding argument — it is outside the family's ±1 tolerance by three
+ * orders of magnitude.
+ *
+ * The nine ids are written out rather than derived from the category codes.
+ * EN 16931 does not name these rules after the code BT-151 carries: `K` is
+ * `BR-IC-08`, `L` is `BR-AF-08` and `M` is `BR-AG-08`. Deriving the id from
+ * the code would produce three ids that resolve to nothing, which is why
+ * `CATEGORY_RULE_INFIX` exists in rule-kit.ts and why this list is literal.
+ *
+ * Category `O` ("outside the scope of VAT") gets its own shape: it carries no
+ * rate at all, and its breakdown is refused outright from a party that quotes
+ * a VAT number (BR-O-11..-14). Stating a rate or keeping the VAT ids would
+ * bury the one id this fixture exists to fire.
+ */
+const declaredTaxableWrongPerCategory: [string, InvoiceInput][] = (
+  [
+    ["S", 19],
+    ["Z", 0],
+    ["E", 0],
+    ["AE", 0],
+    ["K", 0],
+    ["G", 0],
+    ["L", 7],
+    ["M", 10],
+  ] as const
+).map(([category, rate]) => [
+  `declaredTaxableWrong${category}`,
+  withInvoice({
+    profile: "en16931",
+    lines: [cleanLine({ vatCategory: category, vatRate: rate })],
+    declaredTotals: {
+      subtotals: [{ category, rate, taxableAmount: 55.55, taxAmount: 0 }],
+    },
+  }),
+]);
+
+declaredTaxableWrongPerCategory.push([
+  "declaredTaxableWrongO",
+  withInvoice({
+    profile: "en16931",
+    ...outOfScopeParty,
+    lines: [cleanLine({ vatCategory: "O", vatRate: undefined })],
+    vatExemptionReasons: { O: "Not subject to VAT" },
+    declaredTotals: {
+      subtotals: [{ category: "O", taxableAmount: 55.55, taxAmount: 0 }],
+    },
+  }),
+]);
+
+/**
  * A battery broad enough to fire every rule that *can* fire on this input
- * model. Rules that are invariants of the library's own arithmetic (the
- * per-category -01/-08/-09 families, BR-12..BR-15, BR-45/46/48, BR-CO-17,
- * BR-CO-18) are absent by construction: they only fire if computeTotals
- * regresses, which is what they are there for.
+ * model. Rules that are invariants of the library's own arithmetic — the
+ * per-category -01 and -09 families, BR-12..BR-15, BR-45/46/48, BR-CO-18 and
+ * BR-DEC-19/-20/-23 — are absent by construction: they only fire if
+ * computeTotals regresses, which is what they are there for. That list is
+ * written out in `ARITHMETIC_INVARIANTS` below and checked, not assumed.
  */
 const BATTERY: [string, InvoiceInput][] = [
   ["clean", clean],
@@ -652,6 +719,41 @@ const BATTERY: [string, InvoiceInput][] = [
       vatExemptionReasonCodes: { S: "VATEX-EU-I" },
     }),
   ],
+  // 2026-08-12, finding 9. Until now the stated BT-131, BT-116 and BT-117 were
+  // read out of a document and thrown away, so PEPPOL-EN16931-R120, the -08
+  // family and BR-CO-17 were genuinely unreachable from caller input and the
+  // note below said so. `declaredTotals` now carries them, which makes all
+  // three reachable — a caller can state them directly, and both parsers do.
+  [
+    "declaredLineAndBreakdownDisagree",
+    withInvoice({
+      declaredTotals: {
+        lineNetAmounts: [77.77],
+        subtotals: [
+          { category: "S", rate: 19, taxableAmount: 55.55, taxAmount: 11.11 },
+        ],
+      },
+    }),
+  ],
+  [
+    "declaredVatAmountOutsideTheTolerance",
+    withInvoice({
+      declaredTotals: {
+        subtotals: [
+          { category: "S", rate: 19, taxableAmount: 1500, taxAmount: 0 },
+        ],
+      },
+    }),
+  ],
+  // 2026-08-12, second pass. The fixture above fires `BR-S-08` and nothing
+  // else in that family, and for a while the count in this file treated the
+  // other eight members as unreachable on that evidence alone. They are not:
+  // the rule is one per VAT category, and a caller can state a wrong taxable
+  // amount on any of the nine. Whether a battery happens to exercise a rule
+  // says nothing about whether a caller can trip it, and reading it as if it
+  // did put "you cannot trip this rule" on eight pages that readers can trip.
+  // One fixture per category, so no member can go unexercised again.
+  ...declaredTaxableWrongPerCategory,
 ];
 
 /** Every finding the battery produces, tagged with the case that produced it. */
@@ -669,6 +771,104 @@ for (const [fixture, invoice] of BATTERY) {
 
 const firedIds = [...new Set(harvested.map((h) => h.error.rule))].sort();
 
+/**
+ * Every rule id this build can emit, read out of the source rather than typed
+ * here.
+ *
+ * Two halves, because the rules emit their ids two ways:
+ *
+ *  1. Literals. Most rules carry `rule: "BR-CL-14"` or hold the id in a spec
+ *     table, so a scan of the string literals in src/ finds them.
+ *  2. The per-category families. Nine VAT categories × ten suffixes, built at
+ *     runtime as `BR-${CATEGORY_RULE_INFIX[category]}-${suffix}` in rules.ts,
+ *     rules-vat.ts and rules-allowance.ts. No literal exists to scan, so the
+ *     grid is expanded from the same table the rules use. Members outside the
+ *     grid (BR-IC-11/-12, BR-O-11..-14) are literals and come from half 1.
+ *
+ * A scan of literals will also pick up a rule id merely *named* in a comment.
+ * That is the intended trade: an id mentioned in src/ and fired by nothing is
+ * something a reader should be told about, and NOT_IMPLEMENTED below is where
+ * a genuinely unimplemented one is recorded, in the open.
+ */
+const RULE_ID_IN_SOURCE = /"((?:BR|PEPPOL|ATW)-[A-Za-z0-9-]+)"/g;
+
+const srcDir = new URL(".", import.meta.url);
+
+const literalRuleIds = readdirSync(srcDir)
+  .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+  .flatMap((name) => [
+    ...readFileSync(new URL(name, srcDir), "utf8").matchAll(RULE_ID_IN_SOURCE),
+  ])
+  .map((match) => match[1]);
+
+const perCategoryGrid = Object.values(CATEGORY_RULE_INFIX).flatMap((infix) =>
+  Array.from({ length: 10 }, (_unused, i) => `BR-${infix}-${String(i + 1).padStart(2, "0")}`),
+);
+
+const ALL_RULE_IDS = [
+  ...new Set([...literalRuleIds, ...perCategoryGrid]),
+].sort();
+
+/**
+ * The rule ids no caller input can reach, each with the reason.
+ *
+ * These constrain figures the library computes rather than figures it reads.
+ * `computeTotals` rounds every amount to two decimals before it is written, it
+ * builds one breakdown group per category-and-rate pair present on the lines,
+ * and it derives each group's taxable and VAT amounts from those lines. So the
+ * rules below can only fire if that arithmetic regresses — which is what they
+ * are for, and why leaving them in is right even though no fixture reaches
+ * them.
+ *
+ * Being on this list is a claim about the *rule*, not about this battery. If a
+ * caller can state the figure a rule checks, the rule is reachable and belongs
+ * in BATTERY, however awkward the fixture. That distinction is the whole of
+ * finding 9: the `-08` family sat here while callers could trip all nine.
+ */
+const ARITHMETIC_INVARIANTS: Record<string, string> = {
+  "BR-12": "BT-106, the sum of line net amounts, is computed by summing them.",
+  "BR-13": "BT-109, the total without VAT, is computed, never read.",
+  "BR-14": "BT-112, the total with VAT, is computed, never read.",
+  "BR-15": "BT-115, the amount due for payment, is computed, never read.",
+  "BR-45":
+    "Every computed breakdown group is built carrying a taxable amount (BT-116).",
+  "BR-46":
+    "Every computed breakdown group is built carrying a VAT amount (BT-117).",
+  "BR-48":
+    "Every computed breakdown group is built carrying a VAT rate (BT-119).",
+  "BR-CO-18":
+    "A breakdown group is emitted for every category on the lines, so an invoice with lines always has one.",
+  "BR-DEC-19":
+    "BT-106 goes through the same two-decimal rounding helper as every other computed amount.",
+  "BR-DEC-20":
+    "BT-109 goes through the same two-decimal rounding helper as every other computed amount.",
+  "BR-DEC-23":
+    "BT-115 goes through the same two-decimal rounding helper as every other computed amount.",
+  ...Object.fromEntries(
+    Object.values(CATEGORY_RULE_INFIX).flatMap((infix) => [
+      [
+        `BR-${infix}-01`,
+        "The breakdown group for this category is created from the lines that carry it, so it exists whenever the category is used.",
+      ],
+      [
+        `BR-${infix}-09`,
+        "This group's VAT amount is computed from its own taxable amount and rate, by the one helper that does it.",
+      ],
+    ]),
+  ),
+};
+
+/**
+ * Rule ids named in src/ but not implemented — deliberately, and with the
+ * reason recorded here rather than in a comment nobody greps.
+ *
+ * Empty today. It is not a place to park a rule that is merely inconvenient to
+ * fire: a rule with an implementation belongs in BATTERY or in
+ * ARITHMETIC_INVARIANTS, and putting it here instead would hide exactly the
+ * gap those two lists exist to expose.
+ */
+const NOT_IMPLEMENTED: string[] = [];
+
 describe("the rule set as a whole", () => {
   it("never throws, whatever it is handed", () => {
     for (const [fixture, invoice] of BATTERY) {
@@ -678,17 +878,65 @@ describe("the rule set as a whole", () => {
 
   it("is exercised by the battery", () => {
     expect(harvested.length).toBeGreaterThanOrEqual(270);
-    // 251 of the 291 distinct rule ids are reachable from caller input. The
-    // other 40 are invariants of the library's own arithmetic — the per-category
-    // -01/-08/-09 families (now nine categories, so 27 of them), BR-12..BR-15,
-    // BR-45/46/48, BR-CO-17, BR-CO-18, BR-DEC-19/-20/-23 and
-    // PEPPOL-EN16931-R120 — and cannot be tripped by a fixture, which is
-    // exactly what they are for. See the note on the battery above.
-    //
-    // 251, not 248, since wave D: ATW-DATE-NOT-A-CALENDAR-DATE and
-    // PEPPOL-EN16931-F001 (the same defect, reported under the id the profile
-    // calls for) and PEPPOL-EN16931-P0110, all newly reachable.
-    expect(firedIds.length).toBe(251);
+    expect(firedIds.length).toBeGreaterThan(0);
+  });
+
+  // WHY THERE IS NO NUMBER HERE ANY MORE.
+  //
+  // This test used to read `expect(firedIds.length).toBe(N)`. N was 248, then
+  // 251, then 254, and it was wrong twice — not because the library changed,
+  // but because a literal cannot tell you *which* rule is missing, only that
+  // the total moved. The 254 was the worse kind of wrong: it passed. It
+  // recorded the size of this battery and was read as the count of rules a
+  // caller can trip, and on that reading eight rule pages told readers "you
+  // cannot trip this rule" about rules they can trip.
+  //
+  // So the guard is completeness, not arithmetic. Every rule id this build can
+  // emit is either fired by the battery or named in ARITHMETIC_INVARIANTS with
+  // the reason it cannot be. A new rule that nobody exercises fails this test
+  // and the failure names the id.
+  it("fires every rule a caller can reach, and none that they cannot", () => {
+    const unaccounted = ALL_RULE_IDS.filter(
+      (id) =>
+        !firedIds.includes(id) &&
+        !(id in ARITHMETIC_INVARIANTS) &&
+        !NOT_IMPLEMENTED.includes(id),
+    );
+    expect(
+      unaccounted,
+      "each of these rule ids exists in src/ but no fixture fires it. Add a " +
+        "fixture to BATTERY, or — only if no caller input can reach it — add " +
+        "it to ARITHMETIC_INVARIANTS with the reason.",
+    ).toEqual([]);
+
+    // The other direction, and the one that produced the eight wrong pages: an
+    // id called an invariant that a caller can in fact trip. Documenting a
+    // reachable rule as unreachable is the more dangerous error, because it
+    // tells a reader their own input cannot have caused a finding their own
+    // input just caused.
+    const reachableAfterAll = Object.keys(ARITHMETIC_INVARIANTS).filter((id) =>
+      firedIds.includes(id),
+    );
+    expect(
+      reachableAfterAll,
+      "these are listed as invariants of the library's own arithmetic, but " +
+        "the battery just fired them from caller input. Remove them from " +
+        "ARITHMETIC_INVARIANTS.",
+    ).toEqual([]);
+  });
+
+  it("keeps the invariant list from rotting", () => {
+    // An entry naming a rule this build no longer has is a claim about
+    // nothing. Every id in the list must still exist in the source.
+    const gone = Object.keys(ARITHMETIC_INVARIANTS).filter(
+      (id) => !ALL_RULE_IDS.includes(id),
+    );
+    expect(gone, "no such rule id in src/ any more").toEqual([]);
+    for (const [id, reason] of Object.entries(ARITHMETIC_INVARIANTS)) {
+      expect(reason.length, id).toBeGreaterThan(30);
+    }
+    const stillUnfired = NOT_IMPLEMENTED.filter((id) => firedIds.includes(id));
+    expect(stillUnfired, "NOT_IMPLEMENTED names a rule that fires").toEqual([]);
   });
 
   it("passes a clean invoice with no findings at all", () => {
@@ -916,10 +1164,26 @@ describe("rule coverage", () => {
     // fatal. That distinction is the thing this test pins down: a borrowed id
     // must never carry borrowed severity.
     const BORROWED = new Set(["PEPPOL-EN16931-R010", "PEPPOL-EN16931-R020"]);
+    // A second, different exception, added 2026-08-12. KoSIT's XRechnung 3.0.2
+    // schematron *embeds* a handful of PEPPOL-EN16931-* assertions, so these
+    // are not borrowed ids — they are rules the German validator actually runs
+    // on an XRechnung document, at fatal severity. Verified, not assumed: an
+    // XRechnung invoice with a line total contradicting its own arithmetic came
+    // back from KoSIT carrying `PEPPOL-EN16931-R120` in both syntaxes.
+    //
+    // The set is deliberately narrow. Most of this build's Peppol rules are
+    // still gated on `profile: "peppol-bis-3"` even where KoSIT runs them for
+    // XRechnung — that gap is recorded in the README and in
+    // scripts/kosit-check.md, and it is a gap, not a decision.
+    const EMBEDDED_IN_XRECHNUNG = new Set(["PEPPOL-EN16931-R120"]);
     const profileOf = new Map(BATTERY.map(([name, inv]) => [name, inv.profile]));
     for (const { fixture, error } of harvested) {
       if (!error.rule.startsWith("PEPPOL-")) continue;
       if (profileOf.get(fixture) === "peppol-bis-3") continue;
+      if (EMBEDDED_IN_XRECHNUNG.has(error.rule)) {
+        expect(error.severity, `${error.rule} in ${fixture}`).toBe("fatal");
+        continue;
+      }
       expect(BORROWED.has(error.rule), `${error.rule} in ${fixture}`).toBe(true);
       expect(error.severity, `${error.rule} in ${fixture}`).toBe("warning");
     }
@@ -933,9 +1197,14 @@ describe("rule coverage", () => {
 });
 
 // A deliberate escape hatch for tooling: `ATW_DUMP_RULE_IDS=1 npx vitest run
-// src/rules-invariants.test.ts` prints every rule id the battery reaches, which
-// is how the counts in this file and in the CHANGELOG are kept honest.
+// src/rules-invariants.test.ts` prints every rule id the battery reaches, plus
+// the totals. This is where the counts in the README and the CHANGELOG come
+// from — read them off a run, do not retype them from memory.
 if (process.env.ATW_DUMP_RULE_IDS) {
-  // eslint-disable-next-line no-console
+  /* eslint-disable no-console */
   console.log(`ATW_FIRED_IDS=${firedIds.join(",")}`);
+  console.log(`ATW_REACHABLE_COUNT=${firedIds.length}`);
+  console.log(`ATW_INVARIANT_COUNT=${Object.keys(ARITHMETIC_INVARIANTS).length}`);
+  console.log(`ATW_TOTAL_RULE_IDS=${ALL_RULE_IDS.length}`);
+  /* eslint-enable no-console */
 }

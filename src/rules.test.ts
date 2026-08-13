@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { validateInput } from "./index.js";
+import {
+  generateCii,
+  generateXRechnungUBL,
+  parseCiiInvoice,
+  parseUblInvoice,
+  validateInput,
+} from "./index.js";
 import type { InvoiceInput } from "./types.js";
 
 /**
@@ -50,6 +56,9 @@ export const base: InvoiceInput = {
     },
   ],
 };
+
+/** The same business document in CII syntax. Some rules genuinely differ. */
+export const ciiBase: InvoiceInput = { ...base, profile: "xrechnung-cii" };
 
 const rulesOf = (inv: InvoiceInput) =>
   validateInput(inv).errors.map((e) => e.rule);
@@ -243,6 +252,388 @@ describe("VAT identifier prefixes (BR-CO-09)", () => {
     });
     expect(rules).not.toContain("BR-CO-09");
   });
+
+  // Until 0.4.0 the prefix test was /^(EL|[A-Z]{2})/, which asserted only "two
+  // letters". The schematron looks the prefix up in a code list, so a made-up
+  // country passed here and was rejected by KoSIT under this same rule id.
+  describe("the prefix is a real country code, not just two letters", () => {
+    const co09 = (inv: InvoiceInput) =>
+      validateInput(inv).errors.filter((e) => e.rule === "BR-CO-09");
+    const seller = (vatId: string) => ({ ...base, seller: { ...base.seller, vatId } });
+
+    it("rejects a two-letter prefix that is in no ISO 3166-1 list", () => {
+      const finding = co09(seller("ZZ123456789"))[0];
+      expect(finding).toBeDefined();
+      expect(finding!.field).toBe("BT-31");
+      expect(finding!.message).toContain("code list");
+      expect(finding!.message).toContain('"ZZ"');
+    });
+
+    it('rejects "UK" and points at "GB"', () => {
+      const finding = co09(seller("UK123456789"))[0];
+      expect(finding).toBeDefined();
+      expect(finding!.message).toContain('"GB"');
+    });
+
+    it("applies the code list to BT-48 and BT-63 as well as BT-31", () => {
+      const findings = co09({
+        ...base,
+        seller: { ...base.seller, vatId: "ZZ111111111" },
+        buyer: { ...base.buyer, vatId: "QQ222222222" },
+        taxRepresentative: {
+          name: "Fiscal Rep France SARL",
+          vatId: "XX333333333",
+          address: { city: "Lyon", postalCode: "69001", countryCode: "FR" },
+        },
+      });
+      expect(findings.map((e) => e.field).sort()).toEqual(["BT-31", "BT-48", "BT-63"]);
+    });
+
+    it('accepts "XI", which is in the list even though it is not a country', () => {
+      expect(co09(seller("XI123456789"))).toEqual([]);
+    });
+
+    it('accepts "1A", the user-assigned code the list carries for Kosovo', () => {
+      // Not two letters, so the old regex rejected it and the code list does
+      // not. The prefix is looked up, never pattern-matched.
+      expect(co09(seller("1A123456789"))).toEqual([]);
+    });
+
+    it("still rejects a number with no prefix, without the code-list wording", () => {
+      const finding = co09(seller("123456789"))[0];
+      expect(finding).toBeDefined();
+      // "12" is not two letters, so the extra sentence would only confuse.
+      expect(finding!.message).not.toContain("code list");
+    });
+
+    // ⚠ Corrected 2026-08-12 against KoSIT 1.6.2 / XRechnung 3.0.2. The claim
+    // this test used to make — that a one-character value "can match no
+    // two-character code" — is false in UBL. The UBL test is
+    // `contains(' 1A AD … ', substring(cbc:CompanyID,1,2))` with an *unwrapped*
+    // needle, so the one-character string "D" is found inside "AD" and KoSIT
+    // returns ACCEPTABLE. The CII test wraps the needle in spaces and rejects.
+    // Probed in both syntaxes; see scripts/kosit-check.md.
+    it("follows each syntax on a one-character value, which they judge differently", () => {
+      expect(co09({ ...seller("D"), profile: "xrechnung-ubl" })).toEqual([]);
+      expect(
+        co09({ ...ciiBase, seller: { ...ciiBase.seller, vatId: "D" } }),
+      ).toHaveLength(1);
+    });
+  });
+
+  // ------------------------------------------------------------------------
+  // Finding 6. Until 2026-08-12 this rule ran
+  // `value.replace(/\s/g, "").toUpperCase()` before the lookup. The schematron
+  // does neither, in either syntax. Every expectation below was put to KoSIT
+  // 1.6.2 with the XRechnung 3.0.2 configuration, in both syntaxes, and the
+  // rule ids returned were compared — not just pass/fail.
+  // ------------------------------------------------------------------------
+  describe("matches the schematron per syntax, case and whitespace included", () => {
+    const co09 = (inv: InvoiceInput) =>
+      validateInput(inv).errors.filter((e) => e.rule === "BR-CO-09");
+    const withVat = (profile: InvoiceInput["profile"], vatId: string): InvoiceInput => {
+      const b = profile === "xrechnung-cii" ? ciiBase : base;
+      return { ...b, profile, seller: { ...b.seller, vatId } };
+    };
+
+    /**
+     * KoSIT verdicts, recorded 2026-08-12. `true` = ACCEPTABLE with zero
+     * findings; `false` = REJECTED with exactly `[BR-CO-09]` and nothing else.
+     */
+    const PROBED: ReadonlyArray<[string, boolean, boolean]> = [
+      // value                 UBL     CII
+      ["DE123456789", true, true],
+      ["de123456789", false, false], // case-sensitive in both
+      ["D E123456789", true, false], // "D " is inside "AD "
+      [" DE123456789", true, false], // " D" is inside " DE"
+      ["Q 123456789", true, false], // "Q " is inside "AQ "
+      ["D", true, false], // unwrapped needle finds "D" in "AD"
+      ["D\tE123456789", false, false], // a tab is in neither list
+      ["ZZ123456789", false, false],
+      ["SS123456789", true, false], // UBL's list carries SS, CII's does not
+      ["AN123456789", false, true], // CII's list carries AN, UBL's does not
+      ["EL123456789", true, true], // the Greek derogation, both syntaxes
+      ["1A123456789", true, true],
+    ];
+
+    for (const [vatId, ublOk, ciiOk] of PROBED) {
+      it(`agrees with KoSIT on ${JSON.stringify(vatId)} (UBL ${ublOk ? "accepts" : "rejects"}, CII ${ciiOk ? "accepts" : "rejects"})`, () => {
+        expect(co09(withVat("xrechnung-ubl", vatId)).length === 0).toBe(ublOk);
+        expect(co09(withVat("xrechnung-cii", vatId)).length === 0).toBe(ciiOk);
+        // peppol-bis-3 is UBL syntax and must follow the UBL verdict.
+        expect(co09(withVat("peppol-bis-3", vatId)).length === 0).toBe(ublOk);
+      });
+    }
+
+    // The "en16931" profile is generatable as either syntax, so it has to
+    // satisfy both rules — reporting only the laxer one would hand a caller
+    // `valid: true` on an input the other generator's output is rejected for.
+    it("holds a syntax-agnostic profile to both rules", () => {
+      expect(co09(withVat("en16931", "SS123456789"))).toHaveLength(1);
+      expect(co09(withVat("en16931", "AN123456789"))).toHaveLength(1);
+      expect(co09(withVat("en16931", "DE123456789"))).toEqual([]);
+      expect(co09(withVat("en16931", "SS123456789"))[0]!.message).toContain("CII");
+    });
+
+    it("says the lookup is case-sensitive rather than repeating the value", () => {
+      const finding = co09(withVat("xrechnung-ubl", "de123456789"))[0]!;
+      expect(finding.message).toContain("case-sensitive");
+      expect(finding.message).toContain('"DE"');
+    });
+
+    it("names the whitespace when the prefix is broken by a space", () => {
+      const finding = co09(withVat("xrechnung-cii", "D E123456789"))[0]!;
+      expect(finding.message).toContain("whitespace");
+    });
+
+    // The two literal lists from the XRechnung 3.0.2 configuration, copied
+    // character for character out of `EN16931-UBL-validation.xsl` and
+    // `EN16931-CII-validation.xsl`. They are NOT the same list: UBL carries
+    // `SS` and not `AN`, CII carries `AN` and not `SS`, and CII writes
+    // `BI BL BJ` where UBL writes `BI BJ BL`. Both are 252 tokens.
+    //
+    // The reference implementations below are the XPath expressions
+    // transliterated, nothing more:
+    //   UBL  contains(LIST, substring(id, 1, 2))
+    //   CII  contains(LIST, concat(' ', substring(id, 1, 2), ' '))
+    // If this build's verdict ever diverges from them, it has diverged from
+    // the schematron.
+    describe("pinned against the schematron literals", () => {
+      const UBL_LITERAL =
+        " 1A AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH EL ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XI YE YT ZA ZM ZW ";
+      const CII_LITERAL =
+        " 1A AD AE AF AG AI AL AM AN AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BL BJ BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH EL ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XI YE YT ZA ZM ZW ";
+
+      const ublAccepts = (id: string) => UBL_LITERAL.includes(id.slice(0, 2));
+      const ciiAccepts = (id: string) =>
+        CII_LITERAL.includes(` ${id.slice(0, 2)} `);
+
+      it("carries the two lists the configuration actually ships", () => {
+        const u = UBL_LITERAL.trim().split(" ");
+        const c = CII_LITERAL.trim().split(" ");
+        expect(u).toHaveLength(252);
+        expect(c).toHaveLength(252);
+        expect(u.filter((t) => !c.includes(t))).toEqual(["SS"]);
+        expect(c.filter((t) => !u.includes(t))).toEqual(["AN"]);
+      });
+
+      // Exhaustive over a character set chosen to hit every interesting shape:
+      // list members, near-misses, both cases, digits, and whitespace.
+      const ALPHABET = [..."ADEGLNQSZ1a s\t"];
+      it("agrees with the transliterated XPath on every two-character prefix", () => {
+        const disagreements: string[] = [];
+        for (const a of ALPHABET) {
+          for (const b of ALPHABET) {
+            const vatId = `${a}${b}123456789`;
+            const ublClean = co09(withVat("xrechnung-ubl", vatId)).length === 0;
+            const ciiClean = co09(withVat("xrechnung-cii", vatId)).length === 0;
+            if (ublClean !== ublAccepts(vatId)) {
+              disagreements.push(`UBL ${JSON.stringify(vatId)}`);
+            }
+            if (ciiClean !== ciiAccepts(vatId)) {
+              disagreements.push(`CII ${JSON.stringify(vatId)}`);
+            }
+          }
+        }
+        expect(disagreements).toEqual([]);
+      });
+
+      it("agrees on values shorter than a prefix", () => {
+        for (const vatId of ["D", "1", " ", "Z"]) {
+          expect(co09(withVat("xrechnung-ubl", vatId)).length === 0).toBe(
+            ublAccepts(vatId),
+          );
+          expect(co09(withVat("xrechnung-cii", vatId)).length === 0).toBe(
+            ciiAccepts(vatId),
+          );
+        }
+      });
+    });
+  });
+
+  // BR-CO-09 and BR-CL-14 draw on deliberately different lists, and Greece is
+  // the only place the difference shows. A Greek seller is correct with
+  // BT-31 = "EL..." and BT-40 = "GR" at the same time — the fix must not make
+  // that invoice fail in either direction.
+  describe("Greece: EL is a VAT prefix, GR is the country code", () => {
+    const greek: InvoiceInput = {
+      ...base,
+      seller: {
+        ...base.seller,
+        vatId: "EL123456789",
+        address: { city: "Athina", postalCode: "10431", countryCode: "GR" },
+        electronicAddress: { schemeId: "9933", value: "EL123456789" },
+      },
+    };
+
+    it("accepts EL on BT-31 with GR on BT-40, and reports nothing at all", () => {
+      const result = validateInput(greek);
+      expect(result.errors.map((e) => e.rule)).toEqual([]);
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects "GR" as a country code nowhere, and "EL" as a country code', () => {
+      // The mirror image: EL is fine as a VAT prefix and wrong as BT-40.
+      const ids = validateInput({
+        ...greek,
+        seller: { ...greek.seller, address: { ...greek.seller.address!, countryCode: "EL" } },
+      }).errors.map((e) => e.rule);
+      expect(ids).toContain("BR-CL-14");
+      expect(ids).not.toContain("BR-CO-09");
+    });
+
+    it('accepts "GR" as a VAT prefix too — it is in BR-CO-09\'s list', () => {
+      const findings = validateInput({
+        ...greek,
+        seller: { ...greek.seller, vatId: "GR123456789" },
+      }).errors.filter((e) => e.rule === "BR-CO-09");
+      expect(findings).toEqual([]);
+    });
+  });
+
+  // BR-CO-09 names three identifiers, not two. BT-63 was missing until 0.4.0.
+  describe("the seller tax representative identifier (BT-63)", () => {
+    /** BG-11, complete enough to satisfy BR-18, BR-19 and BR-20. */
+    const representative = (vatId: string) => ({
+      name: "Fiscal Rep France SARL",
+      vatId,
+      address: { city: "Lyon", postalCode: "69001", countryCode: "FR" },
+    });
+
+    const co09 = (inv: InvoiceInput) =>
+      validateInput(inv).errors.filter((e) => e.rule === "BR-CO-09");
+
+    it("fires when the representative's VAT id has no country prefix", () => {
+      const finding = co09({
+        ...base,
+        taxRepresentative: representative("123456789"),
+      })[0];
+      expect(finding).toBeDefined();
+      expect(finding!.field).toBe("BT-63");
+      expect(finding!.severity).toBe("fatal");
+      expect(finding!.message).toContain("seller tax representative");
+      expect(finding!.xpath).toBe(
+        "/ubl:Invoice/cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID",
+      );
+    });
+
+    it("fires on a one-letter prefix, which is not an ISO 3166-1 code", () => {
+      expect(
+        co09({ ...base, taxRepresentative: representative("F12345678901") }),
+      ).toHaveLength(1);
+    });
+
+    it("accepts a prefixed representative identifier", () => {
+      expect(
+        co09({ ...base, taxRepresentative: representative("FR12345678901") }),
+      ).toEqual([]);
+    });
+
+    it("accepts the Greek EL derogation on BT-63 too", () => {
+      expect(
+        co09({ ...base, taxRepresentative: representative("EL123456789") }),
+      ).toEqual([]);
+    });
+
+    it("stays silent when BG-11 is absent, or when its VAT id is empty", () => {
+      expect(co09(base)).toEqual([]);
+      // An empty string emits no cbc:CompanyID at all, so the schematron
+      // context never fires. KoSIT: ACCEPTABLE, zero findings, both syntaxes.
+      expect(
+        co09({ ...base, taxRepresentative: { ...representative(""), vatId: "" } }),
+      ).toEqual([]);
+    });
+
+    // ⚠ Corrected 2026-08-12. This used to assert that a whitespace-only BT-63
+    // was "BR-56's finding, not a prefix problem". It is both: the element is
+    // emitted, the context fires, and `substring("  ", 1, 2)` is "  ", which is
+    // in neither list. Probed on the seller identifier: KoSIT REJECTED with
+    // BR-CO-09 in UBL and in CII.
+    it("fires on a whitespace-only VAT id, which is emitted and then judged", () => {
+      expect(
+        co09({ ...base, taxRepresentative: { ...representative(""), vatId: "  " } }),
+      ).toHaveLength(1);
+    });
+
+    it("reports the seller and the representative separately", () => {
+      const findings = co09({
+        ...base,
+        seller: { ...base.seller, vatId: "123456789" },
+        taxRepresentative: representative("987654321"),
+      });
+      expect(findings.map((e) => e.field).sort()).toEqual(["BT-31", "BT-63"]);
+    });
+
+    it("holds for the CII profile as well as UBL", () => {
+      for (const profile of ["xrechnung-ubl", "xrechnung-cii"] as const) {
+        expect(
+          co09({ ...base, profile, taxRepresentative: representative("123456789") }),
+        ).toHaveLength(1);
+        expect(
+          co09({ ...base, profile, taxRepresentative: representative("FR12345678901") }),
+        ).toEqual([]);
+      }
+    });
+  });
+});
+
+/**
+ * The same rule, reached the way a receiver reaches it: through the XML.
+ *
+ * A model-level test cannot tell us that BT-63 survives generation and parsing
+ * in each syntax — and the two syntaxes carry it in different places. UBL puts
+ * it in `cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID`; CII puts
+ * it on a trade party of its own, in
+ * `ram:SellerTaxRepresentativeTradeParty/ram:SpecifiedTaxRegistration/ram:ID`.
+ * If either mapping dropped the field, the round trip would report no finding
+ * at all and the model-level test above would still pass.
+ */
+describe("BR-CO-09 on BT-63, through generated XML", () => {
+  const withRep = (profile: InvoiceInput["profile"], vatId: string): InvoiceInput => ({
+    ...base,
+    profile,
+    taxRepresentative: {
+      name: "Fiscal Rep France SARL",
+      vatId,
+      address: { city: "Lyon", postalCode: "69001", countryCode: "FR" },
+    },
+  });
+
+  const co09FieldsFromUbl = (vatId: string) => {
+    const xml = generateXRechnungUBL(withRep("xrechnung-ubl", vatId));
+    expect(xml).toContain("cac:TaxRepresentativeParty");
+    const { invoice } = parseUblInvoice(xml);
+    expect(invoice.taxRepresentative?.vatId).toBe(vatId);
+    return validateInput(invoice)
+      .errors.filter((e) => e.rule === "BR-CO-09")
+      .map((e) => e.field);
+  };
+
+  const co09FieldsFromCii = (vatId: string) => {
+    const xml = generateCii(withRep("xrechnung-cii", vatId));
+    expect(xml).toContain("ram:SellerTaxRepresentativeTradeParty");
+    const { invoice } = parseCiiInvoice(xml);
+    expect(invoice.taxRepresentative?.vatId).toBe(vatId);
+    return validateInput(invoice)
+      .errors.filter((e) => e.rule === "BR-CO-09")
+      .map((e) => e.field);
+  };
+
+  it("catches an unprefixed BT-63 in a UBL invoice", () => {
+    expect(co09FieldsFromUbl("123456789")).toEqual(["BT-63"]);
+  });
+
+  it("accepts a prefixed BT-63 in a UBL invoice", () => {
+    expect(co09FieldsFromUbl("FR12345678901")).toEqual([]);
+  });
+
+  it("catches an unprefixed BT-63 in a CII invoice", () => {
+    expect(co09FieldsFromCii("123456789")).toEqual(["BT-63"]);
+  });
+
+  it("accepts a prefixed BT-63 in a CII invoice", () => {
+    expect(co09FieldsFromCii("FR12345678901")).toEqual([]);
+  });
 });
 
 describe("VAT category consistency", () => {
@@ -392,6 +783,142 @@ describe("BR-CO arithmetic against declared totals", () => {
       declaredTotals: { lineExtensionAmount: 1 },
     }).errors.find((e) => e.rule === "BR-CO-10");
     expect(err!.fix).toMatch(/round each line to 2 decimals first/i);
+  });
+});
+
+describe("one defect, one finding: a rule id is never reported twice", () => {
+  // Two checks own BR-CO-10 and BR-CO-14 between them: the older one compares
+  // the declared document total against the total computed from the lines, the
+  // newer one compares it against the total the *lines themselves state*. When
+  // a parsed document carries both its stated lines and its stated breakdown —
+  // which every document parsed by `parseUblInvoice` or `parseCiiInvoice` does
+  // — both fired, and the caller got two findings under one id, with different
+  // messages and different deltas. The verdict was right and the report read as
+  // one rule contradicting itself.
+  //
+  // These assertions run over the RAW findings list on purpose. The invariants
+  // battery reads rule ids through a `Set`, which is exactly why it could not
+  // see this, so a deduplicating assertion here would pin nothing.
+  const asParsed: InvoiceInput = {
+    ...base,
+    declaredTotals: {
+      lineNetAmounts: [1500],
+      subtotals: [{ category: "S", rate: 19, taxableAmount: 1500, taxAmount: 285 }],
+      lineExtensionAmount: 1500,
+      taxExclusiveAmount: 1500,
+      taxAmount: 285,
+      taxInclusiveAmount: 1785,
+      payableAmount: 1785,
+    },
+  };
+
+  it("reports BR-CO-14 once on a corrupt BT-110, not once per implementation", () => {
+    const errors = validateInput({
+      ...asParsed,
+      declaredTotals: { ...asParsed.declaredTotals, taxAmount: 9999.99 },
+    }).errors.filter((e) => e.rule === "BR-CO-14");
+    expect(errors).toHaveLength(1);
+    // And the survivor is the one that compares against what the document
+    // states: the breakdown groups state 285.00 between them.
+    expect(errors[0]!.message).toContain("285.00");
+    expect(errors[0]!.message).toContain("9999.99");
+  });
+
+  it("reports BR-CO-10 once on a corrupt BT-106, not once per implementation", () => {
+    const errors = validateInput({
+      ...asParsed,
+      declaredTotals: { ...asParsed.declaredTotals, lineExtensionAmount: 1234.56 },
+    }).errors.filter((e) => e.rule === "BR-CO-10");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.message).toContain("1500.00");
+    expect(errors[0]!.message).toContain("1234.56");
+  });
+
+  it("still reports BR-CO-10 and BR-CO-14 when the document states no summands", () => {
+    // The older check is not dead code: a caller who declares only the six
+    // document totals has stated no line amounts and no breakdown, so there is
+    // nothing to compare against except the computed values.
+    const errors = validateInput({
+      ...base,
+      declaredTotals: { lineExtensionAmount: 1234.56, taxAmount: 9999.99 },
+    }).errors;
+    expect(errors.filter((e) => e.rule === "BR-CO-10")).toHaveLength(1);
+    expect(errors.filter((e) => e.rule === "BR-CO-14")).toHaveLength(1);
+  });
+
+  it("reports no rule id more than once on a document broken several ways", () => {
+    const errors = validateInput({
+      ...asParsed,
+      declaredTotals: {
+        ...asParsed.declaredTotals,
+        lineExtensionAmount: 1234.56,
+        taxAmount: 9999.99,
+      },
+    }).errors;
+    const seen = errors.map((e) => e.rule);
+    expect(seen).toEqual([...new Set(seen)]);
+  });
+});
+
+describe("BR-*-08 sums what the lines state, like BR-CO-10 above it", () => {
+  // 80 lines that each state a net amount two cents above their own
+  // arithmetic. Every one of them is legitimate on its own —
+  // PEPPOL-EN16931-R120 allows exactly 0.02 of slack, which is how a sender who
+  // rounds the price rather than the line stays compliant — but they add up to
+  // 1.60, outside the `-08` family's ±1 tolerance. Comparing the stated BT-116
+  // against the *derived* group total reported a BR-S-08 on a document KoSIT
+  // accepts; comparing stated against stated, as BR-CO-10 already does, does
+  // not.
+  const lines = Array.from({ length: 80 }, (_, index) => ({
+    id: String(index + 1),
+    description: "Consulting",
+    quantity: 1,
+    unitCode: "HUR",
+    unitPrice: 100,
+    vatCategory: "S" as const,
+    vatRate: 19,
+  }));
+  const statedLines = lines.map(() => 100.02); // derived: 100.00 each
+  const statedTaxable = 8001.6; // 80 x 100.02, what the lines say
+  const statedVat = 1520.3; // 19% of the stated base
+
+  const invoice: InvoiceInput = {
+    ...base,
+    lines,
+    declaredTotals: {
+      lineNetAmounts: statedLines,
+      subtotals: [
+        { category: "S", rate: 19, taxableAmount: statedTaxable, taxAmount: statedVat },
+      ],
+      lineExtensionAmount: statedTaxable,
+      taxAmount: statedVat,
+    },
+  };
+
+  it("does not report BR-S-08 on a group whose lines are each inside R120's slack", () => {
+    const ids = rulesOf(invoice);
+    expect(ids).not.toContain("BR-S-08");
+    expect(ids).not.toContain("PEPPOL-EN16931-R120");
+    expect(ids).not.toContain("BR-CO-17");
+    // BR-CO-10 agrees with it, which is the consistency the fix is about: both
+    // rules sum the same 8001.60.
+    expect(ids).not.toContain("BR-CO-10");
+  });
+
+  it("still reports BR-S-08 when the stated BT-116 disagrees with the stated lines", () => {
+    const err = validateInput({
+      ...invoice,
+      declaredTotals: {
+        ...invoice.declaredTotals,
+        subtotals: [
+          { category: "S", rate: 19, taxableAmount: 8003.6, taxAmount: statedVat },
+        ],
+      },
+    }).errors.find((e) => e.rule === "BR-S-08");
+    expect(err).toBeDefined();
+    expect(err!.message).toContain("8003.60");
+    expect(err!.message).toContain("8001.60");
+    expect(err!.message).toContain("+2.00");
   });
 });
 

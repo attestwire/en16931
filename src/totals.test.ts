@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { computeTotals, lineNetAmount, round2 } from "./totals.js";
+import {
+  MAX_PRICE_DECIMALS,
+  computeTotals,
+  effectiveRate,
+  formatAmount,
+  formatNumber,
+  formatPrice,
+  lineNetAmount,
+  round2,
+  roundTo,
+} from "./totals.js";
 import type { InvoiceInput, InvoiceLine, VatCategory } from "./types.js";
 
 const line = (patch: Partial<InvoiceLine> & { id: string }): InvoiceLine => ({
@@ -561,5 +571,114 @@ describe("BT-121: the VAT exemption reason code", () => {
     });
     expect(totals.subtotals[0]!.exemptionReason).toBeUndefined();
     expect(totals.subtotals[0]!.exemptionReasonCode).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 7: BT-146/147/148 were force-rounded to two decimals.
+// ---------------------------------------------------------------------------
+
+describe("formatPrice: a unit price is not a monetary amount (finding 7)", () => {
+  it("keeps the decimals a per-unit price actually needs", () => {
+    // The reproduction: 10000 x 0.0345 = 345.00. `formatAmount` wrote 0.03,
+    // so the document said 10000 x 0.03 = 345.00 — a price wrong by 71%, on a
+    // document KoSIT accepts, because no rule ties BT-146 to BT-131.
+    expect(formatAmount(0.0345)).toBe("0.03");
+    expect(formatPrice(0.0345)).toBe("0.0345");
+    expect(formatPrice(0.00125)).toBe("0.00125");
+    expect(formatPrice(0.000001)).toBe("0.000001");
+  });
+
+  it("keeps two decimals as a floor, so the ordinary case is unchanged", () => {
+    expect(formatPrice(150)).toBe("150.00");
+    expect(formatPrice(150.5)).toBe("150.50");
+    expect(formatPrice(150.55)).toBe("150.55");
+    expect(formatPrice(0)).toBe("0.00");
+    expect(formatPrice(-12.5)).toBe("-12.50");
+  });
+
+  it("does not leak floating-point noise into the document", () => {
+    expect(formatPrice(0.1 + 0.2)).toBe("0.30");
+    expect(formatPrice(1 / 3)).toBe(`0.${"3".repeat(MAX_PRICE_DECIMALS)}`);
+  });
+
+  it("never emits exponent notation, which xs:decimal does not accept", () => {
+    for (const value of [1e-9, 1e-7, 1e20, -1e20, 0.0000001, 123456789012345]) {
+      expect(formatPrice(value)).not.toMatch(/[eE]/);
+    }
+    // Below the last decimal kept, the honest answer is zero, not "1e-9".
+    expect(formatPrice(1e-9)).toBe("0.00");
+    // At or above 1e21 `toFixed` itself goes exponential. Caught while
+    // reviewing this fix: `formatPrice(1e22)` returned the string "1e+22.",
+    // which is not a number in any syntax. Refused rather than written.
+    expect(() => formatPrice(1e21)).toThrow(RangeError);
+    expect(() => formatPrice(1e22)).toThrow(RangeError);
+    expect(() => formatPrice(-1.5e21)).toThrow(RangeError);
+  });
+
+  it("refuses a non-finite price rather than writing one", () => {
+    expect(() => formatPrice(Number.NaN)).toThrow(RangeError);
+    expect(() => formatPrice(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 8: BT-119 truncated by toFixed while BT-117 came from the full rate.
+// ---------------------------------------------------------------------------
+
+describe("VAT rate normalisation (finding 8)", () => {
+  it("rounds half-up instead of truncating, which toFixed does not", () => {
+    // The trap round2's own docblock warns about, six lines above the function
+    // that fell into it.
+    expect((16.665).toFixed(2)).toBe("16.66");
+    expect(formatNumber(16.665)).toBe("16.67");
+    expect((2.675).toFixed(2)).toBe("2.67");
+    expect(formatNumber(2.675)).toBe("2.68");
+    expect(formatNumber(1.0049, 2)).toBe("1.00");
+  });
+
+  it("normalises the rate before the breakdown is computed from it", () => {
+    // BT-119 and BT-117 must come from one number. Emitting 16.66 against a
+    // CalculatedAmount computed at 16.665% was a KoSIT REJECT under BR-CO-17
+    // and BR-S-09 in both syntaxes, once the base cleared the ±1 tolerance.
+    expect(effectiveRate({
+      id: "1",
+      description: "x",
+      quantity: 1,
+      unitCode: "C62",
+      unitPrice: 100000,
+      vatCategory: "S",
+      vatRate: 16.665,
+    })).toBe(16.67);
+
+    const totals = computeTotals(
+      invoiceWith([
+        line({ id: "1", quantity: 1, unitPrice: 100000, vatCategory: "S", vatRate: 16.665 }),
+      ]),
+    );
+    expect(totals.subtotals[0]!.rate).toBe(16.67);
+    // 100000 x 16.67% = 16670.00, which is what BT-119 now says too.
+    expect(totals.subtotals[0]!.taxAmount).toBe(16670);
+    expect(formatNumber(totals.subtotals[0]!.rate!)).toBe("16.67");
+  });
+
+  it("keeps a zero-rated category at zero however the caller writes it", () => {
+    expect(effectiveRate({
+      id: "1",
+      description: "x",
+      quantity: 1,
+      unitCode: "C62",
+      unitPrice: 10,
+      vatCategory: "E",
+      vatRate: 19,
+    })).toBe(0);
+  });
+
+  it("rounds to arbitrary precision without the binary-representation error", () => {
+    expect(roundTo(1.005, 2)).toBe(1.01);
+    expect(roundTo(-1.005, 2)).toBe(-1.01);
+    expect(roundTo(2.6755, 3)).toBe(2.676);
+    expect(roundTo(0, 4)).toBe(0);
+    expect(() => roundTo(Number.NaN, 2)).toThrow(RangeError);
   });
 });
