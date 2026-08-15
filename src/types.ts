@@ -421,6 +421,68 @@ export interface DeclaredTotals {
   taxInclusiveAmount?: number;
   /** BT-115 amount due for payment. */
   payableAmount?: number;
+  /**
+   * Document totals the source document was supposed to state and did not, one
+   * entry per term. Written by `parseUbl` / `parseCiiInvoice`; never by a
+   * caller building the model by hand.
+   *
+   * ⚠ Until 0.6.0 there was nowhere to record this, so the readers dropped the
+   * value and the document validated `valid: true` with zero findings. A
+   * `PayableAmount` that was absent, empty or written `12,34` simply did not
+   * reach the model, and a rule cannot fire on a field that is not there —
+   * while KoSIT rejected the same file, under BR-12/BR-13/BR-14/BR-15 for an
+   * absent term and as an XML Schema datatype failure for text it could not
+   * read as a decimal.
+   *
+   * An **omitted** field on the JSON model is not a defect and never becomes
+   * one: omitting `payableAmount` means "compute it for me", which is what the
+   * model is for. Only a reader that has seen a document can tell that apart
+   * from "the document does not contain it".
+   *
+   * Because this type is public and the JSON endpoints pass on whatever was
+   * posted, the rules read this array defensively: an entry that is not one of
+   * the readers' own — not an object, no recognised `state`, no known `key` — is
+   * ignored, as is a `defects` that is not an array, and a term listed twice is
+   * reported once. Nothing here ever throws out of `validateInput`.
+   */
+  defects?: DeclaredTotalDefect[];
+}
+
+/** The keys of {@link DeclaredTotals} that hold a single document total. */
+export type DeclaredTotalKey =
+  | "lineExtensionAmount"
+  | "allowanceTotalAmount"
+  | "chargeTotalAmount"
+  | "taxExclusiveAmount"
+  | "taxInclusiveAmount"
+  | "payableAmount";
+
+/**
+ * Why a declared document total did not arrive as a number.
+ *
+ * The three states are three different mistakes, and the official validator
+ * treats them as two different *steps*: `"absent"` reaches the schematron and
+ * fails a BR-* presence rule, while `"empty"` and `"unreadable"` fail XML
+ * Schema validation first (`cvc-datatype-valid.1.2.1`) and never get there.
+ */
+export type DeclaredTotalState = "absent" | "empty" | "unreadable";
+
+/** One document total the source document failed to state readably. */
+export interface DeclaredTotalDefect {
+  /** Which total it is, as a key of {@link DeclaredTotals}. */
+  key: DeclaredTotalKey;
+  /** The business term, e.g. `"BT-115"`. */
+  field: `BT-${number}`;
+  state: DeclaredTotalState;
+  /**
+   * The text the element actually held, verbatim and truncated to 200
+   * characters. Present only for `"unreadable"` — quoting it back is the whole
+   * value of the finding, because `12,34` and `1.234,56` are the two ways this
+   * happens and neither looks wrong to the person who wrote it.
+   */
+  text?: string;
+  /** Where the value is in the document, or where it should have been. */
+  xpath: string;
 }
 
 export interface PaymentInstructions {

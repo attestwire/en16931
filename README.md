@@ -7,6 +7,106 @@
 **Generate and validate EN 16931 e-invoices — UBL 2.1 and UN/CEFACT CII — with
 errors that teach the regulation.**
 
+Zero runtime dependencies, TypeScript-first, and entirely local: installing this
+package needs no account and no key, and nothing it does makes a network call.
+
+## Quickstart
+
+```bash
+npm install @attestwire/en16931
+```
+
+### 1. Validate an invoice
+
+A conformant XRechnung, as small as validity allows. Every identifier here is
+synthetic; the IBAN is the test IBAN used throughout German banking
+documentation.
+
+```ts
+import { validateInput, type InvoiceInput } from "@attestwire/en16931";
+
+const invoice = {
+  profile: "xrechnung-ubl",
+  invoiceNumber: "2026-000142",
+  issueDate: "2026-08-09",
+  currency: "EUR",
+  buyerReference: "04011000-1234512345-06", // Leitweg-ID
+  deliveryDate: "2026-08-31",
+  seller: {
+    name: "Acme GmbH",
+    vatId: "DE123456789",
+    address: { line1: "Chausseestr. 1", city: "Berlin", postalCode: "10115", countryCode: "DE" },
+    electronicAddress: { schemeId: "0204", value: "04011000-1234512345-06" },
+    contact: { name: "Buchhaltung", phone: "+49 30 1234567", email: "rechnungen@acme.example" },
+  },
+  buyer: {
+    name: "Stadt Bonn",
+    address: { line1: "Berliner Platz 2", city: "Bonn", postalCode: "53111", countryCode: "DE" },
+    electronicAddress: { schemeId: "0204", value: "04011000-1234512345-06" },
+  },
+  payment: { meansCode: "58", iban: "DE02120300000000202051" },
+  lines: [
+    { id: "1", description: "Consulting, August 2026", quantity: 10, unitCode: "HUR", unitPrice: 150, vatCategory: "S", vatRate: 19 },
+  ],
+} satisfies InvoiceInput;
+
+const result = validateInput(invoice);
+
+console.log(result.valid, result.errors.length); // true 0
+```
+
+That object is the whole input contract, and `satisfies InvoiceInput` is not
+decoration: `profile` is a union of five string literals, so without it TypeScript
+widens `"xrechnung-ubl"` to `string` and the `validateInput(invoice)` call below
+does not compile. It feeds both generators: `generateXRechnungUBL(invoice)`
+returns UBL 2.1
+XML, `generateCii({ ...invoice, profile: "xrechnung-cii" })` returns CII.
+
+### 2. Take one field out
+
+Remove the buyer reference — BT-10, the Leitweg-ID a German public-sector buyer
+requires — and you get a rejection that names the rule and tells you what to do:
+
+```ts
+const { buyerReference, ...missingReference } = invoice;
+
+const rejected = validateInput(missingReference);
+
+console.log(rejected.valid, rejected.errors.map((e) => e.rule)); // false [ 'BR-DE-15' ]
+```
+
+`rejected.errors[0]` is this object, in full:
+
+```json
+{
+  "rule": "BR-DE-15",
+  "field": "BT-10",
+  "severity": "fatal",
+  "message": "XRechnung requires a buyer reference (BT-10). For German public-sector buyers this is the Leitweg-ID; business buyers may supply any reference, but the field must be present.",
+  "fix": "Ask your client for their Leitweg-ID (public sector) or an order/customer reference, and set buyerReference.",
+  "example": "\"buyerReference\": \"04011000-1234512345-06\"",
+  "xpath": "/ubl:Invoice/cbc:BuyerReference",
+  "docsUrl": "https://attestwire.com/rules/BR-DE-15"
+}
+```
+
+Both snippets above are executed against this build by
+`src/readme-quickstart.test.ts` (repository; the published tarball ships
+`dist` only), including the stated `console.log` output and
+the JSON above, so a README example cannot drift from the library.
+
+**Links**
+
+- **[Rule reference](https://attestwire.com/rules/)** — one page per implemented
+  rule, with the reason, the fix and a passing example. Every `TeachingError`
+  carries a `docsUrl` pointing at its page.
+- **[Hosted API](https://api.attestwire.com/docs)** — same engine, zero setup.
+  POST JSON, get validated XRechnung XML back.
+- **[Severity, and what `valid` means](#teaching-errors)** — fatal, warning and
+  information are three separate arrays.
+
+## What this package does
+
 Both syntaxes generate and both parse: `generateXRechnungUBL` /
 `parseUbl` for XRechnung UBL and Peppol BIS 3.0, `generateCii` /
 `parseCiiInvoice` for XRechnung CII and the Factur-X EN 16931 payload. One
@@ -16,6 +116,30 @@ Both syntaxes generate and both parse: `generateXRechnungUBL` /
 field picks between them: set `invoiceTypeCode` to `"381"` and
 `generateXRechnungUBL` emits a `ubl:CreditNote` instead of a `ubl:Invoice`.
 See [Credit notes](#credit-notes).
+
+Every validation failure carries the official rule ID, the business term it
+constrains, a plain-English explanation of *why* the regulation requires it, a
+concrete fix, and a passing example — so a developer (or an agent) can correct
+the invoice without opening the spec.
+
+Totals are always **computed** from the lines, never echoed from caller input, so
+a BR-CO arithmetic rejection cannot originate in the generated document.
+
+Generation **refuses** rather than emitting a document that would be rejected
+downstream: a profile in the wrong syntax throws (`UnsupportedProfileError` from
+the UBL generator, `UnsupportedCiiProfileError` from the CII one — see
+[Refusals](#refusals)).
+
+## There is no PDF
+
+Factur-X and ZUGFeRD are CII XML inside a PDF/A-3
+container. `generateCii` emits the XML. It does not build the container, does
+not attach the XML to a PDF under the required name (`factur-x.xml`, or
+`xrechnung.xml` for the XRECHNUNG reference profile), and does not set the
+`/AFRelationship` value Germany requires (`Alternative`). A file produced by
+this package is a CII XML document, not a Factur-X or ZUGFeRD document.
+
+## Conformance
 
 The eleven release fixtures in [`fixtures/`](fixtures) — the documents these
 generators produce — are checked against the official
@@ -41,80 +165,6 @@ is a conformance check on eleven documents, not a parity suite: it says nothing
 about the paths those fixtures do not exercise, and `validateInput` is a
 pre-flight rather than a schematron (see
 [Not implemented yet](#not-implemented-yet)).
-
-**There is no PDF.** Factur-X and ZUGFeRD are CII XML inside a PDF/A-3
-container. `generateCii` emits the XML. It does not build the container, does
-not attach the XML to a PDF under the required name (`factur-x.xml`, or
-`xrechnung.xml` for the XRECHNUNG reference profile), and does not set the
-`/AFRelationship` value Germany requires (`Alternative`). A file produced by
-this package is a CII XML document, not a Factur-X or ZUGFeRD document.
-
-Zero runtime dependencies. TypeScript-first. Every validation failure carries the
-official rule ID, the business term it constrains, a plain-English explanation of
-*why* the regulation requires it, a concrete fix, and a passing example — so a
-developer (or an agent) can correct the invoice without opening the spec.
-
-```bash
-npm install @attestwire/en16931
-```
-
-## Quickstart
-
-```ts
-import { validateInput, generateXRechnungUBL, type InvoiceInput } from "@attestwire/en16931";
-
-const invoice = {
-  profile: "xrechnung-ubl",
-  invoiceNumber: "2026-000142",
-  issueDate: "2026-08-09",
-  currency: "EUR",
-  buyerReference: "04011000-1234512345-06", // Leitweg-ID
-  seller: {
-    name: "Musterlieferant GmbH",
-    vatId: "DE123456789",
-    address: { line1: "Hauptstraße 1", city: "Berlin", postalCode: "10115", countryCode: "DE" },
-    electronicAddress: { schemeId: "9930", value: "DE123456789" },
-    contact: { name: "Buchhaltung", phone: "+49 30 1234567", email: "rechnungen@example.de" },
-  },
-  buyer: {
-    name: "Bundesamt für Musterangelegenheiten",
-    address: { city: "München", postalCode: "80331", countryCode: "DE" },
-    electronicAddress: { schemeId: "0204", value: "04011000-1234512345-06" },
-  },
-  payment: { meansCode: "58", iban: "DE02120300000000202051" },
-  lines: [
-    { id: "1", description: "Beratung", quantity: 10, unitCode: "HUR", unitPrice: 150, vatCategory: "S", vatRate: 19 },
-  ],
-} satisfies InvoiceInput;
-
-const result = validateInput(invoice);
-if (!result.valid) {
-  for (const e of result.errors) console.error(`${e.rule}: ${e.message}\n  → ${e.fix}`);
-} else {
-  const xml = generateXRechnungUBL(invoice); // UBL 2.1 Invoice, XRechnung 3.0
-}
-```
-
-Every identifier in this repository's examples and fixtures is synthetic; the
-IBAN above is the test IBAN used throughout German banking documentation.
-
-**Links**
-
-- **[Rule reference](https://attestwire.com/rules/)** — one page per implemented
-  rule, with the reason, the fix and a passing example. Every `TeachingError`
-  carries a `docsUrl` pointing at its page.
-- **[Hosted API](https://api.attestwire.com/docs)** — same engine, zero setup.
-  POST JSON, get validated XRechnung XML back.
-- **[Teaching-error sample](#teaching-errors)** — what a rejection actually
-  looks like.
-
-Totals are always **computed** from the lines, never echoed from caller input, so
-a BR-CO arithmetic rejection cannot originate in the generated document.
-
-Generation **refuses** rather than emitting a document that would be rejected
-downstream: a profile in the wrong syntax throws (`UnsupportedProfileError` from
-the UBL generator, `UnsupportedCiiProfileError` from the CII one — see
-[Refusals](#refusals)).
 
 ## Credit notes
 
@@ -362,8 +412,17 @@ Anything in the document that does not reach the invoice object is returned in
   generated. Nothing is lost; the values come back from the lines.
 
 An unmapped group is reported once, not once per element inside it. A number the
-reader cannot read is reported too, and the field is left unset rather than
+reader cannot read is reported too — including an empty element, which slipped
+through this promise until 0.6.0 — and the field is left unset rather than
 guessed at.
+
+For the six **document totals** that is no longer the end of it. Being left
+unset used to mean nothing compared them and the document validated clean; since
+0.6.0 the reader records what happened in `declaredTotals.defects`, and a total
+that the document should state and does not fails `BR-12`, `BR-13`, `BR-14` or
+`BR-15`, while one that is present and unreadable — `12,34`, say — fails
+`ATW-DECLARED-TOTAL-NOT-A-NUMBER`. Building an invoice from the JSON model is
+unaffected: omit a total there and the library computes it, as it always has.
 
 ### What a real XRechnung from a German portal will hit
 
@@ -391,26 +450,13 @@ a clear refusal or an `unmapped` entry.
 
 ## Teaching errors
 
-Drop the `buyerReference`, the `payment` block and the seller `contact` from the
-invoice above and you get this — not "validation failed":
-
-```
-errors: 3  warnings: 2
-BR-DE-15, BR-DE-1, BR-DE-2
-```
-
-```json
-{
-  "rule": "BR-DE-15",
-  "field": "BT-10",
-  "severity": "fatal",
-  "message": "XRechnung requires a buyer reference (BT-10). For German public-sector buyers this is the Leitweg-ID; business buyers may supply any reference, but the field must be present.",
-  "fix": "Ask your client for their Leitweg-ID (public sector) or an order/customer reference, and set buyerReference.",
-  "example": "\"buyerReference\": \"04011000-1234512345-06\"",
-  "xpath": "/ubl:Invoice/cbc:BuyerReference",
-  "docsUrl": "https://attestwire.com/rules/BR-DE-15"
-}
-```
+The [quickstart](#2-take-one-field-out) shows one missing field and the object
+it produces. Every finding has that shape, and a rejection is a list of them
+rather than "validation failed": drop the `buyerReference`, the `payment` block
+and the seller `contact` from the quickstart invoice and `validateInput` reports
+three fatal findings — `BR-DE-15`, `BR-DE-1`, `BR-DE-2` — with nothing in
+`warnings` and nothing in `information`. (That count is asserted by
+`src/readme-quickstart.test.ts` (repository) against this build.)
 
 Errors explain the *reason*, not just the requirement. `BR-S-05` does not say
 "rate must be > 0"; it says a zero rate with category S is contradictory, and
@@ -509,7 +555,7 @@ is `1.00`, and `(2.675).toFixed(2)` is `"2.67"`. Both are wrong for tax.
 | **CII (D16B) ingestion** | `parseCiiInvoice` reads a `CrossIndustryInvoice` back into the input model — every element the CII generator emits, resolved by namespace URI rather than by prefix, in any element order. Round-tripped over every committed CII fixture: parse then regenerate returns the identical document, and it validates identically. Same hardened XML reader and same security limits as the UBL path. Anything not carried into the model is returned in `unmapped`. |
 | **BT coverage** | BT-1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161. |
 | **Arithmetic** | BT-131 = quantity × (BT-146 / BT-149) − Σ BT-136 + Σ BT-141; BT-106 = Σ BT-131; BT-107 = Σ BT-92; BT-108 = Σ BT-99; BT-109 = BT-106 − BT-107 + BT-108; the BG-23 taxable amount per (category, rate) group nets document allowances out and charges in; BT-117 from BT-116 × BT-119; BT-110 = Σ BT-117; BT-112 = BT-109 + BT-110; BT-115 = BT-112 − BT-113 + BT-114. Per-line half-up rounding, and sums taken over the rounded values. BT-107 and BT-108 stay separate sums even where the breakdown nets them — that asymmetry is the standard's. |
-| **Rules** | 287 regulation rules with teaching errors (enumerated below), plus seven `ATW-` findings of our own (`ATW-DECLARED-TOTAL-NOT-FINITE`, `ATW-VAT-CATEGORY-UNSUPPORTED`, `ATW-DATE-NOT-A-CALENDAR-DATE` and the four credit-note ones) — 294 distinct rule ids. 265 are reachable from caller input; the other 29 constrain the library's own computed arithmetic and cannot be tripped by any input, which is what they are for. Both figures are read off a test run, not typed: `src/rules-invariants.test.ts` fires a battery of deliberately-broken invoices, and every rule id in the source must be either fired by it or named in that file's `ARITHMETIC_INVARIANTS` list with the reason no input can reach it. A rule that is neither fails the suite. (251 before 0.4.0: `PEPPOL-EN16931-R120`, `BR-CO-17` and all nine members of the `-08` family became reachable once `declaredTotals` started carrying the stated BT-131, BT-116 and BT-117 instead of discarding them. It then read 254 for a few hours on 2026-08-12, because the battery fired only one member of the `-08` family and the count was taken from the battery. Reachability is a property of the rule, not of the battery that happens to exercise it, and reading it the other way put "you cannot trip this rule" on eight pages that a caller can trip. `BR-Z-08`, `BR-E-08`, `BR-AE-08`, `BR-IC-08`, `BR-G-08`, `BR-O-08`, `BR-AF-08` and `BR-AG-08` each have their own fixture now, and the guard is completeness rather than a number, so the same mistake cannot pass again.) |
+| **Rules** | 287 regulation rules with teaching errors (enumerated below), plus eight `ATW-` findings of our own (`ATW-DECLARED-TOTAL-NOT-FINITE`, `ATW-DECLARED-TOTAL-NOT-A-NUMBER`, `ATW-VAT-CATEGORY-UNSUPPORTED`, `ATW-DATE-NOT-A-CALENDAR-DATE` and the four credit-note ones) — 295 distinct rule ids. 270 are reachable from caller input; the other 25 constrain the library's own computed arithmetic and cannot be tripped by any input, which is what they are for. Both figures are read off a test run, not typed: `src/rules-invariants.test.ts` fires a battery of deliberately-broken invoices, and every rule id in the source must be either fired by it or named in that file's `ARITHMETIC_INVARIANTS` list with the reason no input can reach it. A rule that is neither fails the suite. (the reachable figure was five lower before 0.6.0: `BR-12`, `BR-13`, `BR-14` and `BR-15` became reachable once the parsers started recording a document total the *document* failed to state, which is what `declaredTotals.defects` is; `ATW-DECLARED-TOTAL-NOT-A-NUMBER` is new in the same release, for a total that is present and unreadable. 251 before 0.4.0: `PEPPOL-EN16931-R120`, `BR-CO-17` and all nine members of the `-08` family became reachable once `declaredTotals` started carrying the stated BT-131, BT-116 and BT-117 instead of discarding them. It then read 254 for a few hours on 2026-08-12, because the battery fired only one member of the `-08` family and the count was taken from the battery. Reachability is a property of the rule, not of the battery that happens to exercise it, and reading it the other way put "you cannot trip this rule" on eight pages that a caller can trip. `BR-Z-08`, `BR-E-08`, `BR-AE-08`, `BR-IC-08`, `BR-G-08`, `BR-O-08`, `BR-AF-08` and `BR-AG-08` each have their own fixture now, and the guard is completeness rather than a number, so the same mistake cannot pass again.) |
 | **KoSIT conformance of the fixtures** | Checked on release against the official validator 1.6.2 / XRechnung 3.0.2 config — for UBL: the UBL 2.1 XSD, the EN 16931 schematron and the XRechnung CIUS schematron; for CII: the UN/CEFACT D16B XSD, the EN 16931 CII schematron and the XRechnung CII schematron. The two UBL credit notes are judged by KoSIT's separate `EN16931 XRechnung (UBL CreditNote)` scenario, against `UBL-CreditNote-2.1.xsd`. Eleven documents, not a parity suite — **run 2026-08-13, `Acceptable: 11 Rejected: 0`, zero findings** (see `scripts/kosit-check.md`, which also records the eight credit-note probes and the two findings the CII run caught first). Run `./scripts/kosit-check.sh` yourself before relying on it. |
 
 Rules implemented, by family. This list is maintained by hand; the
@@ -655,12 +701,12 @@ here beforehand.
 
 | Area | Status |
 | --- | --- |
-| **Full schematron parity** | Not reached, and this table is not a complete account of the gap. The build implements a large part of EN 16931 core, the XRechnung CIUS and Peppol BIS Billing 3.0 — 262 rule ids reachable from caller input — and the rows below name the exclusions we know about. They are not exhaustive: four separate coverage gaps were found in the two days before 0.4.0 (the seller half of `BR-AE-02`, `BR-CO-09` on BT-63, `BR-CL-14` on BT-69, and declared-versus-computed checks on BT-131, BT-116 and BT-117), none of which appeared in any earlier version of this list. Nothing in this repository measures coverage against the schematron, so treat an absent row as "not yet noticed", not as "does not exist". `validateInput` is still a fast pre-flight over the JSON input model, **not** an authority — it reads your input, not the XML a receiver will judge, so a document it accepts can in principle still be rejected by KoSIT. If you want the authoritative answer without running Java, the [hosted API](https://api.attestwire.com/docs) is the same engine, zero setup. |
+| **Full schematron parity** | Not reached, and this table is not a complete account of the gap. The build implements a large part of EN 16931 core, the XRechnung CIUS and Peppol BIS Billing 3.0 — 270 rule ids reachable from caller input — and the rows below name the exclusions we know about. They are not exhaustive: four separate coverage gaps were found in the two days before 0.4.0 (the seller half of `BR-AE-02`, `BR-CO-09` on BT-63, `BR-CL-14` on BT-69, and declared-versus-computed checks on BT-131, BT-116 and BT-117), none of which appeared in any earlier version of this list. Nothing in this repository measures coverage against the schematron, so treat an absent row as "not yet noticed", not as "does not exist". `validateInput` is still a fast pre-flight over the JSON input model, **not** an authority — it reads your input, not the XML a receiver will judge, so a document it accepts can in principle still be rejected by KoSIT. If you want the authoritative answer without running Java, the [hosted API](https://api.attestwire.com/docs) is the same engine, zero setup. |
 | **VAT category B (split payment)** | `L` (IGIC) and `M` (IPSI) ship with their full `BR-AF-*` and `BR-AG-*` families. `B` does not. It is the one code of the ten with no `-01`/`-05`/`-08`/`-09`/`-10` family — only `BR-B-01` and `BR-B-02`, both of which exist to confine it to domestic Italian invoices — so expressing it would mean emitting rule ids the regulation does not define, or carving it out of every per-category loop for the sake of two checks. A line carrying `"B"` is a fatal `ATW-VAT-CATEGORY-UNSUPPORTED` finding rather than a silent pass. |
 | **XRechnung Extension and CVD profiles** | `BR-DEX-*` and `BR-DE-CVD-*` apply to customization ids this build does not emit. |
 | **Rules that cannot be tested mechanically** | `BR-CO-05`, `BR-CO-06`, `BR-CO-07` and `BR-CO-08` require a reason code and a reason text to "indicate the same type of allowance". The reference schematron binds all four to `true()` — the regulator does not test them either. `BR-CO-25` is absent from both the reference schematron and Peppol's, so implementing it would reject documents the authority accepts. |
 | **Rules the generator controls** | `BR-01` and `BR-DE-21` constrain BT-24, which `generateXRechnungUBL` derives from `profile`; the only override is `GenerateOptions.customizationId`, which `validateInput` never sees. `BR-DE-13` is in the same position. They belong to a document-validation entry point, not an input pre-flight. |
-| **Validating existing XML** | `parseUbl` reads a UBL 2.1 `Invoice` or `CreditNote` document into the input model, so an existing file can be checked: parse it, then `validateInput` the result. That is a **pre-flight over the parsed input, not a schematron over the document**. Two consequences. First, a rule that constrains the XML rather than the input — `BR-01`, `BR-DE-13`, `BR-DE-21` on BT-24, and the rules the generator controls — still does not run. Second, the reader recomputes the totals and the VAT breakdown from the lines, so what is checked is the arithmetic of the *model*, with the document's own declared totals compared against it. `TeachingError.xpath` is populated but is not yet derived from the parsed document. |
+| **Validating existing XML** | `parseUbl` reads a UBL 2.1 `Invoice` or `CreditNote` document into the input model, so an existing file can be checked: parse it, then `validateInput` the result. That is a **pre-flight over the parsed input, not a schematron over the document**. Two consequences. First, a rule that constrains the XML rather than the input — `BR-01`, `BR-DE-13`, `BR-DE-21` on BT-24, and the rules the generator controls — still does not run. Second, the reader recomputes the totals and the VAT breakdown from the lines, so what is checked is the arithmetic of the *model*, with the document's own declared totals compared against it — and, since 0.6.0, checked for presence: a document that does not state BT-106, BT-109, BT-112 or BT-115 fails `BR-12`/`BR-13`/`BR-14`/`BR-15`, and one that states a total no reader can turn into a number fails `ATW-DECLARED-TOTAL-NOT-A-NUMBER`. `TeachingError.xpath` is populated but is not yet derived from the parsed document. |
 | **Factur-X / ZUGFeRD as a PDF** | Not started, and not planned in this package. Factur-X and ZUGFeRD are CII XML embedded in a PDF/A-3 container: the XML must be attached under a fixed name (`factur-x.xml`, except for the XRECHNUNG reference profile, which uses `xrechnung.xml`), the PDF must be PDF/A-3 conformant, and Germany requires `/AFRelationship = Alternative` for the BASIC, EN 16931, EXTENDED and XRECHNUNG profiles. `generateCii({ profile: "facturx-en16931" })` gives you the **CII XML payload** and nothing else. Take it to a PDF/A-3 library to make a Factur-X *file*. |
 | **Peppol rules inside the XRechnung schematron** | KoSIT's XRechnung schematron — both the UBL and the CII one — includes a few `PEPPOL-EN16931-*` assertions (`R040` among them). This build gates its Peppol rules on `profile: "peppol-bis-3"`, so those do not run for an XRechnung input here even though KoSIT runs them. Found by the 2026-08-11 CII run; recorded in `scripts/kosit-check.md`. |
 | **Self-billing** | The *documents* are supported — BT-3 `389` (self-billed invoice) and `261` (self-billed credit note) generate, parse and validate, and both are lawful EN 16931 type codes on the ordinary root elements. What is not here: the UBL `SelfBilledInvoice` and `SelfBilledCreditNote` root elements (which EN 16931's UBL binding does not use), and anything about the self-billing *process* — the buyer-issues-the-document agreement, the supplier's approval loop, the reverse party mapping. If your platform requires one of those root elements, this package will not produce it. Note also that `261` is outside XRechnung's eight-code list, so it draws a `BR-DE-17` warning there — KoSIT agrees, at warning level, and accepts the document. |

@@ -5,6 +5,124 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-08-14
+
+**A document total that is not there is now a finding.** Both readers populated
+`declaredTotals` only for values that parsed as a number, and the input model
+had nowhere to record the difference between "the caller did not supply this"
+and "the document does not contain it". So a `PayableAmount` that was absent, an
+empty `<cbc:TaxExclusiveAmount/>`, or a total written `12,34` was dropped, and
+the rules that compare a declared total against the computed one — BR-CO-15,
+BR-CO-16 and family — had nothing to compare. `validateInput` returned
+`valid: true` with zero findings on a file KoSIT rejects.
+
+**This is 0.6.0 and not 0.5.1 because it rejects documents 0.5.0 accepted.** Not
+new strictness: the regulator rejected all of them all along, and we were the
+ones being lenient about a figure nobody may omit.
+
+### The gap, and what closes it
+
+- **Added** — `DeclaredTotals.defects`, written by `parseUbl` and
+  `parseCiiInvoice`, one entry per document total the file failed to state
+  readably: which term it was (`BT-106`, `BT-109`, `BT-112`, `BT-115`, and
+  `BT-107`/`BT-108` when present and unreadable), whether it was `absent`,
+  `empty` or `unreadable`, the exact text where there was any, and the XPath it
+  was read from or should have been at. Nothing else in the model changed.
+
+- **Changed** — **`BR-12`, `BR-13`, `BR-14` and `BR-15` are real rules now.**
+  They were documented as arithmetic invariants — "this library computes the
+  totals, so the field cannot be absent" — which is true of an invoice you
+  *build* and false of one you *read*. A parsed document missing the sum of line
+  net amounts (BT-106), the total without VAT (BT-109), the total with VAT
+  (BT-112) or the amount due for payment (BT-115) now fails the matching
+  presence rule. Reachable rule ids: 265 → 270.
+
+- **Added** — `ATW-DECLARED-TOTAL-NOT-A-NUMBER` (fatal) for a total that is
+  *present* and unreadable: an empty element, `12,34`, `notanumber`. It carries
+  the text it saw, and for a decimal comma it says why the XML cannot have one.
+  It is an `ATW-` id rather than a `BR-` id on purpose — KoSIT rejects these at
+  XML Schema validation (`cvc-datatype-valid.1.2.1`), before a single business
+  rule runs, so there is no official rule id to quote and inventing one would
+  misrepresent the regulator. 294 → 295 distinct rule ids.
+
+- **Changed** — an empty element where an amount belongs is also reported in
+  `unmapped` now. `TreeReader.number` noted unreadable text and returned early
+  on empty text, so an empty total appeared in neither the model nor the
+  unmapped list — the one case where "nothing is dropped silently" was not
+  true.
+
+### KoSIT agreement, verified rather than assumed
+
+Validator 1.6.2 with the XRechnung 3.0.2 configuration (2026-01-31), run on
+2026-08-14 over twelve probe documents built from the committed fixtures, both
+syntaxes. All twelve REJECT, and the citations are recorded in
+`scripts/kosit-check.md`:
+
+| Case | KoSIT | This release |
+| --- | --- | --- |
+| BT-106 absent (UBL and CII) | `[BR-12]` (+ BR-CO-10, BR-CO-13) | `BR-12` |
+| BT-115 absent (CII) | `[BR-15]` (+ BR-CO-16) | `BR-15` |
+| BT-115 absent (UBL) | XSD: `cac:LegalMonetaryTotal` incomplete | `BR-15` |
+| Whole totals block absent (UBL) | XSD: invalid content | `BR-12`/`13`/`14`/`15` |
+| Whole totals block absent (CII) | `[BR-CO-15]` only | `BR-12`/`13`/`14`/`15` |
+| Empty element, `12,34`, `notanumber` (both) | XSD: `cvc-datatype-valid.1.2.1` | `ATW-DECLARED-TOTAL-NOT-A-NUMBER` |
+
+Two cells where the citation differs and the verdict does not, both worth
+knowing. UBL's XSD makes `cac:LegalMonetaryTotal` and `cbc:PayableAmount`
+mandatory, so KoSIT stops at the schema and never reaches the rule. And the CII
+schematron writes BR-12..15 with `//ram:SpecifiedTradeSettlementHeaderMonetary`
+`Summation` as their context, so deleting that group deletes the context node
+and the four assertions never evaluate — BR-CO-15 catches the document instead.
+This build is not a schema validator, so where KoSIT's schema speaks, we cite
+the EN 16931 rule the document actually breaks.
+
+The eleven committed fixtures were re-run in the same session:
+`Acceptable: 11  Rejected: 0`, unchanged.
+
+### Hardening, from the review of this release
+
+- **Fixed before shipping** — a hand-written `declaredTotals.defects` could
+  throw a `TypeError` out of `validateInput` rather than produce findings:
+  `[null]` reading `.state` off nothing, a non-array `{length: 2}` failing to
+  iterate, an entry with no `xpath` failing on `.split("/")`. `InvoiceInput` is
+  a public type and `POST /v1/validate` with a JSON body passes on what the
+  caller posted, so that was a 500 from a validation endpoint. Both rules now
+  read the array through one checked accessor. Malformed entries are **ignored**
+  — not reported — because an unrecognised `state` has nothing true to say about
+  it, and one policy for the whole field beats a rule id for a mistake no
+  invoice can make. `field` is not trusted either: the business term comes from
+  the key, so a hand-written `BT-999` cannot reach a message. A term listed
+  twice is reported once, and quoted text is truncated at the rule as well as at
+  the reader.
+- **Fixed** — a CII document missing `ram:ApplicableHeaderTradeSettlement`
+  entirely now reports the same four presence rules as one missing only the
+  summation group inside it. The heavier omission must not be the quieter one.
+
+### What did NOT change
+
+- **The JSON input path.** Omitting `declaredTotals.payableAmount` on a
+  hand-built `InvoiceInput` still means "compute it for me", still computes it,
+  and still fires nothing — that is what the model is for, and no defect is
+  produced for a field a caller merely did not supply. BR-12..15 remain
+  unreachable from any hand-built invoice; only a reader that has seen a
+  document can tell the two cases apart.
+- **Comparison of totals that ARE numbers.** A readable declared total is
+  compared exactly as before: BR-CO-16 on a mismatch, silence on a match.
+- **Prepaid (BT-113) and rounding (BT-114) amounts**, which live in the same
+  block and are optional in both syntaxes: an unreadable one is still only an
+  `unmapped` note. That is a narrower version of the same gap and it is named
+  here rather than quietly widened.
+
+### API-visible
+
+The hosted API's XML path (`POST /v1/validate` with an XML content-type) and
+the MCP tool `validate_invoice_xml` go through this engine and nothing else, so
+a document in any of the states above changes from `valid: true` with no
+findings to `valid: false` with the finding named here. `/docs` says so at the
+XML section, and the "one thing a passing verdict does not prove" caveat on
+attestwire.com/playground came off in the same change — the tests that pinned
+it now assert the opposite.
+
 ## [0.5.0] — 2026-08-13
 
 **Credit notes.** The package's largest functional gap is closed: UBL

@@ -1,3 +1,4 @@
+import { usableDefects } from "./declared-totals.js";
 import { DOCS, LIMITS_DOCS, decimalPlaces, err } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { DeclaredTotals, TeachingError } from "./types.js";
@@ -108,6 +109,60 @@ export const decimalRules: RuleFn[] = [
           fix: `Trace where declaredTotals.${String(spec.key)} is computed and guard the inputs — Number.isFinite() on the result before assigning it is usually enough. If you only wanted the library's own totals, drop declaredTotals entirely: generation always emits computed values regardless of what you declare.`,
           example: `"declaredTotals": { "${String(spec.key)}": 1785.00 }`,
           xpath: spec.xpath,
+          docsUrl: LIMITS_DOCS,
+        }),
+      );
+    }
+    return out;
+  },
+
+  // ATW-DECLARED-TOTAL-NOT-A-NUMBER: ours, and the honest name for it.
+  //
+  // The sibling of the rule above, on the XML path. A document total that is
+  // *present* but that no reader can turn into a number — an empty element, or
+  // text like `12,34` or `notanumber` — used to be dropped by the parsers, and
+  // dropping it meant BR-CO-16 and its family had nothing to compare, so the
+  // document came back `valid: true` with zero findings. Since 0.6.0 the
+  // readers record it in `declaredTotals.defects` and it is reported here.
+  //
+  // WHY NOT A BR ID. There is no EN 16931 business rule for this, and inventing
+  // one would misrepresent what the regulator does. KoSIT rejects these files
+  // at the XML Schema step, before any schematron runs: `'1891,79' is not a
+  // valid value for 'decimal'` / `'' is not a valid value for 'decimal'`,
+  // `cvc-datatype-valid.1.2.1` (verified 2026-08-14, validator 1.6.2 with the
+  // XRechnung 3.0.2 configuration, on both syntaxes). This build is not a
+  // schema validator, so it cannot quote that code as its own; an ATW id says
+  // "this is our finding, about a datatype the regulation fixes elsewhere",
+  // which is the true shape of the thing. The verdict matches: rejected.
+  //
+  // Read through `usableDefects` for the same reason as the presence rules: the
+  // JSON endpoints hand `validateInput` whatever was posted, and a hand-written
+  // `defects` entry that is `null`, or carries a state this build has never
+  // heard of, must not become an exception or a nonsense finding. The state is
+  // tested POSITIVELY here — `empty` and `unreadable`, not "anything that is not
+  // absent" — because the negative test turned `state: "banana"` into a finding
+  // claiming an unreadable value that nothing said was unreadable.
+  (inv) => {
+    const defects = usableDefects(inv.declaredTotals);
+    if (defects.length === 0) return null;
+    const out: TeachingError[] = [];
+    for (const { defect, term, text, element } of defects) {
+      if (defect.state !== "empty" && defect.state !== "unreadable") continue;
+      const seen = defect.state === "empty" ? "" : text;
+      const comma = /^[+-]?\d{1,3}(\.\d{3})*,\d+$|^[+-]?\d+,\d+$/.test(seen);
+      out.push(
+        err({
+          rule: "ATW-DECLARED-TOTAL-NOT-A-NUMBER",
+          field: term.field,
+          severity: "fatal",
+          message: `The ${term.label} (${term.field}) is present in this document but could not be read as a number: ${defect.state === "empty" ? "the element is empty" : `the element holds ${JSON.stringify(seen)}`}. ${comma ? "That is a decimal comma, which is how most of continental Europe writes an amount and is not how EN 16931 writes one: every monetary amount in both syntaxes is an xs:decimal, and xs:decimal has exactly one decimal separator, the dot. " : ""}The value was left out of the invoice rather than guessed at, so nothing further compares it — BR-CO-15 and BR-CO-16 need a number on both sides. This is a finding of ours, not a rule of the regulation: the official validator rejects the same document one step earlier, at XML Schema validation, as cvc-datatype-valid.1.2.1.`,
+          fix: comma
+            ? `Write the amount with a dot decimal separator and no thousands separator: ${JSON.stringify(seen.replace(/\./g, "").replace(",", "."))} rather than ${JSON.stringify(seen)}. Formatting for a human reader belongs in the rendered invoice, never in the XML.`
+            : defect.state === "empty"
+              ? `Give the element a value, or remove it. An empty element is not a zero — if the amount really is zero, write 0.00; if the figure is unknown at issuing time, the document is not ready to be sent.`
+              : `Write the amount as a plain decimal number — digits, an optional leading minus, and at most one dot. No currency symbol, no thousands separator, no spaces; the currency is carried by @currencyID (UBL) or by BT-5 (CII), not by the amount.`,
+          example: `<${element}>1891.79</${element}>`,
+          xpath: defect.xpath,
           docsUrl: LIMITS_DOCS,
         }),
       );

@@ -1,11 +1,11 @@
 {
   "name": "@attestwire/en16931",
-  "version": "0.5.0",
-  "description": "Generate and validate EN 16931 e-invoices (XRechnung UBL, Peppol BIS 3.0) with errors that teach the regulation. Zero dependencies.",
+  "version": "0.6.0",
+  "description": "Generate and validate EN 16931 e-invoices — UBL 2.1 and UN/CEFACT CII (XRechnung, Peppol BIS 3.0, Factur-X payload) — with errors that teach the regulation. TypeScript, zero dependencies.",
   "type": "module",
   "license": "MIT",
   "author": "Attestwire",
-  "homepage": "https://github.com/attestwire/en16931",
+  "homepage": "https://attestwire.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/attestwire/en16931.git"
@@ -20,6 +20,8 @@
     "einvoice",
     "einvoicing",
     "ubl",
+    "cii",
+    "invoice-validation",
     "peppol",
     "peppol-bis",
     "facturx",

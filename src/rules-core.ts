@@ -1,4 +1,5 @@
 import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
+import { usableDefects } from "./declared-totals.js";
 import { computeTotals, lineNetAmount } from "./totals.js";
 import {
   DOCS,
@@ -201,12 +202,69 @@ export const coreRules: RuleFn[] = [
     return out;
   },
 
-  // BR-12 / BR-13 / BR-14 / BR-15: the document totals shall be present.
+  // BR-12 / BR-13 / BR-14 / BR-15, on a document that was read from XML.
   //
-  // This library always computes them, so these are invariants of the
-  // arithmetic rather than checks on caller input. They are kept because they
-  // are the rules a *reader* of a rejected KoSIT report will be looking up, and
-  // because they fail loudly if computeTotals ever regresses.
+  // These are presence rules, and a presence rule needs something that knows
+  // the difference between "not supplied" and "not there". On the JSON model
+  // there is no such difference — omitting `payableAmount` means "compute it
+  // for me" — which is why the twin below this one is an invariant. On a parsed
+  // document there is: `declaredTotals.defects` carries one entry per total the
+  // *document* was required to state and did not, written by the readers.
+  //
+  // ⚠ Until 0.6.0 this case had no rule at all. The readers dropped a total
+  // they could not read as a number, nothing compared what was not there, and
+  // the document came back `valid: true` with zero findings — while KoSIT
+  // rejected the same file. Verified against validator 1.6.2 with the XRechnung
+  // 3.0.2 configuration on 2026-08-14: an absent `cbc:LineExtensionAmount`
+  // draws `[BR-12]` (plus BR-CO-10 and BR-CO-13), an absent
+  // `ram:DuePayableAmount` draws `[BR-15]` (plus BR-CO-16). The two boundaries
+  // of that agreement are written where they arise — see the comment on the
+  // missing summation group in `parse-cii.ts`, and note that UBL's XSD makes
+  // both `cac:LegalMonetaryTotal` and `cbc:PayableAmount` mandatory, so KoSIT
+  // stops at the schema for those two and never quotes a BR id. The verdict is
+  // the same in every one of those cells; only the citation differs, and where
+  // it does, this rule cites the EN 16931 rule the document actually breaks.
+  //
+  // An empty element and an unreadable one are NOT reported here: they are
+  // present, they fail the *datatype*, and KoSIT rejects them the same way —
+  // `cvc-datatype-valid.1.2.1` — before a presence rule is ever reached. They
+  // get ATW-DECLARED-TOTAL-NOT-A-NUMBER in rules-decimals.ts.
+  //
+  // The defects are read through `usableDefects`, which drops anything that is
+  // not one of the readers' own entries. `InvoiceInput` is a public type and the
+  // JSON endpoints pass whatever was posted, so a hand-written `defects: [null]`
+  // used to throw a TypeError out of `validateInput` — a 500 where a finding
+  // belongs. See the note on that function for why a malformed entry is ignored
+  // rather than reported.
+  (inv) => {
+    const defects = usableDefects(inv.declaredTotals);
+    if (defects.length === 0) return null;
+    const out: TeachingError[] = [];
+    for (const { defect, term, element } of defects) {
+      if (defect.state !== "absent") continue;
+      const spec = TOTAL_SPECS.find((s) => s.field === term.field);
+      if (!spec) continue; // BT-107 / BT-108 are optional; nothing to report
+      const where = defect.xpath === "" ? `<${element}>` : defect.xpath;
+      out.push({
+        rule: spec.rule,
+        field: spec.field,
+        severity: "fatal",
+        message: `An invoice must have the ${spec.label} (${spec.field}), and this document does not state it: there is no element at ${where}. ${spec.why} The value was not inferred from the lines — a document total is a statement the issuer makes, and a validator's job is to check it, not to supply it. The rest of this report still uses the totals computed from the lines, so you can see what the document ought to have said.`,
+        fix: `Add ${element} to the document with the amount the issuing system computed. If you are generating the document with this library, generation always emits all of the document totals, so this cannot happen on the way out — it means the file was produced by something else.`,
+        xpath: defect.xpath === "" ? spec.xpath : defect.xpath,
+        docsUrl: `${DOCS}/${spec.rule}`,
+      });
+    }
+    return out;
+  },
+
+  // BR-12 / BR-13 / BR-14 / BR-15 again, as arithmetic invariants.
+  //
+  // For an invoice built as JSON this library always computes the totals, so
+  // these are invariants of the arithmetic rather than checks on caller input.
+  // They are kept because they are the rules a *reader* of a rejected KoSIT
+  // report will be looking up, and because they fail loudly if computeTotals
+  // ever regresses.
   (inv) => {
     if (linesOf(inv).length === 0) return null; // BR-16 reports it
     let totals: InvoiceTotals;

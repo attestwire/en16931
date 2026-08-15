@@ -101,6 +101,55 @@ schematron *before* the generator was written, and the check confirmed them
 rather than discovering them. The 2026-08-11 CII run, recorded further down,
 went the other way and is the reason the reading came first this time.
 
+### What the check settled, 2026-08-14 (declared totals, 0.6.0)
+
+The eleven fixtures were re-run for this release and are unchanged —
+`Acceptable: 11  Rejected: 0`, the generator having not been touched. The work
+was in the *reader*, so the probes are twelve deliberately-broken copies of
+`xrechnung-ubl-minimal.xml` and `xrechnung-cii-minimal.xml`, one per cell of the
+gap. None is committed: a fixture has to be acceptable to belong in
+`fixtures/`, and all twelve of these exist to be rejected.
+
+Every one came back REJECT. What the validator *cited* is the interesting part,
+because it decided our rule ids:
+
+| Probe | KoSIT step | KoSIT cites | This build |
+| --- | --- | --- | --- |
+| `ubl-missing-bt106` | Schematron | `[BR-12]`, `[BR-CO-10]`, `[BR-CO-13]` | `BR-12` |
+| `cii-missing-bt106` | Schematron | `[BR-12]`, `[BR-CO-10]`, `[BR-CO-13]` | `BR-12` |
+| `cii-missing-bt115` | Schematron | `[BR-15]`, `[BR-CO-16]` | `BR-15` |
+| `ubl-missing-bt115` | XSD | `cvc-complex-type.2.4.b`: `cac:LegalMonetaryTotal` is not complete | `BR-15` |
+| `ubl-missing-block` | XSD | `cvc-complex-type.2.4.a`: invalid content at `cac:InvoiceLine` | `BR-12`, `BR-13`, `BR-14`, `BR-15` |
+| `cii-missing-block` | Schematron | `[BR-CO-15]` **only** | `BR-12`, `BR-13`, `BR-14`, `BR-15` |
+| `{ubl,cii}-empty-bt109` | XSD | `cvc-datatype-valid.1.2.1`: `''` is not a valid value for `decimal` | `ATW-DECLARED-TOTAL-NOT-A-NUMBER` |
+| `{ubl,cii}-comma-bt115` | XSD | `cvc-datatype-valid.1.2.1`: `'1891,79'` is not a valid value for `decimal` | `ATW-DECLARED-TOTAL-NOT-A-NUMBER` |
+| `{ubl,cii}-notanumber-bt115` | XSD | `cvc-datatype-valid.1.2.1`: `'notanumber'` is not a valid value for `decimal` | `ATW-DECLARED-TOTAL-NOT-A-NUMBER` |
+
+Three things this settled, none of which we would have got right by reading the
+schematron alone:
+
+- **KoSIT does not reach the schematron when the schema fails.** Every
+  present-but-unreadable case is an XSD datatype failure and draws no business
+  rule at all. That is why the finding for those is `ATW-`-prefixed: there is no
+  official id to quote, this build is not a schema validator, and minting a
+  `BR-` id for a datatype failure would put words in the regulator's mouth. It
+  also means an empty element is *not* a BR-13 in KoSIT's eyes, so we do not
+  raise one — the element is present; it is its value that is unusable.
+
+- **UBL's XSD makes both `cac:LegalMonetaryTotal` and `cbc:PayableAmount`
+  mandatory.** So the two UBL absence probes never reach the schematron either,
+  while their CII twins do. The document is rejected in all four cells; only the
+  citation differs. We cite the EN 16931 presence rule the document breaks,
+  which is the id a reader of a rejection will look up.
+
+- **`cii-missing-block` is the one cell where we are stricter than the CII
+  schematron.** BR-12..15 are written there with
+  `//ram:SpecifiedTradeSettlementHeaderMonetarySummation` as their context
+  (`EN16931-CII-validation.xsl`, the `xsl:if not((ram:LineTotalAmount))` block),
+  so deleting the group deletes the context node and the four assertions never
+  evaluate — `BR-CO-15` catches the document instead. The verdict agrees; the
+  citation is ours, and it is the one the rule text supports.
+
 ### What the check settled, 2026-08-13 (credit notes)
 
 Eleven acceptable fixtures say the documents are conformant. They cannot say
@@ -419,7 +468,7 @@ documents come back completely silent.
 
 Passing KoSIT on eleven fixtures means our *output* is conformant for the paths
 those fixtures exercise. It does **not** mean our *rule engine* has reached
-schematron parity: the engine raises 265 rule ids reachable from caller input
+schematron parity: the engine raises 270 rule ids reachable from caller input
 (the number the site publishes, harvested by executing the library), but that
 is a count of what we implement across EN 16931, the XRechnung CIUS and Peppol
 BIS 3 — not a fraction of what the XRechnung schematron asserts, which nothing

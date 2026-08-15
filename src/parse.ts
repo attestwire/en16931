@@ -29,8 +29,13 @@ import {
   type XmlLimits,
 } from "./xml-parse.js";
 import { set, TreeReader, type UnmappedElement } from "./xml-reader.js";
+import {
+  DECLARED_TOTAL_TERMS,
+  readDeclaredTotal,
+} from "./declared-totals.js";
 import type {
   DeclaredTaxSubtotal,
+  DeclaredTotalDefect,
   DeclaredTotals,
   DeliverToAddress,
   DocumentAllowanceCharge,
@@ -830,6 +835,7 @@ export function parseUbl(
   // model cannot derive are read here: the declared total (BT-110), and the
   // exemption reasons (BT-120 / BT-121), which are free text.
   const declared: DeclaredTotals = {};
+  const defects: DeclaredTotalDefect[] = [];
   const declaredSubtotals: DeclaredTaxSubtotal[] = [];
   const exemptionReasons: Partial<Record<VatCategory, string>> = {};
   const exemptionReasonCodes: Partial<Record<VatCategory, string>> = {};
@@ -900,17 +906,32 @@ export function parseUbl(
     invoice.vatExemptionReasonCodes = exemptionReasonCodes;
   }
 
+  // BG-22 document totals. Read through `readDeclaredTotal` rather than
+  // `r.num`, because `set` skips `undefined` and that turned "the document does
+  // not state BT-115" into "the caller did not supply BT-115" — a distinction
+  // the model could not hold until 0.6.0, and the reason an absent, empty or
+  // `12,34` total validated clean. The block itself may be missing too: UBL
+  // makes `cac:LegalMonetaryTotal` mandatory in the XSD, so KoSIT rejects that
+  // document before the schematron runs, and the four presence rules are still
+  // the honest thing to report for it.
   const monetaryTotal = r.cac(root, "LegalMonetaryTotal");
+  for (const term of DECLARED_TOTAL_TERMS) {
+    readDeclaredTotal(
+      r,
+      monetaryTotal,
+      term,
+      term.ubl,
+      `${root.path}/cac:LegalMonetaryTotal/cbc:${term.ubl}`,
+      declared,
+      defects,
+      CBC,
+    );
+  }
   if (monetaryTotal) {
-    set(declared, "lineExtensionAmount", r.num(monetaryTotal, "LineExtensionAmount"));
-    set(declared, "taxExclusiveAmount", r.num(monetaryTotal, "TaxExclusiveAmount"));
-    set(declared, "taxInclusiveAmount", r.num(monetaryTotal, "TaxInclusiveAmount"));
-    set(declared, "allowanceTotalAmount", r.num(monetaryTotal, "AllowanceTotalAmount"));
-    set(declared, "chargeTotalAmount", r.num(monetaryTotal, "ChargeTotalAmount"));
-    set(declared, "payableAmount", r.num(monetaryTotal, "PayableAmount"));
     set(invoice, "paidAmount", r.num(monetaryTotal, "PrepaidAmount"));
     set(invoice, "roundingAmount", r.num(monetaryTotal, "PayableRoundingAmount"));
   }
+  if (defects.length > 0) declared.defects = defects;
   if (Object.keys(declared).length > 0) invoice.declaredTotals = declared;
 
   const readLines = r

@@ -34,8 +34,13 @@ import {
   type XmlLimits,
 } from "./xml-parse.js";
 import { set, TreeReader } from "./xml-reader.js";
+import {
+  DECLARED_TOTAL_TERMS,
+  readDeclaredTotal,
+} from "./declared-totals.js";
 import type {
   DeclaredTaxSubtotal,
+  DeclaredTotalDefect,
   DeclaredTotals,
   DeliverToAddress,
   DocumentAllowanceCharge,
@@ -740,6 +745,8 @@ export function parseCiiInvoice(
   // --- ram:ApplicableHeaderTradeSettlement ---------------------------------
   const settlement = r.grp(transaction, "ApplicableHeaderTradeSettlement");
   const declared: DeclaredTotals = {};
+  const defects: DeclaredTotalDefect[] = [];
+  let summation: XmlElement | undefined;
   if (settlement) {
     invoice.currency = (r.ram(settlement, "InvoiceCurrencyCode") ?? "").toUpperCase();
     const taxCurrency = r.ram(settlement, "TaxCurrencyCode");
@@ -896,17 +903,11 @@ export function parseCiiInvoice(
     if (allowances.length > 0) invoice.allowances = allowances;
     if (charges.length > 0) invoice.charges = charges;
 
-    const summation = r.grp(
+    summation = r.grp(
       settlement,
       "SpecifiedTradeSettlementHeaderMonetarySummation",
     );
     if (summation) {
-      set(declared, "lineExtensionAmount", r.num(summation, "LineTotalAmount"));
-      set(declared, "chargeTotalAmount", r.num(summation, "ChargeTotalAmount"));
-      set(declared, "allowanceTotalAmount", r.num(summation, "AllowanceTotalAmount"));
-      set(declared, "taxExclusiveAmount", r.num(summation, "TaxBasisTotalAmount"));
-      set(declared, "taxInclusiveAmount", r.num(summation, "GrandTotalAmount"));
-      set(declared, "payableAmount", r.num(summation, "DuePayableAmount"));
       set(invoice, "paidAmount", r.num(summation, "TotalPrepaidAmount"));
       set(invoice, "roundingAmount", r.num(summation, "RoundingAmount"));
 
@@ -967,6 +968,50 @@ export function parseCiiInvoice(
     if (account) set(invoice, "buyerAccountingReference", r.ram(account, "ID"));
   }
 
+  // BG-22 document totals. Read outside the `settlement` branch and through
+  // `readDeclaredTotal`, because the interesting cases are the ones where the
+  // element — or the whole summation group, or the settlement group above it —
+  // is not there at all, and `set` skips `undefined`, which turned "the
+  // document does not state BT-115" into "the caller did not supply BT-115".
+  //
+  // ⚠ On the missing-group case this library is deliberately stricter than the
+  // CII schematron. BR-12..15 are written there with
+  // `//ram:SpecifiedTradeSettlementHeaderMonetarySummation` as their context,
+  // so removing the group removes the context node and the four assertions
+  // never evaluate — KoSIT rejects such a document under BR-CO-15 alone
+  // (verified 2026-08-14, validator 1.6.2 / XRechnung 3.0.2). The verdict
+  // agrees; the citation is ours. The EN 16931 rule text says the invoice shall
+  // have BT-106, and it does not, and the UBL binding of the same rules reaches
+  // the same conclusion — via the XSD, which makes the block mandatory.
+  //
+  // THE GROUP CAN BE MISSING AT EITHER OF TWO LEVELS, and both land here: no
+  // `ram:SpecifiedTradeSettlementHeaderMonetarySummation`, or no
+  // `ram:ApplicableHeaderTradeSettlement` to hold one. The loop runs outside the
+  // `settlement` branch precisely so the second case is not quieter than the
+  // first — a document missing the whole settlement group states no totals
+  // either, and reporting four presence findings for the lighter omission and
+  // none for the heavier one would be under-detection exactly where the file is
+  // most broken. `transaction` cannot be missing at this point: the function
+  // returns early above when it is, with no lines and no settlement to read, and
+  // BR-16 is the finding that document deserves.
+  const settlementPath =
+    settlement?.path ?? `${transaction.path}/ram:ApplicableHeaderTradeSettlement`;
+  const summationPath =
+    summation?.path ??
+    `${settlementPath}/ram:SpecifiedTradeSettlementHeaderMonetarySummation`;
+  for (const term of DECLARED_TOTAL_TERMS) {
+    readDeclaredTotal(
+      r,
+      summation,
+      term,
+      term.cii,
+      `${summationPath}/ram:${term.cii}`,
+      declared,
+      defects,
+      RAM,
+    );
+  }
+  if (defects.length > 0) declared.defects = defects;
   if (Object.keys(declared).length > 0) invoice.declaredTotals = declared;
 
   const readLines = r

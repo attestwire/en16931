@@ -305,6 +305,60 @@ const BATTERY: [string, InvoiceInput][] = [
     declaredTotals: { taxAmount: Number.NaN, payableAmount: Number.POSITIVE_INFINITY },
   })],
 
+  // The XML path, in model form. `declaredTotals.defects` is what the two
+  // readers write when the *document* fails to state a total readably, and it
+  // is the reason BR-12..BR-15 left ARITHMETIC_INVARIANTS in 0.6.0: they are
+  // presence rules, and a parsed document can now be missing something.
+  ["parsedTotalsAbsent", withInvoice({
+    declaredTotals: {
+      defects: [
+        {
+          key: "lineExtensionAmount",
+          field: "BT-106",
+          state: "absent",
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount",
+        },
+        {
+          key: "taxExclusiveAmount",
+          field: "BT-109",
+          state: "absent",
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount",
+        },
+        {
+          key: "taxInclusiveAmount",
+          field: "BT-112",
+          state: "absent",
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount",
+        },
+        {
+          key: "payableAmount",
+          field: "BT-115",
+          state: "absent",
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount",
+        },
+      ],
+    },
+  })],
+  ["parsedTotalsUnreadable", withInvoice({
+    declaredTotals: {
+      defects: [
+        {
+          key: "payableAmount",
+          field: "BT-115",
+          state: "unreadable",
+          text: "12,34",
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount",
+        },
+        {
+          key: "taxExclusiveAmount",
+          field: "BT-109",
+          state: "empty",
+          xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount",
+        },
+      ],
+    },
+  })],
+
   // --- wave B: the groups the model gained in 0.2.0 -------------------------
   ["allowanceEmpty", withInvoice({
     allowances: [{ amount: undefined, vatCategory: undefined } as never],
@@ -849,10 +903,13 @@ const ALL_RULE_IDS = [
  * finding 9: the `-08` family sat here while callers could trip all nine.
  */
 const ARITHMETIC_INVARIANTS: Record<string, string> = {
-  "BR-12": "BT-106, the sum of line net amounts, is computed by summing them.",
-  "BR-13": "BT-109, the total without VAT, is computed, never read.",
-  "BR-14": "BT-112, the total with VAT, is computed, never read.",
-  "BR-15": "BT-115, the amount due for payment, is computed, never read.",
+  // BR-12, BR-13, BR-14 and BR-15 sat here until 0.6.0, with the reason "the
+  // total is computed, never read". That was true of the JSON model and false
+  // of a parsed document, and the four rules are the presence rules for exactly
+  // the case the readers used to drop. `declaredTotals.defects` makes the
+  // absence a fact the model can hold, so the fixtures above reach them and
+  // they are ordinary reachable rules now — the same move the `-08` family made
+  // in 0.4.0, for the same reason.
   "BR-45":
     "Every computed breakdown group is built carrying a taxable amount (BT-116).",
   "BR-46":
@@ -1015,13 +1072,25 @@ describe("every emitted TeachingError", () => {
     }
   });
 
-  it("supplies an example that is a JSON fragment, when it supplies one", () => {
+  it("supplies an example in the syntax the finding is about, when it supplies one", () => {
+    // Almost every example is a fragment of the JSON input model, because
+    // almost every finding is about something the caller wrote there. The
+    // exception arrived with `declaredTotals.defects` in 0.6.0: a finding about
+    // a total the *document* states unreadably is aimed at someone holding an
+    // XML file, and handing them `"payableAmount": 1891.79` would be advice for
+    // a model they are not using. An XML element fragment is allowed for that
+    // case and only for that case — an example still has to be something the
+    // reader can paste somewhere.
     for (const { fixture, error } of harvested) {
       if (error.example === undefined) continue;
       const where = `${fixture} / ${error.rule}`;
       expect(typeof error.example, where).toBe("string");
       expect(error.example.length, where).toBeGreaterThan(4);
-      expect(error.example, where).toContain('"');
+      const json = error.example.includes('"');
+      const xml = /^<[A-Za-z][\w:.-]*>[\s\S]*<\/[A-Za-z][\w:.-]*>$/.test(
+        error.example.trim(),
+      );
+      expect(json || xml, `${where}: ${error.example}`).toBe(true);
     }
   });
 
