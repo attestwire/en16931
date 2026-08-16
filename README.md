@@ -4,11 +4,18 @@
 [![npm](https://img.shields.io/npm/v/@attestwire/en16931.svg)](https://www.npmjs.com/package/@attestwire/en16931)
 [![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-**Generate and validate EN 16931 e-invoices — UBL 2.1 and UN/CEFACT CII — with
+**Validate and generate EN 16931 e-invoices — UBL 2.1 and UN/CEFACT CII — with
 errors that teach the regulation.**
 
 Zero runtime dependencies, TypeScript-first, and entirely local: installing this
 package needs no account and no key, and nothing it does makes a network call.
+
+Nothing here needs a JVM, and nothing here needs a server. The package uses no
+platform API beyond the JavaScript standard library — even the DEFLATE decoder
+the Factur-X reader needs is implemented in-repo rather than borrowed from
+Node — so the same build runs unchanged in Node, Deno, Bun, Cloudflare Workers
+and the browser. [The playground](https://attestwire.com/playground) is this
+package running client-side: the invoice never leaves the tab.
 
 ## Quickstart
 

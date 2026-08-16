@@ -17,7 +17,7 @@ failures, and they are worth wildly different amounts of work:
   profile being asked for.
 
 Every one of the 22 fixture × profile combinations is **(c)**. Not one is (a),
-and — this is the load-bearing measurement — not one is (b), because the French
+and — this is the measurement everything else rests on — not one is (b), because the French
 "D22B" CII schema accepts D16B content outright. Details below, with the
 evidence for each.
 
@@ -111,7 +111,7 @@ this package executes them. So there is no French rule id to cite for any
 failure above, and inventing one would put words in the DGFiP's mouth. What
 `xmllint` cites is `cvc-complex-type.2.4.a`, every time.
 
-## The load-bearing answer: does the French base schema accept D16B?
+## The decisive question: does the French base schema accept D16B?
 
 **Yes. Unreservedly.** This is the fact that sizes a France build, so it was
 measured rather than reasoned, by comparing the DGFiP's D22B modules with

@@ -5,6 +5,34 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] — 2026-08-15
+
+**Metadata only. No code changed.** `dist` is byte-for-byte what 0.7.0 shipped;
+the rule set, the exports and the behaviour are identical. If you are on 0.7.0
+there is nothing here to upgrade for.
+
+What changed is how the package describes itself on npm. Every e-invoicing
+package with real download numbers is a *generator*; this one's distinguishing
+work is validation — 295 rule ids with errors that cite the regulation — and the
+old `description` opened with "Generate", which buried that. The new one leads
+with validation, names the formats a searcher actually types (XRechnung,
+ZUGFeRD, Factur-X, Peppol) and states the three constraints people are usually
+looking for: zero dependencies, runs in a browser, no JVM.
+
+### Changed
+
+- `description` rewritten validator-first, and the verbs are scoped so the
+  format list cannot be misread: **validation** covers all four named formats,
+  including reading the XML out of a ZUGFeRD or Factur-X PDF; **generation** is
+  named separately and only ever promises "the UBL/CII XML". The old string put
+  "Generate" first with the formats trailing it, which is the reading that hands
+  someone a bare XML file believing it is a Factur-X document.
+- `keywords` broadened from 18 to 25: `e-invoice`, `validation`, `validator`,
+  `zugferd`, `factur-x`, `xml` and `schematron` added. `schematron` is a search
+  term, not a claim: this package implements the rules the EN 16931 schematron
+  artefacts express, it does not execute `.sch` files or embed a schematron
+  processor.
+
 ## [0.7.0] — 2026-08-14
 
 **We were rejecting credit notes Peppol accepts.** `PEPPOL-EN16931-P0100` was

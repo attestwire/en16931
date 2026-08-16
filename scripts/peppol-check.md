@@ -417,7 +417,7 @@ already carried the Peppol values and `generateCii` already indexes both by
 could not get past the refusal at the top of the function. Verified in the
 emitted XML and in `src/generate-cii.test.ts`.
 
-### 5. Something the CII artefact cannot do, recorded because it is load-bearing
+### 5. Something the CII artefact cannot do, recorded because later conclusions depend on it
 
 `PEPPOL-EN16931-CII.sch` @ v3.0.20 states the type-code rule once, as `P0100`,
 over the union of both UBL lists (31 codes) — and gives it the context
