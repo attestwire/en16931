@@ -1,6 +1,5 @@
 import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
-import { computeTotals } from "./totals.js";
-import { DOCS, blank, err, isXRechnung, linesOf } from "./rule-kit.js";
+import { DOCS, blank, err, isXRechnung, linesOf, totalsOutcomeOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { InvoicingPeriod, TeachingError } from "./types.js";
 
@@ -87,15 +86,11 @@ export const germanRules: RuleFn[] = [
   // forbids the rate on the line, so no rate reaches the breakdown, so
   // BR-DE-14 fails. Worth saying out loud, because the document validates
   // clean against core EN 16931 and is then rejected by a German portal.
-  (inv) => {
+  (inv, ctx) => {
     if (!isXRechnung(inv)) return null;
     if (linesOf(inv).length === 0) return null;
-    let computed;
-    try {
-      computed = computeTotals(inv);
-    } catch {
-      return null;
-    }
+    const { totals: computed } = totalsOutcomeOf(inv, ctx);
+    if (!computed) return null;
     const out: TeachingError[] = [];
     for (const [index, subtotal] of computed.subtotals.entries()) {
       if (subtotal.rate !== undefined) continue;

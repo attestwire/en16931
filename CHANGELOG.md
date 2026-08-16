@@ -5,6 +5,56 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] — 2026-08-15
+
+**`<cbc:TaxAmount>12,34</cbc:TaxAmount>` validated clean. It should not have.**
+An unreadable declared tax total left `taxAmount` unset, BR-CO-14 — the rule
+that checks the invoice total VAT against the sum of the breakdown — never ran,
+and the document came back `valid: true` while KoSIT rejects it at the schema
+step. That is the worst direction for an error to point, and it is the same gap
+0.6.0 closed for the other six declared totals; BT-110 and BT-111 had been left
+out of the defect model. They are in it now: absent, empty and unreadable states
+are recorded, and an unreadable or empty tax total produces an
+`ATW-DECLARED-TOTAL-NOT-A-NUMBER` finding instead of silence (or, for an empty
+element, a fabricated `0` out of `Number("")`).
+
+Underneath that fix sits a stricter boundary. JavaScript's `Number()` accepts
+things `xs:decimal` forbids — `1e2` is 100 to JavaScript, `0x1F` is 31 — so a
+document carrying an exponent-form amount had its arithmetic validated clean
+here and its schema rejected by every official validator. Every numeric read
+now goes through a parser that implements the exact `xs:decimal` lexical space;
+what the schema would reject is reported as unreadable, with the rejection
+reason spelled out. Values the schema accepts (`12.`, `.5`, `+5`) are read
+exactly as before — no previously-valid document changes verdict in this
+release; only lexically-invalid input moves, and it moves from silence to a
+finding.
+
+### Fixed
+
+- BT-110 (invoice total VAT amount) and BT-111 (VAT amount in accounting
+  currency) now flow through the declared-total defect machinery in both
+  syntaxes. Unreadable and empty values produce findings; BR-CO-14 and BR-53
+  report on what is actually in the document instead of standing down.
+- Numeric reads reject lexical forms outside `xs:decimal` (`1e2`, `0x1F`,
+  `0b101`, `Infinity`) and surface the reason, closing a family of
+  false-valid paths.
+- CII: an unreadable first `ram:TaxTotalAmount` no longer causes a readable
+  second one to be filed under the wrong term — the BT-110/BT-111 assignment
+  is decided before the value is read.
+
+### Changed
+
+- Validation is roughly 3.5x faster (10.4ms → 2.9ms on a 1000-line invoice,
+  83µs → 22µs on a typical one). `computeTotals` ran up to ten times per
+  validation, once per rule family that needed it; a run-scoped cache built
+  at the start of each `validateInput` call now computes it once. The cache
+  lives and dies inside the run — validating, fixing a line, and validating
+  the same object again can never see stale totals — and the `BR-*-08`
+  stated-amounts family keeps its deliberately independent arithmetic,
+  uncached, because a check that reuses the code it is checking catches
+  nothing. A 2,272-case differential harness confirmed byte-identical
+  findings before and after.
+
 ## [0.7.1] — 2026-08-15
 
 **Metadata only. No code changed.** `dist` is byte-for-byte what 0.7.0 shipped;

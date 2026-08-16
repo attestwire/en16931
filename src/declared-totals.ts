@@ -20,6 +20,16 @@
  * the four mandatory terms, and `ATW-DECLARED-TOTAL-NOT-A-NUMBER` in
  * `rules-decimals.ts` for text no reader can turn into a number.
  *
+ * WHAT COUNTS AS UNREADABLE WIDENED IN 0.7.2, and it widened towards the
+ * validator rather than away from it. `12,34` was never the only text XML
+ * Schema turns down: `1e2`, `0x1F`, `0b101` and `Infinity` are all rejected as
+ * `cvc-datatype-valid.1.2.1` too, and all four are perfectly good numbers to
+ * JavaScript's `Number()`. So they used to pass straight into the model and the
+ * arithmetic validated clean on a document KoSIT refuses. Every total is now
+ * measured against the `xs:decimal` lexical space itself — see `parseXsDecimal`
+ * in `xml-reader.ts` — and anything outside it lands in the `"unreadable"`
+ * state with the rest.
+ *
  * NOTHING HERE CHANGES THE JSON PATH. A caller building an `InvoiceInput` by
  * hand never produces a defect — omitting `declaredTotals.payableAmount` means
  * "compute it for me", which is the whole point of the model, and the library
@@ -38,7 +48,12 @@ import type {
   DeclaredTotalState,
   DeclaredTotals,
 } from "./types.js";
-import { TreeReader } from "./xml-reader.js";
+import {
+  decimalRejectionReason,
+  parseXsDecimal,
+  TreeReader,
+  VALUE_LEFT_OUT,
+} from "./xml-reader.js";
 import type { XmlElement } from "./xml-parse.js";
 
 export interface DeclaredTotalTerm {
@@ -61,15 +76,38 @@ export interface DeclaredTotalTerm {
 }
 
 /**
+ * A term whose `key` really is a field of `DeclaredTotals`, so a value read for
+ * it can be written straight into the model.
+ *
+ * All six monetary-total-block terms are like this, and so is BT-110. BT-111 is
+ * not — it lives on `InvoiceInput`, not under `declaredTotals` — which is why
+ * the reading function that assigns takes this narrower type and the one that
+ * merely returns a value takes the wider `DeclaredTotalTerm`.
+ */
+export type DeclaredTotalFieldKey = Extract<DeclaredTotalKey, keyof DeclaredTotals>;
+
+export interface DeclaredTotalFieldTerm extends DeclaredTotalTerm {
+  key: DeclaredTotalFieldKey;
+}
+
+/**
  * The six totals both monetary total blocks carry, in UBL document order.
  *
+ * BT-110 and BT-111 are NOT here, and that is a placement decision rather than
+ * an omission: in UBL the VAT total lives in `cac:TaxTotal`, a different block
+ * entirely, and in CII the same element has to be told apart from BT-111 by
+ * position and `@currencyID` before anyone knows which term it is. Neither fits
+ * the "walk one block, one local name per term" loop that reads these six. They
+ * are in `TAX_TOTAL_TERMS` below, read by the two parsers at the place where the
+ * ambiguity is resolved, and reported by exactly the same rules.
+ *
  * BT-113 (prepaid) and BT-114 (rounding) live in the same block and are NOT
- * here: they land on `invoice.paidAmount` / `invoice.roundingAmount`, are
+ * here either: they land on `invoice.paidAmount` / `invoice.roundingAmount`, are
  * optional in both syntaxes, and an unreadable one is still only reported as an
  * `unmapped` note. That is a narrower version of the same gap and it is named
  * in the CHANGELOG rather than quietly widened here.
  */
-export const DECLARED_TOTAL_TERMS: DeclaredTotalTerm[] = [
+export const DECLARED_TOTAL_TERMS: DeclaredTotalFieldTerm[] = [
   {
     key: "lineExtensionAmount",
     field: "BT-106",
@@ -124,12 +162,67 @@ export const DECLARED_TOTAL_TERMS: DeclaredTotalTerm[] = [
   },
 ];
 
+/**
+ * The two VAT totals, which live outside the monetary total block.
+ *
+ * WHY THEY ARE HERE AT ALL. Until 0.7.2 the VAT total was read with a bare
+ * `Number()` and a silent failure on both sides: UBL had
+ * `if (Number.isFinite(value)) declared.taxAmount = value;` with no else, and
+ * CII had `if (!Number.isFinite(value)) continue;`. The element was already
+ * consumed by then, so the unmapped sweep never mentioned it either. A
+ * `<cbc:TaxAmount>12,34</cbc:TaxAmount>` therefore left `declared.taxAmount`
+ * undefined, BR-CO-14 has nothing to compare when BT-110 is not a number, and
+ * the document came back `valid: true` with zero findings — while KoSIT
+ * rejected the same file at the XML Schema step, `cvc-datatype-valid.1.2.1`.
+ * That is exactly the defect class closed for BT-106/109/112/115 in 0.6.0, in
+ * the one place it was left open.
+ *
+ * NEITHER CARRIES A PRESENCE RULE, and neither should. EN 16931 has no BR-*
+ * presence rule for BT-110 — BR-12..15 cover the four totals of BG-22 and stop
+ * there — and BT-111 is conditional on BT-6 being stated at all. So an absent
+ * VAT total records no defect here, the same way BT-107 and BT-108 record none:
+ * this module reports what the document states unreadably, and does not invent
+ * a rule id for what it does not state. (An absent BT-110 is a real gap of its
+ * own — nothing then runs BR-CO-14 — but closing it needs a rule, not a reader,
+ * and inventing one silently under cover of a parser fix would be worse than
+ * leaving it named.)
+ */
+export const TAX_TOTAL_TERMS: DeclaredTotalTerm[] = [
+  {
+    key: "taxAmount",
+    field: "BT-110",
+    label: "Invoice total VAT amount",
+    ubl: "TaxAmount",
+    cii: "TaxTotalAmount",
+    why: "It is the figure the buyer reclaims and the seller remits, and BR-CO-14 ties it to the sum of the VAT breakdown groups.",
+  },
+  {
+    key: "taxAmountInAccountingCurrency",
+    field: "BT-111",
+    label: "Invoice total VAT amount in accounting currency",
+    ubl: "TaxAmount",
+    cii: "TaxTotalAmount",
+    why: "It restates BT-110 in the VAT accounting currency (BT-6), which is the currency the tax authority is actually paid in.",
+  },
+];
+
 /** The term for a declared total, by model key. */
 export function declaredTotalTerm(
   key: DeclaredTotalKey,
 ): DeclaredTotalTerm | undefined {
-  return DECLARED_TOTAL_TERMS.find((t) => t.key === key);
+  return (
+    DECLARED_TOTAL_TERMS.find((t) => t.key === key) ??
+    TAX_TOTAL_TERMS.find((t) => t.key === key)
+  );
 }
+
+/** BT-110, for the two parsers. Looked up rather than indexed, so a reorder is harmless. */
+export const TAX_AMOUNT_TERM = TAX_TOTAL_TERMS.find((t) => t.key === "taxAmount")!;
+
+/** BT-111, the same amount restated in the VAT accounting currency. */
+export const TAX_AMOUNT_ACCOUNTING_TERM = TAX_TOTAL_TERMS.find(
+  (t) => t.key === "taxAmountInAccountingCurrency",
+)!;
 
 /** The longest text a defect will carry into a message. */
 const MAX_DEFECT_TEXT = 200;
@@ -242,7 +335,7 @@ export function usableDefects(
 export function readDeclaredTotal(
   r: TreeReader,
   block: XmlElement | undefined,
-  term: DeclaredTotalTerm,
+  term: DeclaredTotalFieldTerm,
   local: string,
   xpath: string,
   declared: DeclaredTotals,
@@ -258,6 +351,34 @@ export function readDeclaredTotal(
     }
     return;
   }
+  const value = readDeclaredTotalValue(r, el, term, xpath, defects);
+  if (value !== undefined) declared[term.key] = value;
+}
+
+/**
+ * The same reading, on an element the caller has already found.
+ *
+ * The VAT totals need this shape. BT-110 and BT-111 are the same element name
+ * twice over — `cbc:TaxAmount` under two `cac:TaxTotal`s, `ram:TaxTotalAmount`
+ * twice inside one summation — and which is which is decided by position and
+ * `@currencyID`, which the parser has to look at before it knows what term it
+ * is holding. Asking `readDeclaredTotal` to find the element by name would find
+ * the wrong one, and calling `leafEl` a second time on an element already read
+ * would file its unmapped note twice. So the caller resolves the ambiguity,
+ * and this function does everything after it: the same empty and unreadable
+ * states, the same defect entries, the same unmapped notes.
+ *
+ * Returns the value on success and `undefined` on either failure, rather than
+ * assigning: BT-111 lands on `InvoiceInput`, not on `DeclaredTotals`, so there
+ * is no one field to assign to.
+ */
+export function readDeclaredTotalValue(
+  r: TreeReader,
+  el: XmlElement,
+  term: DeclaredTotalTerm,
+  xpath: string,
+  defects: DeclaredTotalDefect[],
+): number | undefined {
   const raw = el.text.trim();
   if (raw === "") {
     r.note(
@@ -268,16 +389,17 @@ export function readDeclaredTotal(
         `Schema rejects it as a value of type xs:decimal.`,
     );
     defects.push({ key: term.key, field: term.field, state: "empty", xpath });
-    return;
+    return undefined;
   }
-  const value = Number(raw);
-  if (!Number.isFinite(value)) {
-    r.note(
-      el,
-      "unknown",
-      `"${raw.slice(0, 40)}" is not a number, so this value was left out of the ` +
-        `invoice rather than guessed at.`,
-    );
+  // `parseXsDecimal`, not `Number()`: the KoSIT error quoted at the top of this
+  // file is only the commonest half of the gap. `12,34` fails both readers, but
+  // `1e2` and `0x1F` are numbers to JavaScript and not to XML Schema, so they
+  // used to sail into the model and validate clean on a document rejected as
+  // cvc-datatype-valid.1.2.1 — the same false-valid, arrived at from the other
+  // direction.
+  const value = parseXsDecimal(raw);
+  if (value === undefined) {
+    r.note(el, "unknown", `${decimalRejectionReason(raw)} ${VALUE_LEFT_OUT}`);
     defects.push({
       key: term.key,
       field: term.field,
@@ -285,7 +407,7 @@ export function readDeclaredTotal(
       text: raw.slice(0, 200),
       xpath,
     });
-    return;
+    return undefined;
   }
-  declared[term.key] = value;
+  return value;
 }

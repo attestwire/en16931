@@ -1,6 +1,6 @@
 {
   "name": "@attestwire/en16931",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Validate EN 16931 e-invoices — XRechnung, ZUGFeRD, Factur-X, Peppol BIS 3.0 — and generate the UBL/CII XML. 295 rules, zero dependencies, runs in the browser, no Java.",
   "type": "module",
   "license": "MIT",

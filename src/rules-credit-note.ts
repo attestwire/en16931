@@ -1,6 +1,5 @@
-import { computeTotals } from "./totals.js";
 import { documentKindOf, isCreditNote } from "./document-type.js";
-import { LIMITS_DOCS, err, linesOf } from "./rule-kit.js";
+import { LIMITS_DOCS, err, linesOf, totalsOutcomeOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { InvoiceInput, TeachingError } from "./types.js";
 
@@ -58,9 +57,21 @@ export const creditNoteRules: RuleFn[] = [
   // amount, and the `-08` family's tolerance is signed precisely so that a
   // negative breakdown passes. Doing both at once says "we owe you −500", which
   // is an invoice with extra steps, and no validator will tell you.
-  (inv) => {
+  (inv, ctx) => {
     if (!isCreditNote(inv)) return null;
-    const totals = computeTotals(inv);
+    // The only `computeTotals` site in the rule set that does not swallow a
+    // throw, and it stays that way. Every other site catches and returns null
+    // because BR-22 / BR-24 / BR-26 already report the malformed line; this one
+    // never had a catch, so a defect here has always propagated out of
+    // `validateInput`, and quietly turning that into a swallowed finding would
+    // be a behaviour change smuggled in under a performance change.
+    //
+    // The run cache records the error rather than raising it when it is built,
+    // so rethrowing it here reproduces the old timing exactly: the same error
+    // object, surfacing at this rule, after the rules before it have run.
+    const outcome = totalsOutcomeOf(inv, ctx);
+    if (outcome.threw) throw outcome.error;
+    const totals = outcome.totals;
     const negativeLines = totals.lineNetAmounts
       .map((amount, index) => ({ amount, index }))
       .filter((entry) => entry.amount < 0);

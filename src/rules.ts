@@ -1,14 +1,17 @@
 import { COUNTRY_CODES_SET } from "./codelists/country.js";
-import { computeTotals, effectiveRate, round2 } from "./totals.js";
+import { effectiveRate, round2 } from "./totals.js";
 import { DEFAULT_INVOICE_TYPE_CODE, documentNoun, isCreditNote, xpathRoot } from "./document-type.js";
 import { extendedRules } from "./rules-extended.js";
 import {
+  allowanceChargesOf,
   CATEGORY_RULE_INFIX,
-  documentAllowanceCharges,
   linesOf,
+  makeRuleContext,
+  totalsOutcomeOf,
   withinAbsoluteTolerance,
   withinSignedTolerance,
 } from "./rule-kit.js";
+import type { RuleFn } from "./rule-kit.js";
 import type {
   InvoiceInput,
   Party,
@@ -30,8 +33,13 @@ import type {
  * A rule returns one TeachingError, a list of them (for per-line rules), or null.
  */
 
-type RuleResult = TeachingError | TeachingError[] | null;
-type RuleFn = (inv: InvoiceInput) => RuleResult;
+// `RuleFn` used to be declared here as well as in rule-kit.ts — two structurally
+// identical one-line aliases, which stayed interchangeable only for as long as
+// neither changed. Adding the run cache's second parameter is exactly the change
+// that would have pulled them apart (`inputRules` composes `baseInputRules` from
+// this file with `extendedRules` from the families, so the two types have to be
+// the same type), so the local copy is gone and rule-kit.ts is the one place a
+// rule's shape is written down.
 
 const DOCS = "https://attestwire.com/rules";
 
@@ -958,16 +966,14 @@ const baseInputRules: RuleFn[] = [
 
   // --- BR-CO-* arithmetic, checked against caller-declared totals -----------
 
-  (inv) => {
+  (inv, ctx) => {
     const declared = inv.declaredTotals;
     if (!declared || linesOf(inv).length === 0) return null;
 
-    let computed;
-    try {
-      computed = computeTotals(inv);
-    } catch {
-      return null; // a malformed line is already reported by BR-22 / BR-26
-    }
+    const outcome = totalsOutcomeOf(inv, ctx);
+    // a malformed line is already reported by BR-22 / BR-26
+    if (outcome.threw) return null;
+    const computed = outcome.totals;
 
     const out: TeachingError[] = [];
     const compare = (
@@ -1081,18 +1087,16 @@ const baseInputRules: RuleFn[] = [
   // Probed 2026-08-12, KoSIT 1.6.2 / XRechnung 3.0.2. The four ids below are
   // the ones the validator actually returned, not the ones the rule text
   // suggests.
-  (inv) => {
+  (inv, ctx) => {
     const declared = inv.declaredTotals;
     if (!declared) return null;
     const lines = linesOf(inv);
     if (lines.length === 0) return null;
 
-    let computed;
-    try {
-      computed = computeTotals(inv);
-    } catch {
-      return null; // a malformed line is already reported by BR-22 / BR-26
-    }
+    const outcome = totalsOutcomeOf(inv, ctx);
+    // a malformed line is already reported by BR-22 / BR-26
+    if (outcome.threw) return null;
+    const computed = outcome.totals;
 
     const out: TeachingError[] = [];
 
@@ -1546,12 +1550,12 @@ const baseInputRules: RuleFn[] = [
   // is `(cac:TaxRepresentativeParty, $BT-31orBT-32Path)` — BG-11 satisfies the
   // rule on its own, so a seller trading through a fiscal representative, who
   // legitimately has neither BT-31 nor BT-32, was being refused outright.
-  (inv) => {
+  (inv, ctx) => {
     if (!isXRechnung(inv)) return null;
     const supported = ["S", "Z", "E", "AE", "K", "G", "L", "M"];
     const taxed =
       linesOf(inv).some((l) => supported.includes(l?.vatCategory)) ||
-      documentAllowanceCharges(inv).some((t) =>
+      allowanceChargesOf(inv, ctx).some((t) =>
         supported.includes(t.entry.vatCategory),
       );
     if (!taxed || !inv.seller) return null;
@@ -1651,9 +1655,19 @@ const baseInputRules: RuleFn[] = [
 export const inputRules: RuleFn[] = [...baseInputRules, ...extendedRules];
 
 export function runInputRules(inv: InvoiceInput): TeachingError[] {
+  // One pass, one set of totals. See `RuleContext` in rule-kit.ts for why this
+  // is built here — at the top of a single run, thrown away at the bottom of it
+  // — rather than keyed on `inv` in a WeakMap that would outlive the caller's
+  // next edit to the invoice.
+  //
+  // Building it eagerly is safe even for input `computeTotals` cannot handle:
+  // `makeRuleContext` records the throw instead of propagating it, so a rule
+  // that swallows the defect still swallows it and the one rule that does not
+  // still raises it, at the point in the run where it always did.
+  const ctx = makeRuleContext(inv);
   const out: TeachingError[] = [];
   for (const rule of inputRules) {
-    const result = rule(inv);
+    const result = rule(inv, ctx);
     if (!result) continue;
     if (Array.isArray(result)) out.push(...result);
     else out.push(result);

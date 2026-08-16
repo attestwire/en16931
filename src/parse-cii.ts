@@ -33,10 +33,18 @@ import {
   type XmlElement,
   type XmlLimits,
 } from "./xml-parse.js";
-import { set, TreeReader } from "./xml-reader.js";
+import {
+  decimalRejectionReason,
+  parseXsDecimal,
+  set,
+  TreeReader,
+} from "./xml-reader.js";
 import {
   DECLARED_TOTAL_TERMS,
   readDeclaredTotal,
+  readDeclaredTotalValue,
+  TAX_AMOUNT_ACCOUNTING_TERM,
+  TAX_AMOUNT_TERM,
 } from "./declared-totals.js";
 import type {
   DeclaredTaxSubtotal,
@@ -379,19 +387,26 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
   const quantity = deliveryGroup
     ? r.ramEl(deliveryGroup, "BilledQuantity")
     : undefined;
-  const quantityValue = quantity ? Number(quantity.text.trim()) : undefined;
-  if (quantity && !Number.isFinite(quantityValue)) {
+  // BT-129 is an xs:decimal, so it is measured against that lexical space and
+  // not handed to Number(): `1e2` is 100 to JavaScript and not a quantity to
+  // XML Schema, and pricing a line off it would report clean arithmetic on a
+  // document the official validator rejects outright. The fallback to 0 and the
+  // note are unchanged; only what counts as unreadable widened.
+  const quantityValue = quantity
+    ? parseXsDecimal(quantity.text.trim())
+    : undefined;
+  if (quantity && quantityValue === undefined) {
     r.note(
       quantity,
       "unknown",
-      `"${quantity.text.trim().slice(0, 40)}" is not a number; the quantity was read as 0.`,
+      `${decimalRejectionReason(quantity.text.trim())} The quantity was read as 0.`,
     );
   }
 
   const line: InvoiceLine = {
     id: lineDocument ? (r.ram(lineDocument, "LineID") ?? "") : "",
     description: "",
-    quantity: Number.isFinite(quantityValue) ? (quantityValue as number) : 0,
+    quantity: quantityValue ?? 0,
     unitCode: quantity ? (attr(quantity, "unitCode") ?? "") : "",
     unitPrice: 0,
     vatCategory: "" as VatCategory,
@@ -927,18 +942,46 @@ export function parseCiiInvoice(
         accountingCurrency !== undefined &&
         accountingCurrency !== invoice.currency?.toUpperCase();
       let taxTotalIndex = 0;
+      // ⚠ A SECOND SILENCE LIVED HERE UNTIL 0.7.2. This loop opened with
+      // `const value = Number(amount.text.trim()); if (!Number.isFinite(value))
+      // continue;` — so `<ram:TaxTotalAmount>12,34</ram:TaxTotalAmount>` was
+      // skipped, `declared.taxAmount` stayed undefined, BR-CO-14 had nothing to
+      // compare and never ran, and the element was already consumed by
+      // `ramAll` so the unmapped sweep did not mention it either. The document
+      // came back `valid: true` with zero findings while KoSIT rejected it as
+      // cvc-datatype-valid.1.2.1. The reads now go through
+      // `readDeclaredTotalValue`, the same path BT-106/109/112/115 have taken
+      // since 0.6.0, so an empty or unreadable VAT total is recorded as a
+      // defect and reported as ATW-DECLARED-TOTAL-NOT-A-NUMBER.
+      //
+      // WHICH TERM IS DECIDED BEFORE THE VALUE IS READ, and the order matters:
+      // the old `continue` ran before `taxTotalIndex` was incremented, so an
+      // unreadable first amount made the *second* one look like the first and a
+      // readable BT-111 was then filed as BT-110. Position is a fact about the
+      // document, not about whether the text parses.
       for (const amount of r.ramAll(summation, "TaxTotalAmount")) {
-        const value = Number(amount.text.trim());
-        if (!Number.isFinite(value)) continue;
         const currencyId = attr(amount, "currencyID")?.toUpperCase();
         const inAccountingCurrency =
           accountingCurrency !== undefined &&
           currencyId === accountingCurrency &&
           (currenciesDiffer || taxTotalIndex > 0);
         taxTotalIndex += 1;
+        // A third amount in the document currency, after BT-110 has already
+        // been read, is neither term. It was ignored before this change and is
+        // ignored now: recording a defect against BT-110 for an element that is
+        // not BT-110 would put a wrong business term in the finding.
+        if (!inAccountingCurrency && declared.taxAmount !== undefined) continue;
+        const value = readDeclaredTotalValue(
+          r,
+          amount,
+          inAccountingCurrency ? TAX_AMOUNT_ACCOUNTING_TERM : TAX_AMOUNT_TERM,
+          amount.path,
+          defects,
+        );
+        if (value === undefined) continue;
         if (inAccountingCurrency) {
           invoice.taxAmountInAccountingCurrency = value;
-        } else if (declared.taxAmount === undefined) {
+        } else {
           declared.taxAmount = value;
         }
       }

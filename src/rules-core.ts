@@ -1,17 +1,18 @@
 import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
 import { usableDefects } from "./declared-totals.js";
-import { computeTotals, lineNetAmount } from "./totals.js";
+import { lineNetAmount } from "./totals.js";
 import {
   DOCS,
   LIMITS_DOCS,
   allowanceChargePath,
+  allowanceChargesOf,
   blank,
   decimalPlaces,
-  documentAllowanceCharges,
   err,
   isIsoDate,
   isPeppol,
   linesOf,
+  totalsOutcomeOf,
 } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { InvoiceTotals, TeachingError } from "./types.js";
@@ -130,9 +131,9 @@ export const coreRules: RuleFn[] = [
   // written to close. A `"B"` allowance validated completely clean and reached
   // the emitted XML as an unchecked `B` breakdown group. All three sites are
   // checked here.
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       if ((tagged.entry.vatCategory as unknown as string) !== "B") continue;
       out.push({
         rule: "ATW-VAT-CATEGORY-UNSUPPORTED",
@@ -265,14 +266,11 @@ export const coreRules: RuleFn[] = [
   // They are kept because they are the rules a *reader* of a rejected KoSIT
   // report will be looking up, and because they fail loudly if computeTotals
   // ever regresses.
-  (inv) => {
+  (inv, ctx) => {
     if (linesOf(inv).length === 0) return null; // BR-16 reports it
-    let totals: InvoiceTotals;
-    try {
-      totals = computeTotals(inv);
-    } catch {
-      return null; // BR-22 / BR-24 / BR-26 report the underlying line defect
-    }
+    const { totals } = totalsOutcomeOf(inv, ctx);
+    // BR-22 / BR-24 / BR-26 report the underlying line defect.
+    if (!totals) return null;
     const out: TeachingError[] = [];
     for (const spec of TOTAL_SPECS) {
       const value = totals[spec.key];
@@ -353,14 +351,10 @@ export const coreRules: RuleFn[] = [
   // They are kept for the same two reasons — a reader looking up a BR-DEC
   // number from a rejected KoSIT report finds it here, and a regression in the
   // rounding shows up as a finding rather than as a document nobody accepts.
-  (inv) => {
+  (inv, ctx) => {
     if (linesOf(inv).length === 0) return null;
-    let totals: InvoiceTotals;
-    try {
-      totals = computeTotals(inv);
-    } catch {
-      return null;
-    }
+    const { totals } = totalsOutcomeOf(inv, ctx);
+    if (!totals) return null;
     const out: TeachingError[] = [];
     const advice =
       "This amount is computed and rounded by the library, so an over-precise value indicates a defect in its arithmetic rather than in your data. Please report it with the invoice payload.";

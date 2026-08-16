@@ -28,10 +28,19 @@ import {
   type XmlElement,
   type XmlLimits,
 } from "./xml-parse.js";
-import { set, TreeReader, type UnmappedElement } from "./xml-reader.js";
+import {
+  decimalRejectionReason,
+  parseXsDecimal,
+  set,
+  TreeReader,
+  type UnmappedElement,
+} from "./xml-reader.js";
 import {
   DECLARED_TOTAL_TERMS,
   readDeclaredTotal,
+  readDeclaredTotalValue,
+  TAX_AMOUNT_ACCOUNTING_TERM,
+  TAX_AMOUNT_TERM,
 } from "./declared-totals.js";
 import type {
   DeclaredTaxSubtotal,
@@ -372,19 +381,27 @@ function readLine(
   const item = r.cac(el, "Item");
   const price = r.cac(el, "Price");
 
-  const quantityValue = quantity ? Number(quantity.text.trim()) : undefined;
-  if (quantity && !Number.isFinite(quantityValue)) {
+  // BT-129 is an xs:decimal, so it is measured against that lexical space and
+  // not handed to Number(): `1e2` is 100 to JavaScript and not a quantity to
+  // XML Schema, and reading it would price a line off a value the official
+  // validator rejects outright (cvc-datatype-valid.1.2.1). The quantity still
+  // falls back to 0 and the reason is still noted — this only widens what
+  // counts as unreadable.
+  const quantityValue = quantity
+    ? parseXsDecimal(quantity.text.trim())
+    : undefined;
+  if (quantity && quantityValue === undefined) {
     r.note(
       quantity,
       "unknown",
-      `"${quantity.text.trim().slice(0, 40)}" is not a number; the quantity was read as 0.`,
+      `${decimalRejectionReason(quantity.text.trim())} The quantity was read as 0.`,
     );
   }
 
   const line: InvoiceLine = {
     id: r.cbc(el, "ID") ?? "",
     description: "",
-    quantity: Number.isFinite(quantityValue) ? (quantityValue as number) : 0,
+    quantity: quantityValue ?? 0,
     unitCode: quantity ? (attr(quantity, "unitCode") ?? "") : "",
     unitPrice: 0,
     vatCategory: "" as VatCategory,
@@ -862,14 +879,41 @@ export function parseUbl(
       currencyId?.toUpperCase() === taxCurrencyCode &&
       (!isFirstTaxTotal || taxCurrencyCode !== invoice.currency?.toUpperCase())
     ) {
-      const value = amountEl ? Number(amountEl.text.trim()) : Number.NaN;
-      if (Number.isFinite(value)) invoice.taxAmountInAccountingCurrency = value;
+      if (amountEl) {
+        const value = readDeclaredTotalValue(
+          r,
+          amountEl,
+          TAX_AMOUNT_ACCOUNTING_TERM,
+          amountEl.path,
+          defects,
+        );
+        if (value !== undefined) invoice.taxAmountInAccountingCurrency = value;
+      }
       continue;
     }
 
+    // BT-110, through the declared-total machinery rather than a bare Number().
+    //
+    // ⚠ Until 0.7.2 this was `const value = Number(...); if (Number.isFinite(value))
+    // declared.taxAmount = value;` — with no else branch, and with the element
+    // already consumed by `cbcEl` above, so the unmapped sweep could not mention
+    // it either. `<cbc:TaxAmount>12,34</cbc:TaxAmount>` therefore left
+    // `declared.taxAmount` undefined, BR-CO-14 had nothing to compare and never
+    // ran, and the document validated `valid: true` with zero findings while
+    // KoSIT rejected it as cvc-datatype-valid.1.2.1. It is the same defect
+    // closed for BT-106/109/112/115 in 0.6.0, in the one total that was missed.
+    //
+    // Absence is deliberately still not a defect: EN 16931 has no presence rule
+    // for BT-110 to cite, and `TAX_TOTAL_TERMS` says why.
     if (amountEl && declared.taxAmount === undefined) {
-      const value = Number(amountEl.text.trim());
-      if (Number.isFinite(value)) declared.taxAmount = value;
+      const value = readDeclaredTotalValue(
+        r,
+        amountEl,
+        TAX_AMOUNT_TERM,
+        amountEl.path,
+        defects,
+      );
+      if (value !== undefined) declared.taxAmount = value;
     }
 
     for (const subtotal of subtotals) {

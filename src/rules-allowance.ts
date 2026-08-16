@@ -1,4 +1,4 @@
-import { computeTotals, round2 } from "./totals.js";
+import { round2 } from "./totals.js";
 import {
   ALLOWANCE_REASON_CODES,
   ALLOWANCE_REASON_CODES_SET,
@@ -11,13 +11,14 @@ import {
   CATEGORY_RULE_INFIX,
   DOCS,
   allowanceChargePath,
+  allowanceChargesOf,
   blank,
   decimalPlaces,
-  documentAllowanceCharges,
   err,
   isXRechnung,
   linesOf,
   sellerTaxIdentified,
+  totalsOutcomeOf,
   usesCategoryAnywhere,
 } from "./rule-kit.js";
 import type { RuleFn, TaggedAllowanceCharge } from "./rule-kit.js";
@@ -501,9 +502,9 @@ const CODE_LIST_SPECS = {
 
 export const allowanceChargeRules: RuleFn[] = [
   // --- BR-31 / BR-36: the amount is mandatory ------------------------------
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       const amount = tagged.entry.amount;
       if (typeof amount === "number" && Number.isFinite(amount)) continue;
       const spec = AMOUNT_SPEC[tagged.isCharge ? "charge" : "allowance"];
@@ -523,9 +524,9 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-32 / BR-37: the VAT category is mandatory ------------------------
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       if (!blank(tagged.entry.vatCategory as unknown as string)) continue;
       const spec = CATEGORY_SPEC[tagged.isCharge ? "charge" : "allowance"];
       const path = allowanceChargePath(tagged);
@@ -548,9 +549,9 @@ export const allowanceChargeRules: RuleFn[] = [
   // One predicate, two findings, deliberately. KoSIT reports both ids and they
   // are different constraints: BR-33/BR-38 are cardinality on the group,
   // BR-CO-21/BR-CO-22 are co-occurrence between two optional terms.
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       const { reason, reasonCode } = tagged.entry;
       if (!blank(reason) || !blank(reasonCode)) continue;
       const path = allowanceChargePath(tagged);
@@ -589,9 +590,9 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-DEC-01 / BR-DEC-02 / BR-DEC-05 / BR-DEC-06 -----------------------
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       const specs = DOC_DEC_SPECS[tagged.isCharge ? "charge" : "allowance"];
       const path = allowanceChargePath(tagged);
       for (const spec of specs) {
@@ -616,9 +617,9 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-CL-19 / BR-CL-20 at document level -------------------------------
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       const code = tagged.entry.reasonCode;
       if (blank(code)) continue; // BR-33 / BR-38 govern absence
       const value = String(code).trim();
@@ -644,16 +645,13 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-CO-11 / BR-CO-12: BT-107 = Σ BT-92, BT-108 = Σ BT-99 -------------
-  (inv) => {
+  (inv, ctx) => {
     const declared = inv.declaredTotals;
     if (!declared) return null;
     if (linesOf(inv).length === 0) return null;
-    let computed;
-    try {
-      computed = computeTotals(inv);
-    } catch {
-      return null; // BR-22 / BR-24 / BR-26 report the underlying line defect
-    }
+    const { totals: computed } = totalsOutcomeOf(inv, ctx);
+    // BR-22 / BR-24 / BR-26 report the underlying line defect.
+    if (!computed) return null;
 
     const out: TeachingError[] = [];
     const compare = (
@@ -764,8 +762,8 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-{S,Z,E,AE,IC,G,O}-03 / -04: identifiers the category demands -----
-  (inv) => {
-    const entries = documentAllowanceCharges(inv);
+  (inv, ctx) => {
+    const entries = allowanceChargesOf(inv, ctx);
     if (entries.length === 0) return null;
     const out: TeachingError[] = [];
 
@@ -799,9 +797,9 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-{S,Z,E,AE,IC,G,O}-06 / -07: the rate the category demands -------
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
-    for (const tagged of documentAllowanceCharges(inv)) {
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
       const spec = CATEGORY_SPECS.find(
         (s) => s.category === tagged.entry.vatCategory,
       );
@@ -854,9 +852,9 @@ export const allowanceChargeRules: RuleFn[] = [
   },
 
   // --- BR-O-13 / BR-O-14: category O does not share a document -------------
-  (inv) => {
-    if (!usesCategoryAnywhere(inv, "O")) return null;
-    const entries = documentAllowanceCharges(inv);
+  (inv, ctx) => {
+    if (!usesCategoryAnywhere(inv, "O", ctx)) return null;
+    const entries = allowanceChargesOf(inv, ctx);
     const out: TeachingError[] = [];
 
     for (const isCharge of [false, true]) {

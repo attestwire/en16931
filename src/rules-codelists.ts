@@ -1,5 +1,4 @@
 import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
-import { computeTotals } from "./totals.js";
 import {
   COUNTRY_CODES_SET,
   CREDIT_NOTE_TYPE_CODES_CL,
@@ -13,7 +12,7 @@ import {
   VAT_CATEGORY_CODES,
   VAT_CATEGORY_CODES_SET,
 } from "./codelists/index.js";
-import { DOCS, blank, err, linesOf } from "./rule-kit.js";
+import { DOCS, blank, err, linesOf, totalsOutcomeOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { TeachingError } from "./types.js";
 
@@ -243,14 +242,11 @@ export const codelistRules: RuleFn[] = [
   // BR-CL-17: the same code list, bound in UBL to cac:TaxCategory/cbc:ID —
   // the *VAT breakdown* category (BT-118). Reported separately because the
   // generated document carries both elements, and KoSIT reports both.
-  (inv) => {
+  (inv, ctx) => {
     if (linesOf(inv).length === 0) return null;
-    let computed;
-    try {
-      computed = computeTotals(inv);
-    } catch {
-      return null; // malformed line data; BR-22 / BR-24 / BR-26 report it
-    }
+    const { totals: computed } = totalsOutcomeOf(inv, ctx);
+    // malformed line data; BR-22 / BR-24 / BR-26 report it
+    if (!computed) return null;
     const seen = new Set<string>();
     const out: TeachingError[] = [];
     for (const subtotal of computed.subtotals) {

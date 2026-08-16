@@ -37,6 +37,85 @@ export interface UnmappedElement {
   text?: string;
 }
 
+/**
+ * The lexical space of `xs:decimal`, as XML Schema Part 2 writes it:
+ * `(\+|-)?([0-9]+(\.[0-9]*)?|\.[0-9]+)`.
+ *
+ * `12.` and `.5` really are valid — the fractional part may be empty on either
+ * side of the dot, though only one side at a time — so they are accepted here
+ * and turned into 12 and 0.5. An exponent is not; nor is a hex or binary
+ * prefix, a leading `0o`, `Infinity`, `NaN`, a thousands separator, or a space
+ * anywhere inside the value.
+ */
+const XS_DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+
+/**
+ * Text from a document → a number, but only for text `xs:decimal` accepts.
+ *
+ * WHY NOT `Number()`. Every monetary amount, quantity, percentage and factor in
+ * both EN 16931 syntaxes is typed `xs:decimal` in the XSD, and JavaScript's
+ * `Number()` reads a strictly larger set of strings than that type does:
+ * `Number("1e2")` is 100, `Number("0x1F")` is 31, `Number("0b101")` is 5,
+ * `Number("Infinity")` is infinite, and `Number("")` is 0. None of those five
+ * documents survives XML Schema validation — KoSIT rejects each of them as
+ * `cvc-datatype-valid.1.2.1`, before a single schematron rule is evaluated —
+ * so reading the value anyway produced the worst answer a validator can give:
+ * clean arithmetic, `valid: true`, on a file the authority refuses. A value
+ * this function turns down is left out of the model and reported, which lands
+ * the document on the same side of the verdict as the official tool.
+ *
+ * A lexically valid decimal too large for a double (309 digits and up) is also
+ * turned down. It is a real `xs:decimal` and XML Schema is happy with it, but
+ * this library's arithmetic is IEEE-754 and `Infinity` would poison every total
+ * it touches; refusing it is the honest failure, and `decimalRejectionReason`
+ * says which of the two things went wrong.
+ */
+export function parseXsDecimal(raw: string): number | undefined {
+  if (!XS_DECIMAL.test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Why `parseXsDecimal` turned this text down, in words for the person who wrote
+ * the document.
+ *
+ * Three different mistakes, and the middle one is the reason this exists rather
+ * than a single sentence: `1e2` and `0x1F` are numbers to JavaScript and not to
+ * XML Schema, so "is not a number" would read as wrong to anyone who pasted the
+ * value into a console. It is not that the text means nothing — it is that it
+ * means nothing *here*, and the reader has to say which.
+ *
+ * It stops at the diagnosis and never says what was done about it. What was
+ * done differs by call site — a total is left out, a quantity falls back to 0 —
+ * so each one appends its own sentence, and none of them ends up claiming both.
+ */
+export function decimalRejectionReason(raw: string): string {
+  const seen = JSON.stringify(raw.slice(0, 40));
+  if (XS_DECIMAL.test(raw)) {
+    return (
+      `${seen} is a valid xs:decimal, but it has more digits than a 64-bit ` +
+      `floating-point number can hold, so it would arrive as Infinity and poison every ` +
+      `total computed from it.`
+    );
+  }
+  if (Number.isFinite(Number(raw))) {
+    return (
+      `${seen} is not a valid xs:decimal. JavaScript would read it as ` +
+      `${String(Number(raw))}, but XML Schema would not: an xs:decimal is an optional ` +
+      `sign, digits, and at most one dot — no exponent, no 0x or 0b prefix, no ` +
+      `Infinity. The official validator rejects this document at the XML Schema step ` +
+      `as cvc-datatype-valid.1.2.1, so reading the value anyway would report clean ` +
+      `arithmetic on a file the authority refuses.`
+    );
+  }
+  return `${seen} is not a number.`;
+}
+
+/** The sentence every value-reading site appends when it turns a value down. */
+export const VALUE_LEFT_OUT =
+  "The value was left out of the invoice rather than guessed at.";
+
 export class TreeReader {
   readonly unmapped: UnmappedElement[] = [];
   private readonly consumed = new WeakSet<XmlElement>();
@@ -171,14 +250,14 @@ export class TreeReader {
     if (!el) return undefined;
     const raw = el.text.trim();
     if (raw === "") return undefined;
-    const value = Number(raw);
-    if (!Number.isFinite(value)) {
-      this.note(
-        el,
-        "unknown",
-        `"${raw.slice(0, 40)}" is not a number, so this value was left out of the ` +
-          `invoice rather than guessed at.`,
-      );
+    // Trimmed, then measured against the xs:decimal lexical space rather than
+    // handed to Number(). XML whitespace around a value is collapsed away by
+    // the schema processor too, so the trim is faithful; everything inside the
+    // value is not, and `1e2` or `0x1F` reaching the model was a silent
+    // false-valid path. See `parseXsDecimal`.
+    const value = parseXsDecimal(raw);
+    if (value === undefined) {
+      this.note(el, "unknown", `${decimalRejectionReason(raw)} ${VALUE_LEFT_OUT}`);
       return undefined;
     }
     return value;

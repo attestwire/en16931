@@ -448,14 +448,27 @@ export interface DeclaredTotals {
   defects?: DeclaredTotalDefect[];
 }
 
-/** The keys of {@link DeclaredTotals} that hold a single document total. */
+/**
+ * Which single document total a {@link DeclaredTotalDefect} is about.
+ *
+ * Six of these name a field of {@link DeclaredTotals} directly. The seventh,
+ * `"taxAmountInAccountingCurrency"`, names BT-111 — which the model carries on
+ * `InvoiceInput.taxAmountInAccountingCurrency` rather than under
+ * `declaredTotals`, because it is stated once and never recomputed. A defect
+ * still has to be able to say "it was BT-111 that could not be read", so the
+ * key is here even though there is no `declaredTotals` field behind it; see
+ * `DeclaredTotalFieldKey` in `declared-totals.ts` for the narrower type the
+ * writing path uses.
+ */
 export type DeclaredTotalKey =
   | "lineExtensionAmount"
   | "allowanceTotalAmount"
   | "chargeTotalAmount"
   | "taxExclusiveAmount"
+  | "taxAmount"
   | "taxInclusiveAmount"
-  | "payableAmount";
+  | "payableAmount"
+  | "taxAmountInAccountingCurrency";
 
 /**
  * Why a declared document total did not arrive as a number.

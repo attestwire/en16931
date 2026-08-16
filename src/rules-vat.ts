@@ -1,7 +1,6 @@
 import {
   REASON_FORBIDDEN_CATEGORIES,
   VAT_RATE_DECIMALS,
-  computeTotals,
   lineNetAmount,
   round2,
   roundTo,
@@ -17,12 +16,13 @@ import {
   documentAllowanceCharges,
   err,
   linesOf,
+  totalsOutcomeOf,
   usesCategory,
   usesCategoryAnywhere,
   withinAbsoluteTolerance,
   withinSignedTolerance,
 } from "./rule-kit.js";
-import type { RuleFn } from "./rule-kit.js";
+import type { RuleContext, RuleFn } from "./rule-kit.js";
 import type { InvoiceInput, InvoiceTotals, TaxSubtotal, TeachingError, VatCategory } from "./types.js";
 
 /**
@@ -85,14 +85,24 @@ const ruleId = (category: VatCategory, suffix: string): string =>
 const describe = (category: VatCategory): string =>
   `${category} (${CATEGORY_NAMES[category]})`;
 
-/** Totals, or null when the line data is too malformed to compute. */
-const totalsOf = (inv: InvoiceInput): InvoiceTotals | null => {
+/**
+ * Totals, or null when there are no lines or the line data is too malformed to
+ * compute.
+ *
+ * Both `null`s are deliberate and both mean "this family has nothing to say
+ * here". The run's `RuleContext` supplies the arithmetic when there is one, so
+ * the six rules below share one `computeTotals` instead of running six; the
+ * no-lines gate and the swallowed throw stay exactly where they were, because
+ * they are about what this family reports, not about how the numbers are
+ * obtained.
+ */
+const totalsOf = (
+  inv: InvoiceInput,
+  ctx?: RuleContext,
+): InvoiceTotals | null => {
   if (linesOf(inv).length === 0) return null;
-  try {
-    return computeTotals(inv);
-  } catch {
-    return null; // BR-22 / BR-24 / BR-26 report the underlying line defect
-  }
+  // BR-22 / BR-24 / BR-26 report the underlying line defect.
+  return totalsOutcomeOf(inv, ctx).totals;
 };
 
 const subtotalsFor = (
@@ -110,6 +120,14 @@ const subtotalsFor = (
  * Deliberately a second implementation rather than a call into totals.ts: the
  * `-08` rules exist to catch our own arithmetic drifting, and a check that
  * reuses the code it is checking catches nothing.
+ *
+ * ⚠ For the same reason this takes no `RuleContext` and must never be given
+ * one — not for the totals, and not for the `documentAllowanceCharges` walk
+ * below. The run cache exists to stop the rule families recomputing shared
+ * work; this function *is* the second opinion, so recomputing is the point.
+ * The walk it does here is over document allowances and charges only, which is
+ * bounded by BG-20/BG-21 count rather than by line count, so it is not on the
+ * hot path the cache was introduced for.
  */
 const taxableBaseFor = (
   inv: InvoiceInput,
@@ -159,12 +177,12 @@ const taxableBaseFor = (
 
 export const vatRules: RuleFn[] = [
   // --- -01: the breakdown for a used category must exist, and be unique -----
-  (inv) => {
-    const totals = totalsOf(inv);
+  (inv, ctx) => {
+    const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     const out: TeachingError[] = [];
     for (const category of ALL_CATEGORIES) {
-      const used = usesCategoryAnywhere(inv, category);
+      const used = usesCategoryAnywhere(inv, category, ctx);
       const groups = subtotalsFor(totals, category);
       const unique = EXACTLY_ONE.includes(category);
       const rule = ruleId(category, "01");
@@ -212,12 +230,12 @@ export const vatRules: RuleFn[] = [
   },
 
   // --- -08: taxable amount per category equals the sum of its lines ---------
-  (inv) => {
-    const totals = totalsOf(inv);
+  (inv, ctx) => {
+    const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     const out: TeachingError[] = [];
     for (const category of ALL_CATEGORIES) {
-      if (!usesCategoryAnywhere(inv, category)) continue;
+      if (!usesCategoryAnywhere(inv, category, ctx)) continue;
       const rule = ruleId(category, "08");
       for (const subtotal of subtotalsFor(totals, category)) {
         const expected = taxableBaseFor(inv, category, subtotal.rate);
@@ -241,12 +259,12 @@ export const vatRules: RuleFn[] = [
   },
 
   // --- -09: the VAT amount per category ------------------------------------
-  (inv) => {
-    const totals = totalsOf(inv);
+  (inv, ctx) => {
+    const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     const out: TeachingError[] = [];
     for (const category of ALL_CATEGORIES) {
-      if (!usesCategoryAnywhere(inv, category)) continue;
+      if (!usesCategoryAnywhere(inv, category, ctx)) continue;
       const rule = ruleId(category, "09");
       const mustBeZero = !RATED_CATEGORIES.includes(category);
       for (const subtotal of subtotalsFor(totals, category)) {
@@ -287,11 +305,11 @@ export const vatRules: RuleFn[] = [
   //
   // BR-E-10 lives in rules.ts and is deliberately not duplicated here: category
   // E is the one case with no standard wording, so it carries its own message.
-  (inv) => {
+  (inv, ctx) => {
     const out: TeachingError[] = [];
     for (const category of REASON_REQUIRED) {
       if (category === "E") continue; // BR-E-10, in rules.ts
-      if (!usesCategoryAnywhere(inv, category)) continue;
+      if (!usesCategoryAnywhere(inv, category, ctx)) continue;
       const supplied = inv.vatExemptionReasons?.[category];
       // `undefined` picks up the library default (see DEFAULT_EXEMPTION_REASONS);
       // an explicitly blank string suppresses it, and that is what fails.
@@ -315,7 +333,7 @@ export const vatRules: RuleFn[] = [
     }
 
     for (const category of REASON_FORBIDDEN) {
-      if (!usesCategoryAnywhere(inv, category)) continue;
+      if (!usesCategoryAnywhere(inv, category, ctx)) continue;
       const text = inv.vatExemptionReasons?.[category];
       const code = inv.vatExemptionReasonCodes?.[category];
       const supplied = !blank(text) ? text : code;
@@ -354,10 +372,10 @@ export const vatRules: RuleFn[] = [
   // O on an allowance beside standard-rated lines validated completely clean
   // here and was rejected with two fatals by the reference validator. Hence
   // `usesCategoryAnywhere` on both sides.
-  (inv) => {
-    if (!usesCategoryAnywhere(inv, "O")) return null;
+  (inv, ctx) => {
+    if (!usesCategoryAnywhere(inv, "O", ctx)) return null;
     const others = ALL_CATEGORIES.filter(
-      (c) => c !== "O" && usesCategoryAnywhere(inv, c),
+      (c) => c !== "O" && usesCategoryAnywhere(inv, c, ctx),
     );
     if (others.length === 0) return null;
 
@@ -439,8 +457,8 @@ export const vatRules: RuleFn[] = [
   },
 
   // --- BR-45 / BR-46 / BR-47 / BR-48: every breakdown group is complete ----
-  (inv) => {
-    const totals = totalsOf(inv);
+  (inv, ctx) => {
+    const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     const out: TeachingError[] = [];
     for (const [index, subtotal] of totals.subtotals.entries()) {
@@ -498,8 +516,8 @@ export const vatRules: RuleFn[] = [
   },
 
   // --- BR-CO-17: VAT amount = taxable x rate / 100, rounded to 2 decimals ---
-  (inv) => {
-    const totals = totalsOf(inv);
+  (inv, ctx) => {
+    const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     const out: TeachingError[] = [];
     for (const [index, subtotal] of totals.subtotals.entries()) {
@@ -539,8 +557,8 @@ export const vatRules: RuleFn[] = [
   },
 
   // --- BR-CO-18: an invoice shall have at least one VAT breakdown group -----
-  (inv) => {
-    const totals = totalsOf(inv);
+  (inv, ctx) => {
+    const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     if (totals.subtotals.length > 0) return null;
     return err({

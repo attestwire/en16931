@@ -14,41 +14,18 @@
 #   JAVA_BIN=/opt/homebrew/opt/openjdk@17/bin/java ./scripts/kosit-check.sh
 set -euo pipefail
 
-VALIDATOR_VERSION="1.6.2"
-CONFIG_VERSION="2026-01-31"
-CONFIG_XR_VERSION="3.0.2"
-
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="${1:-${TMPDIR:-/tmp}/attestwire-kosit}"
-JAVA_BIN="${JAVA_BIN:-java}"
 
-if ! "$JAVA_BIN" -version >/dev/null 2>&1; then
-  echo "error: no Java runtime found." >&2
-  echo "       Install a JDK 11+ and re-run, or point JAVA_BIN at one:" >&2
-  echo "       JAVA_BIN=/path/to/bin/java $0" >&2
-  exit 127
-fi
+# Pinned versions and the download itself live in one place now, shared with
+# scripts/peppol-check.sh and with benchmark/ — see lib/validator-setup.sh.
+# The scratch directory and the artefacts are byte-identical to before.
+. "$(dirname "${BASH_SOURCE[0]}")/lib/validator-setup.sh"
 
-mkdir -p "$WORK_DIR"/{in,out,config}
-cd "$WORK_DIR"
+require_java || exit 127
+ensure_kosit "$WORK_DIR"
 
-VALIDATOR_JAR="validator-${VALIDATOR_VERSION}-standalone.jar"
-CONFIG_ZIP="xrechnung-${CONFIG_XR_VERSION}-validator-configuration-${CONFIG_VERSION}.zip"
+cp "$PKG_DIR"/fixtures/*.xml "$WORK_DIR"/in/
+echo "→ validating $(ls "$WORK_DIR"/in | wc -l | tr -d ' ') fixture(s)"
 
-if [ ! -f "$VALIDATOR_JAR" ]; then
-  echo "→ downloading KoSIT validator ${VALIDATOR_VERSION}"
-  curl -fsSL -o "$VALIDATOR_JAR" \
-    "https://github.com/itplr-kosit/validator/releases/download/v${VALIDATOR_VERSION}/${VALIDATOR_JAR}"
-fi
-
-if [ ! -f "config/scenarios.xml" ]; then
-  echo "→ downloading XRechnung ${CONFIG_XR_VERSION} configuration (${CONFIG_VERSION})"
-  curl -fsSL -o "$CONFIG_ZIP" \
-    "https://github.com/itplr-kosit/validator-configuration-xrechnung/releases/download/v${CONFIG_VERSION}/${CONFIG_ZIP}"
-  unzip -q -o "$CONFIG_ZIP" -d config
-fi
-
-cp "$PKG_DIR"/fixtures/*.xml in/
-echo "→ validating $(ls in | wc -l | tr -d ' ') fixture(s)"
-
-"$JAVA_BIN" -jar "$VALIDATOR_JAR" -s config/scenarios.xml -r config -o out in/*.xml
+kosit_run "$WORK_DIR" "$WORK_DIR/in" "$WORK_DIR/out"

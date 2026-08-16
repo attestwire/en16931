@@ -4,8 +4,16 @@ import {
   PEPPOL_EAS_SCHEME_CODES_SET,
 } from "./codelists/index.js";
 import { documentKindOf } from "./document-type.js";
-import { computeTotals, lineNetAmount, round2 } from "./totals.js";
-import { DOCS, blank, err, isIsoDate, isPeppol, linesOf } from "./rule-kit.js";
+import { lineNetAmount, round2 } from "./totals.js";
+import {
+  DOCS,
+  blank,
+  err,
+  isIsoDate,
+  isPeppol,
+  linesOf,
+  totalsOutcomeOf,
+} from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type {
   BusinessTerm,
@@ -938,15 +946,13 @@ export const peppolRules: RuleFn[] = [
   },
 
   // --- PEPPOL-EN16931-R055: the two VAT totals point the same way --------
-  (inv) => {
+  (inv, ctx) => {
     if (!isPeppol(inv)) return null;
     if (!isNumber(inv.taxAmountInAccountingCurrency)) return null;
-    let taxAmount: number;
-    try {
-      taxAmount = computeTotals(inv).taxAmount;
-    } catch {
-      return null; // the line rules report the underlying defect
-    }
+    const { totals } = totalsOutcomeOf(inv, ctx);
+    // the line rules report the underlying defect
+    if (!totals) return null;
+    const taxAmount = totals.taxAmount;
     const other = inv.taxAmountInAccountingCurrency;
     const sameSign =
       (taxAmount <= 0 && other <= 0) || (taxAmount >= 0 && other >= 0);

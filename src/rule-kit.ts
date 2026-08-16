@@ -1,7 +1,9 @@
+import { computeTotals } from "./totals.js";
 import type {
   DocumentAllowanceCharge,
   InvoiceInput,
   InvoiceLine,
+  InvoiceTotals,
   Party,
   TeachingError,
   VatCategory,
@@ -21,7 +23,14 @@ import type {
  */
 
 export type RuleResult = TeachingError | TeachingError[] | null;
-export type RuleFn = (inv: InvoiceInput) => RuleResult;
+
+/**
+ * A rule. The second argument is the per-run cache described under
+ * {@link RuleContext} — always supplied by `runInputRules`, always optional, so
+ * that calling a rule on its own (a test, or a caller walking the exported
+ * `inputRules` array) still works and still gets the identical answer.
+ */
+export type RuleFn = (inv: InvoiceInput, ctx?: RuleContext) => RuleResult;
 
 /** Base for the per-rule documentation pages. One page per rule id. */
 export const DOCS = "https://attestwire.com/rules";
@@ -197,18 +206,112 @@ export const documentAllowanceCharges = (
 export const allowanceChargePath = (tagged: TaggedAllowanceCharge): string =>
   `${tagged.isCharge ? "charges" : "allowances"}[${tagged.index}]`;
 
+// --- The per-run cache ----------------------------------------------------
+
+/**
+ * What one `computeTotals` call did, throw included.
+ *
+ * `computeTotals` throws — `RangeError` out of `round2` on a non-finite line
+ * amount, `TypeError` when `lines` is not an array at all — and roughly a dozen
+ * rules across six families deliberately swallow that and return `null`,
+ * because BR-22 / BR-24 / BR-26 already report the underlying line defect and a
+ * second finding about the same cent helps nobody.
+ *
+ * That is why this is an *outcome* rather than a nullable total. Caching only
+ * `InvoiceTotals | null` would silently merge two states that are not the same:
+ * "the arithmetic ran and there are no lines" and "the arithmetic threw". One
+ * call site (the credit-note idiom check) does not swallow the throw at all and
+ * must keep not swallowing it, so the error object itself is kept and rethrown
+ * there rather than reconstructed — same error, same message, same identity as
+ * the direct call it replaced.
+ */
+export type TotalsOutcome =
+  | { readonly totals: InvoiceTotals; readonly threw?: undefined }
+  | { readonly totals: null; readonly threw: true; readonly error: unknown };
+
+/** Run `computeTotals` once and record what it did. Never throws. */
+export const computeTotalsOutcome = (inv: InvoiceInput): TotalsOutcome => {
+  try {
+    return { totals: computeTotals(inv) };
+  } catch (error) {
+    return { totals: null, threw: true, error };
+  }
+};
+
+/**
+ * Work shared by every rule in one `runInputRules` pass.
+ *
+ * Profiling a 1000-line invoice put ~10ms of a ~12ms validation run inside
+ * `computeTotals`, which the rule families called about ten times over — once
+ * for the BR-CO declared-totals comparison, once per `-08` family gate, once
+ * for BR-CL-17, once for BR-DE-14, and so on. Every one of those calls is over
+ * the same unchanged `InvoiceInput` and returns the same numbers.
+ *
+ * ⚠ **Run-scoped, and deliberately not a `WeakMap`.** Keying a cache on the
+ * `InvoiceInput` object would be faster still and would be a bug:
+ * `InvoiceInput` is a caller-owned plain object, and the documented, ordinary
+ * way to use this package is validate → fix the field the finding named →
+ * validate again, on the same object reference. A cross-call cache would answer
+ * the second run from the first run's arithmetic and report findings about data
+ * the caller has already corrected. This context is created in `runInputRules`
+ * and unreachable the moment it returns, so no mutation the caller makes
+ * between runs can ever be missed.
+ *
+ * Sharing one `InvoiceTotals` and one tagged allowance/charge array across
+ * rules is safe because no rule mutates either — they filter, map and read.
+ * Nothing in a rule mutates `inv` either, which is what makes one computation
+ * per run provably identical to the ten it replaces.
+ */
+export interface RuleContext {
+  /** `computeTotals(inv)`, run exactly once. */
+  readonly totals: TotalsOutcome;
+  /** `documentAllowanceCharges(inv)`, built exactly once. */
+  readonly allowanceCharges: readonly TaggedAllowanceCharge[];
+}
+
+/** Build the cache. Called once per `runInputRules`, nowhere else. */
+export const makeRuleContext = (inv: InvoiceInput): RuleContext => ({
+  totals: computeTotalsOutcome(inv),
+  allowanceCharges: documentAllowanceCharges(inv),
+});
+
+/**
+ * The run's totals, or a fresh computation when no context was passed.
+ *
+ * The fallback is what keeps `ctx` optional rather than required. `inputRules`
+ * is exported from the package entry point, so a caller may hold a rule
+ * function and invoke it with an invoice alone; that still has to work, and
+ * still has to give the same answer.
+ */
+export const totalsOutcomeOf = (
+  inv: InvoiceInput,
+  ctx?: RuleContext,
+): TotalsOutcome => ctx?.totals ?? computeTotalsOutcome(inv);
+
+/** The run's BG-20/BG-21 entries, or a fresh walk when no context was passed. */
+export const allowanceChargesOf = (
+  inv: InvoiceInput,
+  ctx?: RuleContext,
+): readonly TaggedAllowanceCharge[] =>
+  ctx?.allowanceCharges ?? documentAllowanceCharges(inv);
+
 /**
  * True when the category is used anywhere the per-category `-01` rules look:
  * an invoice line (BT-151), a document level allowance (BT-95) or a document
  * level charge (BT-102). Before wave B only lines could carry a category, so
  * `usesCategory` was the whole answer; it no longer is.
+ *
+ * The `-01` families ask this once per category per rule — nine categories
+ * across half a dozen rules — so it takes the context too; without it each ask
+ * rebuilt the whole tagged array to look at one field.
  */
 export const usesCategoryAnywhere = (
   inv: InvoiceInput,
   cat: VatCategory,
+  ctx?: RuleContext,
 ): boolean =>
   usesCategory(inv, cat) ||
-  documentAllowanceCharges(inv).some((t) => t.entry.vatCategory === cat);
+  allowanceChargesOf(inv, ctx).some((t) => t.entry.vatCategory === cat);
 
 /** BT-31 or BT-32 — either satisfies the "seller is tax-identified" family. */
 export const sellerTaxIdentified = (seller: Party): boolean =>
