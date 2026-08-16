@@ -83,7 +83,7 @@
     <cac:Party>
       <cbc:EndpointID schemeID="9930">DE987654321</cbc:EndpointID>
       <cac:PartyIdentification>
-        <cbc:ID schemeID="0088">4098765000004</cbc:ID>
+        <cbc:ID schemeID="0088">4098765000003</cbc:ID>
       </cac:PartyIdentification>
       <cac:PartyName>
         <cbc:Name>Beispiel Industrie AG</cbc:Name>

@@ -3,6 +3,7 @@ import {
   PEPPOL_EAS_SCHEME_CODES,
   PEPPOL_EAS_SCHEME_CODES_SET,
 } from "./codelists/index.js";
+import { documentKindOf } from "./document-type.js";
 import { computeTotals, lineNetAmount, round2 } from "./totals.js";
 import { DOCS, blank, err, isIsoDate, isPeppol, linesOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
@@ -53,12 +54,35 @@ import type {
  *     `cac:TaxTotal` elements, the `130` on a line document reference, and the
  *     unit code on `cbc:BaseQuantity`. No input can make them fail, so a rule
  *     function for them would assert `true`.
- *   - **Not expressible in the model.** `R002` (at most one document note),
- *     `R080` (at most one project reference) and `R100` (at most one invoiced
- *     object per line) are cardinality limits on fields this model makes
- *     scalar — `note`, `projectReference`, `line.objectIdentifier`. One field,
- *     one element, so the count is one by construction.
- *   - **Not this document.** `P0101` (credit note type codes).
+ *   - **Not expressible in the model.** `R080` (at most one project reference)
+ *     and `R100` (at most one invoiced object per line) are cardinality limits
+ *     on fields this model makes scalar — `projectReference`,
+ *     `line.objectIdentifier`. One field, one element, so the count is one by
+ *     construction.
+ *
+ *     `R002` sat on this list too, on the same grounds — `note` is scalar, so
+ *     `count(cbc:Note) <= 1` holds by construction. That was true of the *UBL*
+ *     assertion and only of the UBL assertion. The CII one, from
+ *     `rules/sch/PEPPOL-EN16931-CII.sch` @ v3.0.20, is a different test under
+ *     the same id and the same title:
+ *
+ *     ```
+ *     count(ram:IncludedNote) <= 1 and not(ram:IncludedNote/ram:SubjectCode)
+ *     ```
+ *
+ *     The second conjunct forbids BT-21 outright, the title says nothing about
+ *     it, and the cardinality reasoning waved the whole assertion through. The
+ *     2026-08-14 conformance run caught it: three committed CII fixtures
+ *     tripping a "no more than one note" rule while carrying exactly one note.
+ *     It is implemented below, as a warning rather than a fatal, because which
+ *     syntax you emit decides whether it bites — see the rule for why.
+ *   - **Not this document.** Nothing, as of 0.7.0. `P0101` (credit note type
+ *     codes) stood here until the Peppol conformance run of 2026-08-14 showed
+ *     what its absence cost: `P0100` was firing on credit notes, which the
+ *     official rule's `cbc:InvoiceTypeCode` context never sees, so this build
+ *     rejected `381` — a code Peppol accepts — on every credit note. Both
+ *     rules are now implemented and each is scoped to the document its context
+ *     element actually appears on, via `documentKindOf`.
  *
  * The fourth thing — "hard, so skipped" — is not on the list. `R120` and the
  * `COMMON` checksums are here.
@@ -613,11 +637,38 @@ const VATEX_CATEGORY_RULES: {
   { rule: "PEPPOL-EN16931-P0111", code: "VATEX-EU-J", category: "E", means: "Intra-community acquisition of works of art" },
 ];
 
-/** UNTDID 1001 codes Peppol billing process 01 admits on an invoice (P0100). */
-const PROFILE_01_INVOICE_TYPE_CODES = new Set([
+/**
+ * UNTDID 1001 codes Peppol billing process 01 admits on an invoice (P0100).
+ *
+ * Verbatim from the assertion's own `tokenize(...)` literal in
+ * `rules/sch/PEPPOL-EN16931-UBL.sch` @ v3.0.20. Its context element is
+ * `cbc:InvoiceTypeCode`, which exists only on `ubl:Invoice` — hence the
+ * document-kind gate on the rule below.
+ */
+export const PROFILE_01_INVOICE_TYPE_CODES: ReadonlySet<string> = new Set([
   "71", "80", "82", "84", "102", "218", "219", "326", "331", "380", "382",
   "383", "384", "386", "388", "393", "395", "553", "575", "623", "780", "817",
   "870", "875", "876", "877",
+]);
+
+/**
+ * UNTDID 1001 codes Peppol billing process 01 admits on a credit note (P0101).
+ *
+ * Verbatim from the assertion's own `tokenize(...)` literal in the same file,
+ * context `cbc:CreditNoteTypeCode`. Five codes against P0100's twenty-six, and
+ * the two lists are disjoint — which is the point: a code is admissible on one
+ * document type or the other, never both, and Peppol decides which by looking
+ * at the element it is written in rather than at the code.
+ *
+ * `81` is on this list and *not* in `CREDIT_NOTE_TYPE_CODES`, because `81`
+ * appears on both halves of BR-CL-01 and this build routes it to `ubl:Invoice`
+ * (see `document-type.ts`). A document this build emits for `81` therefore
+ * carries `cbc:InvoiceTypeCode`, is judged by P0100, and is rejected by it —
+ * which is exactly what the official schematron does to that same document.
+ * The divergence is in the routing, not in either rule.
+ */
+export const PROFILE_01_CREDIT_NOTE_TYPE_CODES: ReadonlySet<string> = new Set([
+  "381", "396", "81", "83", "532",
 ]);
 
 /** BT-3 codes Peppol restricts to German counterparties (P0112). */
@@ -646,6 +697,45 @@ export const peppolRules: RuleFn[] = [
       example: `"buyerReference": "04011000-1234512345-06"`,
       xpath: "/ubl:Invoice/cbc:BuyerReference",
       docsUrl: page("PEPPOL-EN16931-R003"),
+    });
+  },
+
+  // --- PEPPOL-EN16931-R002: Peppol's CII binding has no BT-21 ------------
+  //
+  // WHY THIS IS A WARNING AND NOT A FATAL.
+  //
+  // There are two R002 assertions in the official artefacts, one per syntax,
+  // sharing an id and a title and testing different things. UBL's is
+  // `count(cbc:Note) <= 1 or ($supplierCountryIsDE and $customerCountryIsDE)`,
+  // pure cardinality, which this model satisfies by construction — `note` is
+  // scalar. CII's is
+  // `count(ram:IncludedNote) <= 1 and not(ram:IncludedNote/ram:SubjectCode)`,
+  // which forbids the element BT-21 lives in.
+  //
+  // `profile` names a CIUS, not a syntax, so at validation time this library
+  // does not yet know which of the two documents the caller will generate. On
+  // the UBL path — Peppol's mandatory syntax — `noteSubjectCode` is fine: UBL
+  // has no element for BT-21 at all, so the binding prefixes it onto the note
+  // text as "#AAI#…" and no assertion objects. On the CII path it is fatal.
+  // Calling it fatal here would reject a caller whose target is the syntax
+  // every Peppol receiver must accept; staying silent would let the CII caller
+  // discover it at the access point, or — worse — let `generateCii` drop the
+  // field without saying so. A warning that names both outcomes is the honest
+  // shape. The generator drops the element under `peppol-bis-3` as well, so the
+  // emitted document is conformant either way, and this finding is what tells
+  // the caller that happened.
+  (inv) => {
+    if (!isPeppol(inv)) return null;
+    if (blank(inv.noteSubjectCode)) return null;
+    return err({
+      rule: "PEPPOL-EN16931-R002",
+      field: "BT-21",
+      severity: "warning",
+      message: `The document note subject code (BT-21) is "${inv.noteSubjectCode!.trim()}", and Peppol's CII binding forbids it. The rule is titled "No more than one note is allowed on document level", which is not what its second half does: the test is count(ram:IncludedNote) <= 1 and not(ram:IncludedNote/ram:SubjectCode), so a document carrying exactly one note still fails if that note has a subject code. This is a warning rather than an error because it depends on the syntax you emit, which "peppol-bis-3" does not state. generateXRechnungUBL is unaffected — UBL has no element for BT-21, so its binding folds the code into the note text as "#${inv.noteSubjectCode!.trim()}#…" and Peppol's UBL R002 tests only the note count. generateCii omits the element under this profile, so BT-21 will be absent from the CII document you get back. ${PROFILE_NOTE}`,
+      fix: "Remove noteSubjectCode if you intend to send CII over Peppol, and fold whatever it qualified into the note text itself — the code is a UNTDID 4451 subject qualifier, and Peppol takes the view that a free-text note on a Peppol invoice needs no machine-readable subject. Keep it if you are generating UBL, which is Peppol's mandatory syntax and where the code is carried losslessly.",
+      example: `"note": "Delivery in two parts, the second on 2026-09-01."`,
+      xpath: "/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IncludedNote/ram:SubjectCode",
+      docsUrl: page("PEPPOL-EN16931-R002"),
     });
   },
 
@@ -1013,8 +1103,17 @@ export const peppolRules: RuleFn[] = [
   },
 
   // --- PEPPOL-EN16931-P0100: the type codes the billing process admits ---
+  //
+  // Scoped to invoices on purpose. The official assertion has context
+  // `cbc:InvoiceTypeCode`, an element that appears only on `ubl:Invoice`, so it
+  // never sees a credit note — and until 0.7.0 this rule did, and rejected
+  // `381` under an id the authority would never have raised on that document.
+  // `documentKindOf` is the same function `generate.ts` uses to pick the root
+  // element, so the rule and the emitted XML cannot disagree about which of the
+  // two type-code elements the code is going to land in.
   (inv) => {
     if (!isPeppol(inv)) return null;
+    if (documentKindOf(inv.invoiceTypeCode) !== "invoice") return null;
     const code = (inv.invoiceTypeCode ?? DEFAULT_TYPE_CODE).trim();
     if (blank(code)) return null; // BR-CL-01 / BR-CO-26 report the empty value
     if (PROFILE_01_INVOICE_TYPE_CODES.has(code)) return null;
@@ -1027,6 +1126,25 @@ export const peppolRules: RuleFn[] = [
       example: `"invoiceTypeCode": "380"`,
       xpath: "/ubl:Invoice/cbc:InvoiceTypeCode",
       docsUrl: page("PEPPOL-EN16931-P0100"),
+    });
+  },
+
+  // --- PEPPOL-EN16931-P0101: the same question, asked of a credit note ---
+  (inv) => {
+    if (!isPeppol(inv)) return null;
+    if (documentKindOf(inv.invoiceTypeCode) !== "credit-note") return null;
+    const code = (inv.invoiceTypeCode ?? DEFAULT_TYPE_CODE).trim();
+    if (blank(code)) return null; // BR-CL-01 / BR-CO-26 report the empty value
+    if (PROFILE_01_CREDIT_NOTE_TYPE_CODES.has(code)) return null;
+    return err({
+      rule: "PEPPOL-EN16931-P0101",
+      field: "BT-3",
+      severity: "fatal",
+      message: `The document type code (BT-3) is "${code}", which makes this a credit note — and billing process 01 does not admit that code on a credit note. Peppol scopes its type codes by business process *and* by document: the ProfileID this library emits is urn:fdc:peppol.eu:2017:poacc:billing:01:1.0, and inside it a credit note may carry only 381, 396, 81, 83 or 532. That is a much shorter list than the twenty-six codes PEPPOL-EN16931-P0100 allows on an invoice, and the two lists share nothing — which is deliberate, because in UBL the code lands in a different element on a different root document (cbc:CreditNoteTypeCode on ubl:CreditNote, not cbc:InvoiceTypeCode on ubl:Invoice) and the receiving system branches on that. Note that BR-CL-01 admits a wider credit-note list than this one, so passing it says nothing here. ${PROFILE_NOTE}`,
+      fix: 'Use "381" for an ordinary credit note, which is what almost every credit note in practice is. "396" is a factored credit note, "532" a forwarder\'s credit note. If you meant to issue an invoice rather than a credit note, set invoiceTypeCode to "380" — this build picks the document type from BT-3 alone, so the code is what decided you are looking at this rule and not PEPPOL-EN16931-P0100.',
+      example: `"invoiceTypeCode": "381"`,
+      xpath: "/ubl:CreditNote/cbc:CreditNoteTypeCode",
+      docsUrl: page("PEPPOL-EN16931-P0101"),
     });
   },
 

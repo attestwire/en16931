@@ -236,7 +236,7 @@ export const discountedXRechnung: InvoiceInput = {
     vatId: "DE987654321",
     legalRegistrationId: "HRB 98765",
     legalRegistrationSchemeId: "0060",
-    identifier: { value: "4098765000004", schemeId: "0088" },
+    identifier: { value: "4098765000003", schemeId: "0088" },
     address: {
       line1: "Industriering 42",
       line2: "Gebäude C",
@@ -577,7 +577,7 @@ export const extendedXRechnungCii: InvoiceInput = {
     vatId: "DE987654321",
     legalRegistrationId: "HRB 98765",
     legalRegistrationSchemeId: "0060",
-    identifier: { value: "4098765000004", schemeId: "0088" },
+    identifier: { value: "4098765000003", schemeId: "0088" },
     address: {
       line1: "Behördenweg 9",
       city: "München",
@@ -593,7 +593,7 @@ export const extendedXRechnungCii: InvoiceInput = {
   },
   payee: {
     name: "Factoring Nord AG",
-    identifier: { value: "4011111000005", schemeId: "0088" },
+    identifier: { value: "4011111000007", schemeId: "0088" },
     legalRegistrationId: { value: "HRB 55555", schemeId: "0060" },
   },
   taxRepresentative: {
@@ -608,7 +608,7 @@ export const extendedXRechnungCii: InvoiceInput = {
   },
   deliveryDate: "2026-08-07",
   deliverToName: "Zentrallager Nord",
-  deliverToLocationId: { value: "4098765000011", schemeId: "0088" },
+  deliverToLocationId: { value: "4098765000010", schemeId: "0088" },
   deliverTo: {
     line1: "Rampe 3",
     line2: "Tor B",

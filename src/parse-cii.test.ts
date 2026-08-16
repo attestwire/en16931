@@ -198,7 +198,7 @@ describe("parseCiiInvoice: the groups CII places differently from UBL", () => {
   it("reads the payee and the tax representative", () => {
     expect(invoice.payee?.name).toBe("Factoring Nord AG");
     expect(invoice.payee?.identifier).toEqual({
-      value: "4011111000005",
+      value: "4011111000007",
       schemeId: "0088",
     });
     expect(invoice.taxRepresentative?.vatId).toBe("NL123456789B01");
@@ -208,7 +208,7 @@ describe("parseCiiInvoice: the groups CII places differently from UBL", () => {
   it("splits ShipToTradeParty back into BT-70, BT-71 and BG-15", () => {
     expect(invoice.deliverToName).toBe("Zentrallager Nord");
     expect(invoice.deliverToLocationId).toEqual({
-      value: "4098765000011",
+      value: "4098765000010",
       schemeId: "0088",
     });
     expect(invoice.deliverTo?.city).toBe("Hamburg");

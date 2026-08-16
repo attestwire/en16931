@@ -691,6 +691,19 @@ const BATTERY: [string, InvoiceInput][] = [
     lines: [cleanLine({ baseQuantity: 0 })],
   })],
   ["peppolBadTypeCode", withInvoice({ profile: "peppol-bis-3", invoiceTypeCode: "325" })],
+  // "261" is on the credit-note half of BR-CL-01 and not on the invoice half,
+  // so this build routes it to a ubl:CreditNote — where Peppol judges it by
+  // P0101, whose list is 381/396/81/83/532 and does not contain it. P0100 must
+  // NOT fire here: its context element does not exist on that document.
+  ["peppolBadCreditNoteTypeCode", withInvoice({
+    profile: "peppol-bis-3",
+    invoiceTypeCode: "261",
+  })],
+  ["peppolNoteSubjectCode", withInvoice({
+    profile: "peppol-bis-3",
+    note: "Delivery in two parts.",
+    noteSubjectCode: "AAI",
+  })],
   ["peppolGermanOnlyTypeCode", withInvoice({
     profile: "peppol-bis-3",
     invoiceTypeCode: "384",
@@ -1099,10 +1112,23 @@ describe("every emitted TeachingError", () => {
     // `/ubl:Invoice`, and an XPath naming the wrong one resolves to nothing in
     // the file the reader has open. A finding that can only arise on a credit
     // note must say so.
+    //
+    // Three roots since 0.7.0. `PEPPOL-EN16931-R002` is a constraint the
+    // official artefacts state only in `PEPPOL-EN16931-CII.sch`, on an element
+    // (`ram:SubjectCode`) that has no counterpart in UBL at all — the UBL
+    // binding folds BT-21 into the note text. Pointing its XPath at
+    // `/ubl:Invoice` would name a path that cannot exist in either document the
+    // reader might have open. The list is closed on purpose: a *new* CII XPath
+    // has to be argued for here rather than added by a regex that shrugs.
+    const CII_ROOTED = new Set(["PEPPOL-EN16931-R002"]);
     for (const { fixture, error } of harvested) {
       if (error.xpath === undefined) continue;
       const where = `${fixture} / ${error.rule}`;
-      expect(error.xpath, where).toMatch(/^\/ubl:(Invoice|CreditNote)/);
+      expect(error.xpath, where).toMatch(
+        CII_ROOTED.has(error.rule)
+          ? /^\/rsm:CrossIndustryInvoice/
+          : /^\/ubl:(Invoice|CreditNote)/,
+      );
       expect(error.xpath, where).not.toMatch(/\s/);
     }
   });
@@ -1239,6 +1265,9 @@ describe("rule coverage", () => {
       "PEPPOL-EN16931-CL007", "PEPPOL-EN16931-CL008",
       "PEPPOL-EN16931-P0100", "PEPPOL-EN16931-P0112",
       "PEPPOL-EN16931-P0104",
+      // Added 2026-08-14 by the Peppol conformance run: P0101 was unimplemented
+      // and P0100 was answering for it, R002 was assumed unreachable.
+      "PEPPOL-EN16931-P0101", "PEPPOL-EN16931-R002",
       "PEPPOL-COMMON-R040", "PEPPOL-COMMON-R041", "PEPPOL-COMMON-R042",
       "PEPPOL-COMMON-R043", "PEPPOL-COMMON-R044", "PEPPOL-COMMON-R045",
       "PEPPOL-COMMON-R046", "PEPPOL-COMMON-R047", "PEPPOL-COMMON-R048",

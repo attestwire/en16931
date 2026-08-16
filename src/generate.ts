@@ -152,7 +152,8 @@ export class UnsupportedProfileError extends GenerationError {
         `those. Emitting UBL under a CII profile name would produce a document that ` +
         `passes no validator, so this call refuses rather than returning ` +
         `silently-wrong XML. Note that generateCii emits the CII **XML** — the ` +
-        `PDF/A-3 container that makes Factur-X a Factur-X file is not implemented. ` +
+        `PDF/A-3 container is read (extraction) as of 0.7.0, via extractFacturX; ` +
+        `it is still never built. ` +
         `Set profile to one of ${UBL_GENERATABLE_PROFILES.join(", ")} — "xrechnung-ubl" is ` +
         `the German public-sector default — or validate only with validateInput().`,
     );

@@ -1,6 +1,6 @@
 {
   "name": "@attestwire/en16931",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Generate and validate EN 16931 e-invoices — UBL 2.1 and UN/CEFACT CII (XRechnung, Peppol BIS 3.0, Factur-X payload) — with errors that teach the regulation. TypeScript, zero dependencies.",
   "type": "module",
   "license": "MIT",
@@ -62,6 +62,8 @@
     "fixtures": "npm run build && node scripts/emit-fixtures.mjs",
     "codelists": "node scripts/build-codelists.mjs",
     "kosit": "./scripts/kosit-check.sh",
+    "peppol": "./scripts/peppol-check.sh",
+    "dgfip": "./scripts/dgfip-check.sh",
     "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {

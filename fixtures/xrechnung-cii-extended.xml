@@ -189,7 +189,7 @@
         </ram:SpecifiedTaxRegistration>
       </ram:SellerTradeParty>
       <ram:BuyerTradeParty>
-        <ram:GlobalID schemeID="0088">4098765000004</ram:GlobalID>
+        <ram:GlobalID schemeID="0088">4098765000003</ram:GlobalID>
         <ram:Name>Bundesamt für Musterangelegenheiten</ram:Name>
         <ram:SpecifiedLegalOrganization>
           <ram:ID schemeID="0060">HRB 98765</ram:ID>
@@ -265,7 +265,7 @@
     </ram:ApplicableHeaderTradeAgreement>
     <ram:ApplicableHeaderTradeDelivery>
       <ram:ShipToTradeParty>
-        <ram:GlobalID schemeID="0088">4098765000011</ram:GlobalID>
+        <ram:GlobalID schemeID="0088">4098765000010</ram:GlobalID>
         <ram:Name>Zentrallager Nord</ram:Name>
         <ram:PostalTradeAddress>
           <ram:PostcodeCode>20095</ram:PostcodeCode>
@@ -294,7 +294,7 @@
       <ram:TaxCurrencyCode>SEK</ram:TaxCurrencyCode>
       <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
       <ram:PayeeTradeParty>
-        <ram:GlobalID schemeID="0088">4011111000005</ram:GlobalID>
+        <ram:GlobalID schemeID="0088">4011111000007</ram:GlobalID>
         <ram:Name>Factoring Nord AG</ram:Name>
         <ram:SpecifiedLegalOrganization>
           <ram:ID schemeID="0060">HRB 55555</ram:ID>

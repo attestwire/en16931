@@ -5,6 +5,185 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-08-14
+
+**We were rejecting credit notes Peppol accepts.** `PEPPOL-EN16931-P0100` was
+written against `inv.invoiceTypeCode` without asking which document the code
+would land on, so a credit note carrying `381` — the ordinary credit-note code —
+came back `valid: false` under `profile: "peppol-bis-3"`. The official rule has
+context `cbc:InvoiceTypeCode`, an element a UBL credit note does not have; the
+rule that judges credit notes is `P0101`, and its list admits `381`. That is a
+false positive on a document the authority accepts, which is the error class
+this package works hardest to avoid.
+
+### Migration notes
+
+Everything here that changes behaviour changes it for `peppol-bis-3` users.
+
+- **`PEPPOL-EN16931-P0100` no longer fires on credit notes.** If you suppressed
+  it to ship credit notes over Peppol, delete the suppression. Documents that
+  were `valid: false` for this reason alone are now `valid: true`.
+
+- **`PEPPOL-EN16931-P0101` is new, and fatal.** It is the rule that *should*
+  have been judging your credit notes: BT-3 must be one of `381`, `396`, `81`,
+  `83` or `532`. A credit note carrying anything else was wrongly accepted
+  before and is refused now.
+
+- **`PEPPOL-EN16931-R002` is new, and a warning.** It fires on
+  `noteSubjectCode` (BT-21) under `peppol-bis-3`. Warning rather than fatal on
+  purpose: the assertion under that id differs between the two syntaxes — UBL's
+  is pure cardinality, CII's additionally forbids `ram:SubjectCode` — and
+  `profile` names a CIUS, not a syntax. Making it fatal would reject a caller
+  targeting UBL, which is the syntax every Peppol receiver must accept.
+
+- **`generateCii` now accepts `peppol-bis-3`, and drops BT-21 when it does.**
+  See below. If you were catching `UnsupportedCiiProfileError` for this profile,
+  that path is now unreachable.
+
+- **Three GLNs in the shipped fixtures changed value.** If you assert on fixture
+  literals: `4098765000004` → `4098765000003`, `4098765000011` → `4098765000010`,
+  `4011111000005` → `4011111000007`.
+
+### Peppol BIS Billing 3.0 does have a CII binding, and we said it did not
+
+`generateCii` refused `peppol-bis-3` with the reason "Peppol BIS Billing 3.0 is
+a UBL-only CIUS". That reason was false. OpenPEPPOL ships
+`rules/sch/PEPPOL-EN16931-CII.sch` — 602 lines, 87 assertions — and a
+`peppolbis-en16931-01-3.0-cii` build configuration, and the BIS guide describes
+CII **D16B**, the version this package already emits, as *optional*: UBL is
+mandatory for every receiver, CII is accepted by receivers who register for it
+in the SMP. Optional is not absent, and the restriction was this library making
+a commercial decision on the caller's behalf under cover of a technical claim.
+
+- **Added** — `peppol-bis-3` to `CII_GENERATABLE_PROFILES`. The refusal message
+  for `xrechnung-ubl`, the one genuinely UBL-bound profile name, was rewritten
+  to stop repeating the false claim.
+
+- **Changed** — under `peppol-bis-3` only, the CII generator omits BT-21
+  (`ram:SubjectCode`). `PEPPOL-EN16931-R002` forbids the element outright, which
+  its title ("No more than one note is allowed on document level") does not say
+  and its test does — three committed fixtures were tripping a *cardinality*
+  rule while carrying exactly one note. Dropping a business term the caller
+  supplied is data loss, so it is paired with the `R002` finding above:
+  `validateInput` tells you the rule before you ever generate, and the generator
+  drops the element so the document is conformant. Every other CII profile keeps
+  BT-21 untouched.
+
+- **Fixed** — three of the four GLNs in the fixture data failed their GS1 mod-10
+  check digit, and `PEPPOL-COMMON-R040` caught them. Eleven clean KoSIT runs
+  never could: `R040` is one of the Peppol rules the XRechnung schematron does
+  not carry. The new guard in `fixtures-gln.test.ts` deliberately does not assert
+  the corrected literals — a transcription is what was wrong in the first place —
+  but recomputes the check digit over every scheme-`0088` identifier reachable
+  from the exported fixtures and from the generated XML.
+
+### Verified against OpenPEPPOL's own artefacts
+
+Peppol BIS Billing 3.0.20, ISO Schematron reference implementation, Saxon-HE
+12.5, from a clean scratch directory. Full record and method in
+`scripts/peppol-check.md`; the original findings are left intact and the rerun
+is an appended addendum.
+
+| | Before | After |
+| --- | --- | --- |
+| UBL documents accepted | 3 of 5 | **5 of 5** |
+| CII documents accepted | not generatable | **5 of 5** |
+| Total findings across all reports | 3 | **0** |
+
+Rules fired: CEN 66–128 and Peppol 33–86 per UBL document, CEN 96–189 and Peppol
+16–35 per CII document. The counts are quoted because a schematron that finds
+nothing and one that never ran produce the same empty report. The negative
+control is in the record too: the six `xrechnung-cii` fixtures through the same
+compiled artefact in the same run produce 9 findings, so the empty report is a
+verdict rather than a silence.
+
+Two things that run did **not** settle, both in the addendum. There is no XSD
+leg for CII — OpenPEPPOL ships no schemas and UN/CEFACT publishes no pinnable
+D16B URL — so nothing in this repo XSD-validates a `peppol-bis-3` CII document.
+And `PEPPOL-EN16931-CII.sch` @ v3.0.20 gives `P0100` the context
+`ram:ExchangedDocument/ram:TypeCode`, an element that does not exist (it is
+`rsm:ExchangedDocument`), so the rule never fires in the CII artefact: the clean
+CII rows are not evidence that our type codes are right for Peppol CII, because
+the authority did not look. This build is stricter than the artefact there, and
+that was left alone rather than loosened to match a typo.
+
+### The PDF/A-3 container is now read. It is still never built.
+
+Every previous release said the container was neither read nor built. Half of
+that changes here, deliberately, and the prose has been updated everywhere it
+appeared.
+
+- **Added** — `extractFacturX(bytes, limits?)` → `{ xml, attachmentName,
+  warnings }`. It reads the embedded-file name tree and the `/AF` array,
+  preferring `factur-x.xml`, `zugferd-invoice.xml` and `xrechnung.xml` in that
+  order and accepting any other `.xml` attachment with a warning. `warnings`
+  carries what was survivable but worth knowing: a non-standard attachment name,
+  a missing or non-`Alternative` `/AFRelationship`, more than one XML
+  attachment, an attachment that is not a `CrossIndustryInvoice`.
+
+- **Zero dependencies still holds, including the decompressor.** Classic
+  cross-reference tables, cross-reference streams, object streams, `/Prev`
+  chains and `FlateDecode` with PNG predictors are all parsed here, and RFC 1951
+  DEFLATE is implemented in this package rather than delegated to
+  `DecompressionStream`. That API exists in Node 18+ and every modern browser
+  and is asynchronous; using it would have made the one PDF entry point `async`
+  and pushed a promise through every caller for what is pure CPU over a buffer
+  already in memory. The hand-written inflater has no feature-detection hole and
+  keeps the package callable from synchronous code.
+
+- **Not implemented, and not planned: writing one.** The two directions are not
+  symmetrical. Extraction either returns the attachment or throws; a
+  half-conformant PDF/A-3 writer — fonts, colour profile, XMP metadata, a
+  conformance claim a validator checks, `/AFRelationship` — would produce files
+  that look like Factur-X and are not.
+
+- **Hostile input is bounded and named.** Output size, compression ratio, object
+  count, cross-reference chain length, name-tree depth and object nesting all
+  have caps in `DEFAULT_PDF_LIMITS`, and object streams may not contain object
+  streams. Failures are `PdfParseError`, `PdfSecurityError`,
+  `PdfUnsupportedFilterError` or `FacturXNotFoundError`, each with a stable
+  `code` and a byte offset where one is known — never a bare `TypeError` out of
+  the parser. Tested against truncated files, garbage xrefs, a self-referential
+  `/Prev`, a cyclic name tree, an 8 MiB flate bomb, a dangling embedded-file
+  reference, unsupported and encrypting filters, random bytes, and every
+  truncation of a valid file at 37-byte intervals.
+
+The fixtures are real: three PDFs from FeRD's own ZUGFeRD 2.5.2 example package,
+covering both cross-reference styles, with source URL, in-zip path and sha256
+recorded in `fixtures/facturx/README.md`. FNFE-MPE's example package could not
+be obtained — the public pages link schemas and annexes but no example archive —
+and that is recorded there rather than papered over with an unofficial mirror.
+
+### CI reports: SARIF 2.1.0 and JUnit XML
+
+- **Added** — `toSarif(findings, provenance)` returns a SARIF 2.1.0 log object,
+  and `toJunitXml(findings, provenance, options?)` returns a JUnit XML string.
+  Rule id → `ruleId`, severity → `level`, XPath → a SARIF *logical* location
+  (never a fabricated line number a UI would then underline), `docsUrl` →
+  `helpUri`, engine and ruleset versions → `tool.driver` metadata.
+
+- Both are **pure**. Every varying value, including the timestamp, arrives in
+  `provenance`, so the same inputs produce byte-identical output and two reports
+  can be diffed without a clock making every line change.
+
+- The SARIF is validated in the test suite against the **normative OASIS
+  schema**, checked in with its sha256, and the check is proved to have teeth by
+  a negative control: five deliberately corrupted logs must be rejected. A
+  schema test without one is indistinguishable from a validator that returns
+  `true`.
+
+- JUnit maps `fatal` → `<failure>`, and leaves `warning` and `information` as
+  passing test cases with `<system-out>` unless you pass
+  `{ warningsAsFailures: true }`. The default therefore agrees exactly with
+  `ValidationResult.valid`: a warning is something the official validator raises
+  and then accepts the document anyway, and turning a build red for one would
+  misreport the regulator. Note that **there is no official JUnit schema** —
+  JUnit never specified the format — so the output is checked against the
+  Jenkins xUnit plugin's `junit-10.xsd`, which is the de-facto artefact and is
+  labelled as such rather than as a standard.
+
+Tests: 1,282 → **1,356**.
+
 ## [0.6.0] — 2026-08-14
 
 **A document total that is not there is now a finding.** Both readers populated

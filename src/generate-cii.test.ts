@@ -506,27 +506,69 @@ describe("generateCii: refusals", () => {
     ).toBe("urn:cen.eu:en16931:2017");
   });
 
-  it("throws on the UBL profiles rather than emitting CII under a UBL name", () => {
-    for (const profile of ["xrechnung-ubl", "peppol-bis-3"] as const) {
-      expect(() => generateCii({ ...minimal, profile })).toThrow(
-        UnsupportedCiiProfileError,
-      );
-    }
+  // ⚠ Narrowed 2026-08-14. This test used to loop over
+  // ["xrechnung-ubl", "peppol-bis-3"], on the belief — stated in the generator's
+  // own doc-comment — that Peppol BIS Billing 3.0 is a UBL-only CIUS. It is not:
+  // OpenPEPPOL/peppol-bis-invoice-3 @ v3.0.20 ships PEPPOL-EN16931-CII.sch and a
+  // `peppolbis-en16931-01-3.0-cii` build configuration, and the BIS guide
+  // describes CII D16B as optional rather than absent. `xrechnung-ubl` is the
+  // only genuinely UBL-bound profile name left, and it is refused because
+  // `xrechnung-cii` is the name for the same rules in this syntax.
+  it("throws on the UBL-bound profile rather than emitting CII under a UBL name", () => {
+    expect(() =>
+      generateCii({ ...minimal, profile: "xrechnung-ubl" }),
+    ).toThrow(UnsupportedCiiProfileError);
   });
 
   it("the profile error teaches what is and is not supported", () => {
     let caught: unknown;
     try {
-      generateCii({ ...minimal, profile: "peppol-bis-3" });
+      generateCii({ ...minimal, profile: "xrechnung-ubl" });
     } catch (error) {
       caught = error;
     }
     const err = caught as UnsupportedCiiProfileError;
     expect(err).toBeInstanceOf(GenerationError);
     expect(err.code).toBe("unsupported_profile");
-    expect(err.profile).toBe("peppol-bis-3");
+    expect(err.profile).toBe("xrechnung-ubl");
     expect(err.supportedProfiles).toContain("xrechnung-cii");
+    expect(err.supportedProfiles).toContain("peppol-bis-3");
     expect(err.message).toContain("generateXRechnungUBL");
+  });
+
+  // --- peppol-bis-3, the CII binding enabled in 0.7.0 ---------------------
+  //
+  // Both facts below are what the official artefacts checked on 2026-08-14, and
+  // both were findings in `scripts/peppol-check.md` before they were tests:
+  // R004 (specification identifier) and R002 (`not(ram:IncludedNote/
+  // ram:SubjectCode)`).
+  it("emits Peppol's specification identifier under peppol-bis-3", () => {
+    const root = parse(generateCii({ ...minimal, profile: "peppol-bis-3" }));
+    expect(
+      textAt(
+        root,
+        "rsm:ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID",
+      ),
+    ).toBe(
+      "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0",
+    );
+    expect(
+      textAt(
+        root,
+        "rsm:ExchangedDocumentContext/BusinessProcessSpecifiedDocumentContextParameter/ID",
+      ),
+    ).toBe("urn:fdc:peppol.eu:2017:poacc:billing:01:1.0");
+  });
+
+  it("drops BT-21 under peppol-bis-3, and keeps it everywhere else", () => {
+    const noted = { ...minimal, note: "Delivery in two parts.", noteSubjectCode: "AAI" };
+    const peppol = generateCii({ ...noted, profile: "peppol-bis-3" });
+    expect(peppol).toContain("Delivery in two parts.");
+    expect(peppol).not.toContain("ram:SubjectCode");
+    for (const profile of ["en16931", "xrechnung-cii", "facturx-en16931"] as const) {
+      const other = generateCii({ ...noted, profile });
+      expect(other, profile).toContain("<ram:SubjectCode>AAI</ram:SubjectCode>");
+    }
   });
 
   it("throws on an unknown profile rather than silently defaulting", () => {

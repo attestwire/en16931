@@ -47,7 +47,9 @@ import type {
  *     is stated once, in `ram:InvoiceCurrencyCode`.
  *
  * What this does **not** do is produce a PDF. Factur-X and ZUGFeRD are this XML
- * embedded in a PDF/A-3 container; `generateCii` emits the XML half only.
+ * embedded in a PDF/A-3 container; `generateCii` emits the XML half only. The
+ * container is read (extraction) as of 0.7.0 — see `extractFacturX` in
+ * `facturx-pdf.ts` — and it is still never built.
  */
 
 const NS = {
@@ -66,14 +68,28 @@ export const CII_NAMESPACES = NS;
  * `xrechnung-cii` and `facturx-en16931` are CII by definition. `en16931` is
  * syntax-neutral — the core standard is expressed in both UBL and CII — so it
  * is generatable here as well as by `generateXRechnungUBL`, and you choose the
- * syntax by choosing the function. `peppol-bis-3` is absent because Peppol BIS
- * Billing 3.0 is a UBL-only CIUS; `xrechnung-ubl` is absent for the mirror
- * reason.
+ * syntax by choosing the function.
+ *
+ * **`peppol-bis-3` is here as of 0.7.0, and was wrongly absent before it.** The
+ * doc-comment used to say Peppol BIS Billing 3.0 was "a UBL-only CIUS". It is
+ * not. OpenPEPPOL/peppol-bis-invoice-3 @ v3.0.20 ships
+ * `rules/sch/PEPPOL-EN16931-CII.sch` (602 lines, 87 assertions),
+ * `rules/buildconfig.xml` declares a `peppolbis-en16931-01-3.0-cii`
+ * configuration, and `guide/bis/appendix/cii.adoc` describes CII **D16B** —
+ * the same version this generator emits — as optional in the BIS: UBL is
+ * mandatory for every receiver, CII is accepted by receivers who register for
+ * it in the SMP. So the correct statement is that CII on Peppol is optional,
+ * not absent, and refusing to emit it was refusing something the specification
+ * allows. `scripts/peppol-check.md` records the run that settled it.
+ *
+ * `xrechnung-ubl` is still absent, and that one really is syntax-bound: it
+ * names the UBL half of XRechnung, and `xrechnung-cii` is its CII sibling.
  */
 export const CII_GENERATABLE_PROFILES = [
   "en16931",
   "xrechnung-cii",
   "facturx-en16931",
+  "peppol-bis-3",
 ] as const satisfies readonly Profile[];
 
 export type CiiGeneratableProfile = (typeof CII_GENERATABLE_PROFILES)[number];
@@ -89,10 +105,11 @@ export class UnsupportedCiiProfileError extends GenerationError {
       `generateCii cannot generate the "${profile}" profile. ` +
         `It emits UN/CEFACT CII (D16B) syntax only, which covers: ` +
         `${CII_GENERATABLE_PROFILES.join(", ")}. ` +
-        `"xrechnung-ubl" and "peppol-bis-3" are UBL profiles — Peppol BIS Billing 3.0 ` +
-        `is a UBL-only CIUS — so generate those with generateXRechnungUBL instead. ` +
-        `Emitting CII under a UBL profile name would produce a document that passes no ` +
-        `validator, so this call refuses rather than returning silently-wrong XML.`,
+        `"xrechnung-ubl" names the UBL binding of XRechnung specifically — use ` +
+        `generateXRechnungUBL for it, or "xrechnung-cii" for the same rules in CII. ` +
+        `Emitting CII under a UBL-bound profile name would produce a document that ` +
+        `passes no validator, so this call refuses rather than returning ` +
+        `silently-wrong XML.`,
     );
     this.profile = profile;
   }
@@ -353,8 +370,9 @@ function invoicedObjectNode(identifier: {
  * echoes caller-supplied totals into the XML.
  *
  * **This is XML, not a PDF.** `facturx-en16931` here means the Factur-X CII
- * payload. The PDF/A-3 container that makes it a Factur-X *file* is not
- * implemented.
+ * payload. The PDF/A-3 container that makes it a Factur-X *file* is read
+ * (extraction) as of 0.7.0 via `extractFacturX`; it is still never built, so
+ * nothing in this module writes one.
  */
 export function generateCii(
   inv: InvoiceInput,
@@ -823,11 +841,37 @@ export function generateCii(
         // BT-21 has a real element here. UBL has none, which is why its binding
         // prefixes the code onto the note text as "#CODE#…"; CII does not, and
         // writing the prefix into ram:Content would corrupt BT-22.
+        //
+        // …except on Peppol, which forbids the element outright. The second
+        // half of PEPPOL-EN16931-CII R002 —
+        //   count(ram:IncludedNote) <= 1 and not(ram:IncludedNote/ram:SubjectCode)
+        // — is fatal, and its title ("No more than one note is allowed on
+        // document level") does not mention it, which is how the 2026-08-14
+        // conformance run found three committed CII fixtures tripping a
+        // cardinality rule while carrying exactly one note. So BT-21 is dropped
+        // under peppol-bis-3 and only under peppol-bis-3: every other CII
+        // profile keeps it, because EN 16931, XRechnung and Factur-X all admit
+        // it and silently discarding a business term for them would lose data
+        // the caller supplied.
+        //
+        // **This drop is not silent.** `validateInput` reports
+        // PEPPOL-EN16931-R002 as a warning on any `peppol-bis-3` input carrying
+        // `noteSubjectCode`, naming this omission, so a caller learns the rule
+        // before they generate rather than finding a business term missing from
+        // the XML afterwards. Dropping it here is the second half of that pair:
+        // the finding teaches, and this keeps the emitted document conformant
+        // for a caller who generated without validating first. Throwing instead
+        // was considered and rejected — it would fail a document over a field
+        // Peppol's own mandatory syntax accepts, and BT-21 is optional in EN
+        // 16931.
+
         inv.note === undefined
           ? null
           : groupAlways("ram:IncludedNote", [
               el("ram:Content", inv.note),
-              el("ram:SubjectCode", inv.noteSubjectCode),
+              inv.profile === "peppol-bis-3"
+                ? null
+                : el("ram:SubjectCode", inv.noteSubjectCode),
             ]),
       ]),
       groupAlways("rsm:SupplyChainTradeTransaction", [

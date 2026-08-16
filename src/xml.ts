@@ -26,10 +26,21 @@ export function escapeAttr(value: string): string {
  * Strip characters that are not legal in XML 1.0 at all (control characters
  * other than tab/LF/CR). These cannot be escaped — they must be removed, or the
  * document is not well-formed no matter how it is encoded.
+ *
+ * Unpaired surrogates go too. A lone U+D800–U+DFFF is a legal JavaScript string
+ * element and not a character at all in XML terms: it has no UTF-8 encoding, so
+ * a document containing one is ill-formed however carefully the rest is
+ * escaped. Well-formed pairs are left exactly as they are — an emoji in a
+ * trading name is a real character and must survive.
  */
 export function stripInvalidXmlChars(value: string): string {
-  // eslint-disable-next-line no-control-regex
-  return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]/g, "");
+  return (
+    value
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]/g, "")
+      .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+      .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+  );
 }
 
 function renderAttrs(attrs?: Attrs): string {

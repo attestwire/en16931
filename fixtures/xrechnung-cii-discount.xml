@@ -179,7 +179,7 @@
         </ram:SpecifiedTaxRegistration>
       </ram:SellerTradeParty>
       <ram:BuyerTradeParty>
-        <ram:GlobalID schemeID="0088">4098765000004</ram:GlobalID>
+        <ram:GlobalID schemeID="0088">4098765000003</ram:GlobalID>
         <ram:Name>Beispiel Industrie AG</ram:Name>
         <ram:SpecifiedLegalOrganization>
           <ram:ID schemeID="0060">HRB 98765</ram:ID>

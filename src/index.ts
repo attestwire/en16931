@@ -42,6 +42,38 @@ export {
   fromCiiDate,
   type ParseCiiOptions,
 } from "./parse-cii.js";
+/**
+ * Reading the Factur-X / ZUGFeRD PDF container — new in 0.7.0.
+ *
+ * Extraction only. The container is read; it is still never built. See the
+ * module doc-comment in `facturx-pdf.ts` for why that asymmetry is deliberate.
+ */
+export {
+  extractFacturX,
+  DEFAULT_PDF_LIMITS,
+  PdfError,
+  PdfParseError,
+  PdfSecurityError,
+  PdfUnsupportedFilterError,
+  FacturXNotFoundError,
+  type PdfLimits,
+  type FacturXExtraction,
+} from "./facturx-pdf.js";
+
+/**
+ * Findings → SARIF 2.1.0 and JUnit XML, for CI pipelines — new in 0.7.0.
+ *
+ * Both are pure functions over the findings `validateInput` already returns;
+ * neither reads the clock or the filesystem.
+ */
+export {
+  toSarif,
+  toJunitXml,
+  type ExportProvenance,
+  type JunitOptions,
+  type Findings,
+} from "./export.js";
+
 export {
   parseXml,
   attr,

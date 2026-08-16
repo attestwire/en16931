@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { validateInput } from "./index.js";
+import {
+  PROFILE_01_CREDIT_NOTE_TYPE_CODES,
+  PROFILE_01_INVOICE_TYPE_CODES,
+} from "./rules-peppol.js";
 import { allIds, clean, cleanLine, errorIds, findingFor, warningIds, withInvoice } from "./testkit.js";
 import type { InvoiceInput, Party } from "./types.js";
 
@@ -650,6 +654,166 @@ describe("PEPPOL-EN16931-P0100 / P0112 — invoice type codes", () => {
   });
 });
 
+/**
+ * The two type-code lists, checked against the authority rather than against a
+ * transcription of it.
+ *
+ * The strings below are copied byte-for-byte out of
+ * `rules/sch/PEPPOL-EN16931-UBL.sch` in **OpenPEPPOL/peppol-bis-invoice-3 @
+ * v3.0.20** (the 2025 November release; tarball sha256
+ * `54b9ada9b866338c629789d30593162f90f1d76654d978266244932aabe02802`, see
+ * `scripts/peppol-check.sh` for how to fetch it). The tests parse the code list
+ * back out of the assertion's own `tokenize(...)` literal and compare it with
+ * the Sets this build validates against, so a hand-edited list here fails
+ * rather than passes.
+ *
+ * `String.raw` is used so the backslash in `'\s'` survives unescaped and the
+ * source here reads exactly as the file does, rather than as `'\\s'`.
+ *
+ * The `context` attribute is quoted with each one because it is half the rule.
+ * Getting the list right and the context wrong is exactly the defect the
+ * 2026-08-14 conformance run found: `P0100` was firing on credit notes, whose
+ * `cbc:InvoiceTypeCode` element does not exist, and rejecting `381`.
+ */
+const OFFICIAL_P0100 = String.raw`<rule context="cbc:InvoiceTypeCode">
+      <assert id="PEPPOL-EN16931-P0100"
+        test="
+          $profile != '01' or (some $code in tokenize('71 80 82 84 102 218 219 326 331 380 382 383 384 386 388 393 395 553 575 623 780 817 870 875 876 877', '\s')
+            satisfies normalize-space(text()) = $code)"
+        flag="fatal">Invoice type code MUST be set according to the profile.</assert>`;
+
+const OFFICIAL_P0101 = String.raw`<rule context="cbc:CreditNoteTypeCode">
+      <assert id="PEPPOL-EN16931-P0101"
+        test="
+          $profile != '01' or (some $code in tokenize('381 396 81 83 532', '\s')
+            satisfies normalize-space(text()) = $code)"
+        flag="fatal">Credit note type code MUST be set according to the profile.</assert>`;
+
+/** The token list inside the assertion's own `tokenize('…', '\s')` call. */
+const tokensOf = (assertion: string): string[] => {
+  const match = /tokenize\('([^']*)', '\\s'\)/.exec(assertion);
+  if (!match) throw new Error("no tokenize() literal in the quoted assertion");
+  return match[1].split(/\s+/).filter(Boolean);
+};
+
+describe("the P0100 / P0101 code lists match the official schematron", () => {
+  it("P0100 validates against the invoice list, verbatim", () => {
+    expect(OFFICIAL_P0100).toContain(`context="cbc:InvoiceTypeCode"`);
+    expect([...PROFILE_01_INVOICE_TYPE_CODES].sort()).toEqual(
+      tokensOf(OFFICIAL_P0100).sort(),
+    );
+    expect(tokensOf(OFFICIAL_P0100)).toHaveLength(26);
+  });
+
+  it("P0101 validates against the credit-note list, verbatim", () => {
+    expect(OFFICIAL_P0101).toContain(`context="cbc:CreditNoteTypeCode"`);
+    expect([...PROFILE_01_CREDIT_NOTE_TYPE_CODES].sort()).toEqual(
+      tokensOf(OFFICIAL_P0101).sort(),
+    );
+    expect(tokensOf(OFFICIAL_P0101)).toHaveLength(5);
+  });
+
+  it("keeps the two lists disjoint, as the authority does", () => {
+    const shared = tokensOf(OFFICIAL_P0100).filter((code) =>
+      tokensOf(OFFICIAL_P0101).includes(code),
+    );
+    expect(shared).toEqual([]);
+  });
+});
+
+describe("PEPPOL-EN16931-P0101 — credit note type codes", () => {
+  it("accepts 381, which this build used to reject under P0100", () => {
+    // The regression. Peppol ACCEPTS both credit-note fixtures; this build
+    // refused them until 0.7.0, under an id whose context element does not
+    // exist on a ubl:CreditNote.
+    const ids = allIds(peppol({ invoiceTypeCode: "381" }));
+    expect(ids).not.toContain("PEPPOL-EN16931-P0100");
+    expect(ids).not.toContain("PEPPOL-EN16931-P0101");
+  });
+
+  it("rejects a credit-note code outside billing process 01", () => {
+    // 261 ("self billed credit note") is on the credit-note half of BR-CL-01,
+    // so this build emits a ubl:CreditNote for it — and P0101's list has five
+    // codes, none of them 261.
+    gatedFatal("PEPPOL-EN16931-P0101", { invoiceTypeCode: "261" });
+  });
+
+  it("does not also fire P0100 on a credit note", () => {
+    expect(allIds(peppol({ invoiceTypeCode: "261" }))).not.toContain(
+      "PEPPOL-EN16931-P0100",
+    );
+  });
+
+  it("does not fire on an invoice, whatever the invoice code", () => {
+    for (const code of ["380", "325", "384"]) {
+      expect(allIds(peppol({ invoiceTypeCode: code })), code).not.toContain(
+        "PEPPOL-EN16931-P0101",
+      );
+    }
+  });
+
+  it("accepts every code the official list carries", () => {
+    for (const code of tokensOf(OFFICIAL_P0101)) {
+      // "81" routes to a ubl:Invoice in this build (it is on both halves of
+      // BR-CL-01), so it is judged by P0100 — which does not list it, and
+      // neither does the official P0100. Same verdict as the authority reaches
+      // on the same document, under the same id.
+      const ids = allIds(peppol({ invoiceTypeCode: code }));
+      expect(ids, code).not.toContain("PEPPOL-EN16931-P0101");
+      if (code === "81") expect(ids).toContain("PEPPOL-EN16931-P0100");
+    }
+  });
+});
+
+/**
+ * `PEPPOL-EN16931-R002`, from `rules/sch/PEPPOL-EN16931-CII.sch` @ v3.0.20.
+ *
+ * Quoted alongside its UBL namesake because the pair is the whole point: one
+ * id, one title, two different tests, and only the CII one forbids BT-21.
+ */
+const OFFICIAL_R002_CII = `<rule context="rsm:ExchangedDocument">
+      <assert id="PEPPOL-EN16931-R002" test="count(ram:IncludedNote) &lt;= 1 and not(ram:IncludedNote/ram:SubjectCode)" flag="fatal">No more than one note is allowed on document level.</assert>`;
+
+const OFFICIAL_R002_UBL = `<assert id="PEPPOL-EN16931-R002"
+        test="count(cbc:Note) &lt;= 1 or ($supplierCountryIsDE and $customerCountryIsDE)"
+        flag="fatal">No more than one note is allowed on document level, unless both the buyer and seller are German organizations.</assert>`;
+
+describe("PEPPOL-EN16931-R002 — BT-21 on the Peppol CII binding", () => {
+  it("is the CII assertion, and only the CII one, that forbids SubjectCode", () => {
+    expect(OFFICIAL_R002_CII).toContain("not(ram:IncludedNote/ram:SubjectCode)");
+    expect(OFFICIAL_R002_UBL).not.toContain("SubjectCode");
+    // Same id, same title, different test. That is why the rule below is a
+    // warning: which syntax you emit decides whether it bites.
+    expect(OFFICIAL_R002_CII).toContain(
+      "No more than one note is allowed on document level.",
+    );
+  });
+
+  it("warns on peppol-bis-3 when noteSubjectCode is set", () => {
+    const input = peppol({ note: "Delivery in two parts.", noteSubjectCode: "AAI" });
+    expect(warningIds(input)).toContain("PEPPOL-EN16931-R002");
+    expect(errorIds(input)).not.toContain("PEPPOL-EN16931-R002");
+  });
+
+  it("stays silent on xrechnung-ubl and on a Peppol input without the code", () => {
+    expect(
+      allIds(xrechnung({ note: "Delivery in two parts.", noteSubjectCode: "AAI" })),
+    ).not.toContain("PEPPOL-EN16931-R002");
+    expect(allIds(peppol({ note: "Delivery in two parts." }))).not.toContain(
+      "PEPPOL-EN16931-R002",
+    );
+  });
+
+  it("names both syntaxes, so the caller can tell whether it applies to them", () => {
+    const finding = findingFor(
+      peppol({ note: "n", noteSubjectCode: "AAI" }),
+      "PEPPOL-EN16931-R002",
+    );
+    expect(finding?.message).toContain("generateCii");
+    expect(finding?.message).toContain("generateXRechnungUBL");
+  });
+});
+
 describe("PEPPOL-EN16931-P0104..P0111 — a VATEX code names its category", () => {
   const withCategory = (
     category: "E" | "AE" | "K" | "G" | "O",
@@ -727,6 +891,8 @@ describe("the teaching contract holds for the Peppol family", () => {
     }),
     peppol({ lines: [cleanLine({ baseQuantity: 0 })] }),
     peppol({ invoiceTypeCode: "325" }),
+    peppol({ invoiceTypeCode: "261" }),
+    peppol({ note: "Delivery in two parts.", noteSubjectCode: "AAI" }),
     peppol({
       invoiceTypeCode: "384",
       precedingInvoices: [{ invoiceNumber: "x" }],
@@ -757,7 +923,9 @@ describe("the teaching contract holds for the Peppol family", () => {
       "PEPPOL-EN16931-R055", "PEPPOL-EN16931-R061", "PEPPOL-EN16931-R110",
       "PEPPOL-EN16931-R111", "PEPPOL-EN16931-R121",
       "PEPPOL-EN16931-CL007", "PEPPOL-EN16931-CL008",
-      "PEPPOL-EN16931-P0100", "PEPPOL-EN16931-P0112", "PEPPOL-EN16931-P0104",
+      "PEPPOL-EN16931-P0100", "PEPPOL-EN16931-P0101",
+      "PEPPOL-EN16931-P0112", "PEPPOL-EN16931-P0104",
+      "PEPPOL-EN16931-R002",
       "PEPPOL-COMMON-R040",
     ];
     for (const rule of expected) expect([...seen], rule).toContain(rule);
