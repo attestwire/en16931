@@ -1,0 +1,74 @@
+name: Rule or CIUS coverage
+description: A rule set, CIUS or national extension you need that this engine doesn't cover yet.
+labels: ["rule-coverage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Coverage gets added where people are actually being judged. Tell us
+        what you're being judged against, and what's stopping you today.
+
+  - type: input
+    id: rule-set
+    attributes:
+      label: Rule set or CIUS
+      description: The name and version, as your counterparty or authority states it.
+      placeholder: "XRechnung 3.0.2 / Peppol BIS Billing 3.0.20 / Factur-X EN 16931 / a national extension"
+    validations:
+      required: true
+
+  - type: textarea
+    id: rule-ids
+    attributes:
+      label: Rule IDs, if you know them
+      description: >-
+        The specific rules you need checked. If you only have the rejection
+        message a portal gave you, paste that — the ID is usually in it.
+      placeholder: |
+        BR-NL-1, BR-NL-10
+        or: "Foutcode 1002: afleveradres ontbreekt"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: sample
+    attributes:
+      label: Sample document
+      description: >-
+        Official test suites are much faster to implement against, because the
+        expected verdicts come with them.
+      options:
+        - There's an official test suite, and I can link it
+        - I can share a synthetic sample document
+        - I have real documents I can't share
+        - No sample available
+    validations:
+      required: true
+
+  - type: input
+    id: sample-link
+    attributes:
+      label: Link to the rule set or test suite
+      description: Schematron, specification PDF, or a repository of test files.
+      placeholder: "https://..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: current-tool
+    attributes:
+      label: What catches this for you today
+      description: >-
+        KoSIT, a hosted validator, a receiving portal that rejects the document,
+        or nobody at all, so you find out when the invoice bounces. This is how
+        we work out what the gap costs you.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Deadlines, a mandate date you're working towards, how many documents this affects.
+    validations:
+      required: false

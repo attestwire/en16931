@@ -1,0 +1,87 @@
+name: Bug report
+description: A wrong verdict, a crash, or something that doesn't behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The fastest fixes come from reports with a document in them, even a
+        cut-down one. If your report is about a rule or CIUS this engine
+        doesn't cover yet, use the **Rule or CIUS coverage** form instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you got, and what you expected instead.
+      placeholder: |
+        I validated an XRechnung UBL invoice with a zero-rated line and got
+        BR-S-05, but KoSIT accepts the same file.
+    validations:
+      required: true
+
+  - type: textarea
+    id: document
+    attributes:
+      label: Minimal XML snippet or fixture
+      description: >-
+        The smallest document that still reproduces it. Trim it as far as you
+        can, but a whole invoice is much better than nothing. Replace real
+        names, VAT IDs and IBANs with synthetic ones before pasting.
+        If you can add it under `fixtures/` with a failing test, link the PR
+        here instead.
+      render: xml
+    validations:
+      required: true
+
+  - type: input
+    id: expected
+    attributes:
+      label: Expected rule ID or verdict
+      description: >-
+        Which rule should have fired, or should not have. If you're expecting a
+        clean pass, say so.
+      placeholder: "Expected: no finding. Got: BR-S-05 (fatal)."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: syntax
+    attributes:
+      label: Syntax
+      options:
+        - UBL 2.1
+        - UN/CEFACT CII (D16B)
+        - Factur-X / ZUGFeRD PDF
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Engine version
+      description: The `@attestwire/en16931` version you're on.
+      placeholder: "0.7.3"
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime
+      description: Node, Deno, Bun, Cloudflare Workers, browser — and the version, if you have it.
+      placeholder: "Node 22.14"
+    validations:
+      required: false
+
+  - type: textarea
+    id: other-validators
+    attributes:
+      label: What another validator says
+      description: >-
+        If you've run the same document through KoSIT, a CEN schematron, a
+        Peppol access point or a receiving portal, paste what it said. That
+        settles which side of the disagreement is wrong.
+    validations:
+      required: false
