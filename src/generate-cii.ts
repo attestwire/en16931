@@ -7,6 +7,7 @@ import {
   formatPrice,
 } from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
+import { taxPointCodeToCii } from "./cii-tax-point-code.js";
 import { resolveTypeCode } from "./document-type.js";
 import {
   CUSTOMIZATION_IDS,
@@ -651,7 +652,12 @@ export function generateCii(
           ]),
       position > 0
         ? null
-        : el("ram:DueDateTypeCode", inv.invoicingPeriod?.descriptionCode),
+        : el(
+            "ram:DueDateTypeCode",
+            // BT-8's code list is syntax-specific: the model holds the EN
+            // 16931 / UBL code and CII writes the UNTDID 2475 equivalent.
+            taxPointCodeToCii(inv.invoicingPeriod?.descriptionCode),
+          ),
       sub.rate === undefined
         ? null
         : el("ram:RateApplicablePercent", formatNumber(sub.rate)),

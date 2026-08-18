@@ -85,6 +85,77 @@ const DEC_SPECS: DecSpec[] = [
   },
 ];
 
+/**
+ * The BR-DEC id, label and advice for a business term measured on its
+ * *serialised* form. Keyed by BT number so the parsers never have to know a
+ * rule id.
+ */
+const LEXICAL_SPECS: Record<
+  string,
+  { rule: string; label: string; xpath: string; why: string }
+> = {
+  "BT-106": {
+    rule: "BR-DEC-09",
+    label: "Sum of Invoice line net amounts",
+    xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount",
+    why: DEC_SPECS[0]!.why,
+  },
+  "BT-107": {
+    rule: "BR-DEC-10",
+    label: "Sum of allowances on document level",
+    xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount",
+    why: "It is a sum of already-rounded document allowance amounts (BT-92), so extra decimals here mean one of those escaped rounding, or the sum was taken before it.",
+  },
+  "BT-108": {
+    rule: "BR-DEC-11",
+    label: "Sum of charges on document level",
+    xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount",
+    why: "It is a sum of already-rounded document charge amounts (BT-99), so extra decimals here mean one of those escaped rounding, or the sum was taken before it.",
+  },
+  "BT-109": {
+    rule: "BR-DEC-12",
+    label: "Invoice total amount without VAT",
+    xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount",
+    why: DEC_SPECS[1]!.why,
+  },
+  "BT-110": {
+    rule: "BR-DEC-13",
+    label: "Invoice total VAT amount",
+    xpath: "/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount",
+    why: DEC_SPECS[2]!.why,
+  },
+  "BT-112": {
+    rule: "BR-DEC-14",
+    label: "Invoice total amount with VAT",
+    xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount",
+    why: DEC_SPECS[3]!.why,
+  },
+  "BT-115": {
+    rule: "BR-DEC-18",
+    label: "Amount due for payment",
+    xpath: "/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount",
+    why: DEC_SPECS[4]!.why,
+  },
+  "BT-116": {
+    rule: "BR-DEC-19",
+    label: "VAT category taxable amount",
+    xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount",
+    why: "The taxable amount is a sum of already-rounded line amounts, less already-rounded document allowances, plus already-rounded document charges.",
+  },
+  "BT-117": {
+    rule: "BR-DEC-20",
+    label: "VAT category tax amount",
+    xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount",
+    why: "Applying a percentage produces a long decimal nearly every time, which is why BR-CO-17 requires the multiplication to be rounded to two decimals at the group.",
+  },
+  "BT-131": {
+    rule: "BR-DEC-23",
+    label: "Invoice line net amount",
+    xpath: "/ubl:Invoice/cac:InvoiceLine/cbc:LineExtensionAmount",
+    why: "A line amount is exactly where decimals accumulate, because it is a quantity multiplied by a price and then adjusted by allowances and charges. EN 16931 requires the line to be rounded once, at the end, to two decimals.",
+  },
+};
+
 export const decimalRules: RuleFn[] = [
   // ATW-DECLARED-TOTAL-NOT-FINITE: ours, not the regulator's.
   //
@@ -170,11 +241,77 @@ export const decimalRules: RuleFn[] = [
     return out;
   },
 
+  // --- BR-DEC-*, on the value the DOCUMENT serialised ----------------------
+  //
+  // The gap this closes was found by the benchmark's own adversarial corpus
+  // (adv-huge-decimal-precision.xml, 2026-08-16): a line net amount written
+  // `1500.000000` — six decimal places, numerically identical to 1500.00, every
+  // total still balancing. The CEN schematron rejects it under BR-DEC-23 and
+  // UBL-DT-01. We reported nothing, because by the time any rule ran the value
+  // was a JavaScript number and `1500.000000` and `1500` are the same double.
+  //
+  // The BR-DEC family is a LEXICAL family. It measures
+  // `string-length(substring-after(., '.'))` on the text in the XML, so a
+  // reader that keeps only the parsed number has thrown away the one thing the
+  // rule looks at. The two parsers now count the digits at the point of
+  // reading, into `declaredTotals.overPrecise`, and this reports them.
+  //
+  // The rule ids are the ones this build already ships, mapped by business
+  // term. A term with no id here — BT-111, BT-113, BT-114 — records nothing
+  // rather than borrowing a neighbour's id: a confidently wrong rule id sends
+  // the reader to the wrong page of the standard, and is worse than silence
+  // that the CHANGELOG names.
+  (inv) => {
+    const raw = inv.declaredTotals?.overPrecise;
+    if (!Array.isArray(raw)) return null;
+    const out: TeachingError[] = [];
+    for (const entry of raw) {
+      // Defensive for the same reason `usableDefects` is: `DeclaredTotals` is a
+      // public type and the JSON surfaces hand `validateInput` whatever was
+      // posted. A malformed entry is ignored, never thrown on.
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
+      const spec = LEXICAL_SPECS[String(entry.field)];
+      if (!spec) continue;
+      const decimals = entry.decimals;
+      if (typeof decimals !== "number" || !Number.isFinite(decimals) || decimals <= 2) {
+        continue;
+      }
+      const text = typeof entry.text === "string" ? entry.text : "";
+      const where =
+        typeof entry.line === "number"
+          ? ` on line ${entry.line}`
+          : typeof entry.group === "number"
+            ? ` in VAT breakdown group ${entry.group}`
+            : "";
+      out.push(
+        err({
+          rule: spec.rule,
+          field: entry.field,
+          severity: "fatal",
+          message: `The allowed maximum number of decimals for the ${spec.label} (${entry.field}) is 2, but the document writes${where} ${JSON.stringify(text)}, which has ${decimals}. BR-DEC rules are measured on the serialised value, not on the number behind it: trailing zeros count, so ${JSON.stringify(text)} fails even though it is arithmetically identical to a two-decimal amount and every total in the document still balances. ${spec.why}`,
+          fix: `Serialise the amount with exactly two decimal places. This is almost always a formatting setting rather than a data problem — a ledger or ORM emitting its native decimal scale (six places is the usual default) straight into the XML. Fixing it at the point of serialisation fixes every amount in the document at once.`,
+          example: `<${(typeof entry.xpath === "string" ? entry.xpath : "").split("/").pop() || "Amount"}>${text.split(".")[0] ?? "0"}.00</${(typeof entry.xpath === "string" ? entry.xpath : "").split("/").pop() || "Amount"}>`,
+          xpath: typeof entry.xpath === "string" ? entry.xpath : spec.xpath,
+          docsUrl: `${DOCS}/${spec.rule}`,
+        }),
+      );
+    }
+    return out;
+  },
+
   (inv) => {
     const declared = inv.declaredTotals;
     if (!declared) return null;
+    // A term already reported from its serialised form is not reported again
+    // from its parsed value: same defect, same rule id, two findings.
+    const alreadyLexical = new Set(
+      (Array.isArray(declared.overPrecise) ? declared.overPrecise : [])
+        .map((entry) => (entry && typeof entry === "object" ? String(entry.field) : ""))
+        .filter(Boolean),
+    );
     const out: TeachingError[] = [];
     for (const spec of DEC_SPECS) {
+      if (alreadyLexical.has(spec.field)) continue;
       const value = declared[spec.key];
       if (typeof value !== "number" || !Number.isFinite(value)) continue;
       const places = decimalPlaces(value);

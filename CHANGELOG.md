@@ -5,6 +5,110 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] — 2026-08-16
+
+**Nine defects, found by running our verdicts against the regulator's own
+validators on 169 documents.** The new private conformance harness compares
+`@attestwire/en16931` against KoSIT with the XRechnung 3.0.2 configuration, the
+CEN EN 16931 schematrons and Peppol BIS 3.0.20, per rule id, on the official
+test suites. Its first run disagreed on 139 rule cells and put scoped agreement
+— agreement over the rules we actually claim to implement — at 18.59%. It is
+now 96.08%, with **zero** rules the official validators raise and we miss, and
+every one of the twelve remaining differences named and classified.
+
+The headline defect was one idea, wrong in one place, showing up 74 times.
+BR-CO-13, BR-CO-15 and BR-CO-16 are chained identities between figures the
+document *states* — BT-109 = BT-106 − BT-107 + BT-108, BT-112 = BT-109 + BT-110,
+BT-115 = BT-112 − BT-113 + BT-114 — and we were comparing each declared total
+against our own recomputation of the invoice lines instead. One line whose
+quantity × price rounds a cent away from its stated BT-131 moved the recomputed
+BT-106, and the shift propagated through all three: a single cent produced three
+fatal findings on 26 documents that every official validator accepts. If you
+have been getting one-cent BR-CO-15 rejections from this library on documents
+nobody else objects to, this release is why they stop.
+
+Everything else in this release is the same shape of mistake in smaller places:
+a rule about what the document says, asked of what we computed, or a CII binding
+assumed to be the UBL one. Two are the other direction — documents we passed and
+a portal would have rejected.
+
+⚠ **Verdicts change in both directions.** Documents that failed here and passed
+everywhere else now pass. Documents that passed here and would have been
+rejected by a portal now fail: a seller identified only by a trading name
+(BR-06), a line net amount serialised at six decimal places (BR-DEC-23), a
+seller identified only by a national tax number (BR-CO-26).
+
+### Fixed
+
+- **BR-CO-13 / BR-CO-15 / BR-CO-16** are checked against the document's own
+  stated chain rather than against a recomputation of the lines. BR-CO-10 and
+  BR-CO-14 already had this reading; these three did not. Line-versus-stated is
+  still checked — by BR-CO-10 on BT-106, BR-CO-14 on BT-110 and
+  `PEPPOL-EN16931-R120` per line — so nothing is lost except three findings that
+  counted the same cent three times. 74 false positives over 26 documents; also
+  closes a **BR-CO-13** silent miss, which is the same defect seen from the
+  other side.
+- **BR-DEC-09 / -10 / -11 / -12 / -13 / -14 / -18 / -19 / -20 / -23** are now
+  measured on the *serialised* decimal, which is what the rules are written
+  against (`string-length(substring-after(., '.')) <= 2`). Both readers threw
+  the text away, and `1500.000000` is the same double as `1500.00` — so a line
+  amount written at six decimal places balanced every total, fired no arithmetic
+  rule, and we reported nothing while the CEN schematron rejected it under
+  BR-DEC-23. Trailing zeros count, because the regulator counts them.
+- **BR-06 / BR-07**: BT-27 and BT-44 are read only from
+  `cac:PartyLegalEntity/cbc:RegistrationName`. `cac:PartyName/cbc:Name` is
+  BT-28/BT-45, the trading name — a different term with a different meaning —
+  and the reader fell back from one to the other, so a seller name appeared
+  where the document stated none and BR-06 could not fire. The trading name
+  still lands in `tradingName`; a parse → generate round trip is unchanged.
+- **BR-CO-26** reads BT-29, BT-30 and BT-31, the three terms the rule names. It
+  accepted BT-32, which the rule does not list, and ignored BT-29, which it
+  does: wrong in both directions at once.
+- **BR-DE-14** checks the stated VAT breakdown. It is a presence check on
+  `cbc:Percent`, and we asked it of our computed breakdown, which never carries
+  a rate for category O by construction — so a document stating
+  `<cbc:Percent>0</cbc:Percent>` on its category-O group satisfied KoSIT and
+  failed here.
+- **BR-61 / BR-50 / BR-DE-23-a**: BT-84 is read from `ram:ProprietaryID` as well
+  as `ram:IBANID`. The CII binding uses one element for an IBAN and the other
+  for any other account; reading only the first left a document with no payment
+  account identifier at all.
+- **BR-CL-06**: BT-8's code list is syntax-specific — UNTDID 2005 (`3`, `35`,
+  `432`) in UBL, UNTDID 2475 (`5`, `29`, `72`) in CII, one rule id checking two
+  disjoint sets. We applied the UBL list to both. Translated at the syntax
+  boundary so the model keeps one value; a code in neither list is still
+  reported.
+- **BR-DE-5**: BT-41 is read from `ram:DepartmentName` as well as
+  `ram:PersonName`. Either satisfies the rule; we read only the first, so a
+  document naming a department had no seller contact point.
+- **BR-53** is satisfied when the VAT accounting currency (BT-6) equals the
+  invoice currency (BT-5): the document's own BT-110 is then the amount the rule
+  looks for, and no second VAT total is needed. Peppol forbids the
+  equal-currency case outright (`PEPPOL-EN16931-R005`), so nothing there is
+  loosened.
+- A **UBL root element over content that is not UBL** — the commonest real case
+  being a CII payload whose root was renamed — is refused as
+  `unsupported_syntax` instead of being read as an invoice missing thirteen
+  mandatory terms. An empty `<Invoice/>` is still read and reported term by
+  term.
+
+### Changed
+
+- The default XML size cap (`maxCharacters`) rises from 400,000 to **8,000,000**
+  characters. The old value refused five documents the official validators
+  accept, including a 3.29 MB CEN example whose bulk is a single base64
+  attachment — twelve milliseconds to parse and 0.4 MB retained. `maxElements`
+  is what actually bounds tree retention and is unchanged at 50,000; measured
+  worst case at the new default is 35 ms and 16.3 MB. Callers who set the limit
+  explicitly are unaffected.
+
+### Added
+
+- `TreeReader.numberAt` and `countLexicalDecimals`, which keep an amount's
+  serialised form beside its value, and `DeclaredTotals.overPrecise`, where the
+  readers record it. Written by the parsers only; a caller building an
+  `InvoiceInput` by hand has no lexical form to over-serialise.
+
 ## [0.7.2] — 2026-08-15
 
 **`<cbc:TaxAmount>12,34</cbc:TaxAmount>` validated clean. It should not have.**

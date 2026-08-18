@@ -37,6 +37,7 @@ import {
 } from "./xml-reader.js";
 import {
   DECLARED_TOTAL_TERMS,
+  noteLexicalPrecision,
   readDeclaredTotal,
   readDeclaredTotalValue,
   TAX_AMOUNT_ACCOUNTING_TERM,
@@ -54,6 +55,7 @@ import type {
   ItemAttribute,
   ItemClassification,
   LineAllowanceCharge,
+  OverPreciseAmount,
   Party,
   Payee,
   PaymentCard,
@@ -235,7 +237,26 @@ function readParty(
   // BT-27/BT-44 is the registered legal name; BT-28/BT-45 is the trading name.
   // When the two agree the document has only one name, so `tradingName` stays
   // unset and the generator re-emits exactly what was read.
-  const name = registrationName ?? tradingName ?? "";
+  //
+  // ⚠ THERE IS NO FALLBACK FROM BT-28 TO BT-27, and there used to be
+  // (`registrationName ?? tradingName ?? ""`). EN 16931's UBL binding maps
+  // BT-27 to `cac:PartyLegalEntity/cbc:RegistrationName` and nothing else;
+  // `cac:PartyName/cbc:Name` is BT-28, a different business term with a
+  // different meaning — the name you trade under, which is not the name on the
+  // register. Reading one as the other made a seller name appear where the
+  // document stated none, so BR-06 (and BR-07 for the buyer) could not fire.
+  //
+  // Found by the benchmark, 2026-08-16:
+  // peppol-examples/GR/GR-base-example-TaxRepresentative.xml carries a
+  // `cac:PartyName` and no `cac:PartyLegalEntity` at all. The Peppol
+  // schematron raises BR-06 on it; we passed it silently, which is the worst
+  // shape of defect this engine can have — an invoice we call valid and the
+  // receiving portal rejects.
+  //
+  // Nothing is lost from the model: the trading name still lands in
+  // `tradingName`, so a parse → generate round trip re-emits the same
+  // `cac:PartyName` it read.
+  const name = registrationName ?? "";
 
   const party: Party = { name, address: { city: "", postalCode: "", countryCode: "" } };
   if (tradingName !== undefined && tradingName !== name) {
@@ -366,6 +387,8 @@ function isCharge(r: Reader, el: XmlElement): boolean {
 interface ReadLineResult {
   line: InvoiceLine;
   declaredNetAmount?: number;
+  /** BT-131 exactly as the line writes it, for BR-DEC-23. See `OverPreciseAmount`. */
+  declaredNetLexical?: { lexical: string; xpath: string };
 }
 
 function readLine(
@@ -414,7 +437,8 @@ function readLine(
   // is what happened until 0.4.0) meant a line whose stated total disagreed
   // with its own arithmetic validated with zero errors, while KoSIT rejected
   // the same document under BR-CO-10 and PEPPOL-EN16931-R120.
-  const declaredNetAmount = r.number(el, CBC, "LineExtensionAmount");
+  const declaredNet = r.numberAt(el, CBC, "LineExtensionAmount");
+  const declaredNetAmount = declaredNet?.value;
 
   set(line, "note", r.cbc(el, "Note"));
   set(line, "buyerAccountingReference", r.cbc(el, "AccountingCost"));
@@ -504,6 +528,12 @@ function readLine(
 
   const result: ReadLineResult = { line };
   if (declaredNetAmount !== undefined) result.declaredNetAmount = declaredNetAmount;
+  if (declaredNet) {
+    result.declaredNetLexical = {
+      lexical: declaredNet.lexical,
+      xpath: declaredNet.xpath,
+    };
+  }
   return result;
 }
 
@@ -557,6 +587,45 @@ export function parseUbl(
       root.qname,
       root.namespace,
       "The document is not a UBL invoice or credit note.",
+    );
+  }
+
+  // A UBL root with children, none of which are UBL.
+  //
+  // Every child of a UBL 2.1 Invoice or CreditNote is in the cbc: or cac:
+  // namespace — there is no third option in the schema. A root that says
+  // "Invoice" over content in some other vocabulary is not a UBL invoice that
+  // is missing terms; it is a different document wearing a UBL root element,
+  // and the commonest real case is a CII payload whose root was renamed
+  // (benchmark corpus: adversarial/adv-cii-in-ubl-clothing.xml, well-formed
+  // XML that defeats any router keying off the root name alone).
+  //
+  // Reading it anyway produced thirteen findings — BR-02, BR-03, BR-05, BR-06,
+  // BR-07, BR-09, BR-11 … — every one of them saying a mandatory term was
+  // missing, and every one of them pointing at the wrong problem. That is
+  // exactly the failure `UnsupportedSyntaxError`'s own message describes, so it
+  // is the answer here too.
+  //
+  // A root with NO children at all is deliberately not caught: an empty
+  // <Invoice/> is a UBL invoice that states nothing, and BR-02..BR-15 saying so
+  // one term at a time is the useful answer for it.
+  if (
+    root.children.length > 0 &&
+    !root.children.some((child) => child.namespace === CBC || child.namespace === CAC)
+  ) {
+    const seen = [...new Set(root.children.map((child) => child.namespace))]
+      .filter(Boolean)
+      .slice(0, 3);
+    throw new UnsupportedSyntaxError(
+      root.qname,
+      root.namespace,
+      `The root element names a UBL document, but nothing inside it is UBL: none of its ` +
+        `${root.children.length} child element(s) are in the UBL CommonBasicComponents or ` +
+        `CommonAggregateComponents namespace${
+          seen.length > 0 ? `, which is where every child of a UBL invoice lives. Found instead: ${seen.map((ns) => `"${ns}"`).join(", ")}.` : "."
+        } A document whose root has been renamed over another syntax's content reads as an ` +
+        `invoice with every mandatory term missing, and the resulting findings all point at ` +
+        `the wrong problem.`,
     );
   }
 
@@ -853,6 +922,10 @@ export function parseUbl(
   // exemption reasons (BT-120 / BT-121), which are free text.
   const declared: DeclaredTotals = {};
   const defects: DeclaredTotalDefect[] = [];
+  // BR-DEC-19/-20/-23 and the BR-DEC document-total rules are written against
+  // the serialised decimal, so the count has to be taken while the text is
+  // still in hand. See `OverPreciseAmount`.
+  const overPrecise: OverPreciseAmount[] = [];
   const declaredSubtotals: DeclaredTaxSubtotal[] = [];
   const exemptionReasons: Partial<Record<VatCategory, string>> = {};
   const exemptionReasonCodes: Partial<Record<VatCategory, string>> = {};
@@ -886,6 +959,7 @@ export function parseUbl(
           TAX_AMOUNT_ACCOUNTING_TERM,
           amountEl.path,
           defects,
+          overPrecise,
         );
         if (value !== undefined) invoice.taxAmountInAccountingCurrency = value;
       }
@@ -912,6 +986,7 @@ export function parseUbl(
         TAX_AMOUNT_TERM,
         amountEl.path,
         defects,
+        overPrecise,
       );
       if (value !== undefined) declared.taxAmount = value;
     }
@@ -923,8 +998,17 @@ export function parseUbl(
       // `valid: true` with zero errors while KoSIT rejected the same document
       // under BR-S-08 (or its per-category sibling) and BR-CO-14.
       const stated: DeclaredTaxSubtotal = {};
-      set(stated, "taxableAmount", r.num(subtotal, "TaxableAmount"));
-      set(stated, "taxAmount", r.num(subtotal, "TaxAmount"));
+      const group = declaredSubtotals.length + 1;
+      const statedTaxable = r.numberAt(subtotal, CBC, "TaxableAmount");
+      const statedTax = r.numberAt(subtotal, CBC, "TaxAmount");
+      set(stated, "taxableAmount", statedTaxable?.value);
+      set(stated, "taxAmount", statedTax?.value);
+      if (statedTaxable) {
+        noteLexicalPrecision(overPrecise, "BT-116", statedTaxable.lexical, statedTaxable.xpath, { group });
+      }
+      if (statedTax) {
+        noteLexicalPrecision(overPrecise, "BT-117", statedTax.lexical, statedTax.xpath, { group });
+      }
       const category = r.cac(subtotal, "TaxCategory");
       if (!category) {
         if (Object.keys(stated).length > 0) declaredSubtotals.push(stated);
@@ -969,6 +1053,7 @@ export function parseUbl(
       declared,
       defects,
       CBC,
+      overPrecise,
     );
   }
   if (monetaryTotal) {
@@ -986,6 +1071,20 @@ export function parseUbl(
   invoice.lines = readLines.map((read) => read.line);
   if (readLines.some((read) => read.declaredNetAmount !== undefined)) {
     declared.lineNetAmounts = readLines.map((read) => read.declaredNetAmount);
+    invoice.declaredTotals = declared;
+  }
+  for (const [index, read] of readLines.entries()) {
+    if (!read.declaredNetLexical) continue;
+    noteLexicalPrecision(
+      overPrecise,
+      "BT-131",
+      read.declaredNetLexical.lexical,
+      read.declaredNetLexical.xpath,
+      { line: index + 1 },
+    );
+  }
+  if (overPrecise.length > 0) {
+    declared.overPrecise = overPrecise;
     invoice.declaredTotals = declared;
   }
 

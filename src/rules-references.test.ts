@@ -1064,3 +1064,35 @@ describe("every finding this family emits", () => {
     expect(seen.size).toBeGreaterThan(20);
   });
 });
+
+// ---------------------------------------------------------------------------
+// BR-53 when BT-6 equals BT-5.
+//
+// The schematron looks for a VAT total carrying the accounting currency, and
+// when the accounting currency IS the invoice currency, BT-110 is that amount:
+// the document needs no second VAT total. Found on
+// cen-ubl-examples/examples/sample-discount-price.xml (benchmark, 2026-08-16),
+// which declares BT-5 = BT-6 = EUR — the CEN schematron accepts it and we
+// rejected it.
+describe("BR-53 and the equal-currency case", () => {
+  it("is satisfied when the VAT accounting currency is the invoice currency", () => {
+    const ids = allIds(
+      withInvoice({ currency: "EUR", vatAccountingCurrency: "EUR", profile: "en16931" }),
+    );
+    expect(ids).not.toContain("BR-53");
+  });
+
+  it("still fires when the currencies genuinely differ and BT-111 is absent", () => {
+    const ids = allIds(
+      withInvoice({ currency: "EUR", vatAccountingCurrency: "SEK", profile: "en16931" }),
+    );
+    expect(ids).toContain("BR-53");
+  });
+
+  it("still fires for BT-111 with no BT-6", () => {
+    const ids = allIds(
+      withInvoice({ taxAmountInAccountingCurrency: 285, profile: "en16931" }),
+    );
+    expect(ids).toContain("BR-53");
+  });
+});

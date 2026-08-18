@@ -292,6 +292,22 @@ const BATTERY: [string, InvoiceInput][] = [
       payableAmount: 1,
     },
   })],
+  // BR-CO-13 and BR-CO-16 are chain links, and since 0.7.3 they are checked
+  // against the figures the document itself states rather than against our
+  // recomputation of the lines. `badTotals` above no longer reaches either of
+  // them: with every total stated as 1, BT-109 = BT-106 − 0 + 0 and
+  // BT-115 = BT-112 − 0 + 0 both hold, and only BR-CO-15 (1 ≠ 1 + 1) breaks.
+  // This fixture breaks the two links instead: BT-109 is 100 below
+  // BT-106, and BT-115 is 685 below BT-112, while every other identity holds.
+  ["brokenTotalsChain", withInvoice({
+    declaredTotals: {
+      lineExtensionAmount: 1500,
+      taxExclusiveAmount: 1400,
+      taxAmount: 285,
+      taxInclusiveAmount: 1685,
+      payableAmount: 1000,
+    },
+  })],
   ["overPreciseTotals", withInvoice({
     declaredTotals: {
       lineExtensionAmount: 1500.001,

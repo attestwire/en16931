@@ -600,10 +600,29 @@ export const referenceRules: RuleFn[] = [
   // TaxCurrencyCode there is nothing to match against. We report it here
   // anyway, under BR-53, because the input is meaningless and this build's
   // generator would silently drop the amount.
+  //
+  // ⚠ BT-6 EQUAL TO BT-5 SATISFIES IT, and it did not until 0.7.3. The
+  // schematron looks for a VAT total carrying the accounting currency —
+  // `every $taxcurrency in cbc:TaxCurrencyCode satisfies exists(//cac:TaxTotal/
+  // cbc:TaxAmount[@currencyID=$taxcurrency])` — and when the two currencies are
+  // the same, BT-110 is that amount. The document then states one VAT total and
+  // needs no second one. Our reader resolves the BT-110/BT-111 ambiguity by
+  // position (the first TaxTotal is always BT-110, which is what stops a
+  // corrupt BT-110 from being read as BT-111 and silently skipping BR-CO-14),
+  // so `taxAmountInAccountingCurrency` stays undefined on such a document and
+  // BR-53 demanded a figure that was already there. Found on
+  // cen-ubl-examples/examples/sample-discount-price.xml, which declares
+  // BT-5 = BT-6 = EUR; the CEN schematron accepts it and we rejected it.
+  //
+  // Peppol forbids the equal-currency case outright (PEPPOL-EN16931-R005), so
+  // nothing here loosens a Peppol document.
   (inv) => {
     const currency = inv.vatAccountingCurrency;
     const amount = inv.taxAmountInAccountingCurrency;
-    if (!blank(currency) && amount === undefined) {
+    const sameCurrency =
+      !blank(currency) &&
+      normalise(currency!).toUpperCase() === normalise(inv.currency ?? "").toUpperCase();
+    if (!blank(currency) && amount === undefined && !sameCurrency) {
       return err({
         rule: "BR-53",
         field: "BT-111",

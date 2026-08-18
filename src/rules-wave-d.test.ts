@@ -35,6 +35,8 @@ const core = (over: Partial<InvoiceInput> = {}): InvoiceInput => ({
   seller: {
     name: "Seller GmbH",
     taxRegistrationId: "12/345/67890",
+    // BR-CO-26 names BT-29/BT-30/BT-31; BT-32 is not one of them.
+    legalRegistrationId: "HRB 12345",
     address: { line1: "Str 1", city: "Berlin", postalCode: "10115", countryCode: "DE" },
   },
   buyer: {

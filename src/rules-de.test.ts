@@ -43,6 +43,31 @@ describe("BR-DE-14 VAT category rate on every breakdown", () => {
       expect(allIds(inv)).not.toContain("BR-DE-14");
     }
   });
+
+  // The rule is a presence check on cbc:Percent, so a document that states the
+  // element satisfies it — even for category O, where our own computed
+  // breakdown never carries a rate because BR-O-05 forbids one on the line.
+  // Found by the benchmark, 2026-08-16:
+  // kosit-testsuite/standard/01.04a-INVOICE_ubl.xml states
+  // <cbc:Percent>0</cbc:Percent> on its category-O group, KoSIT accepts it, and
+  // we rejected it. Four cells, in both syntaxes.
+  it("does not fire when the document states BT-119 on a category-O group", () => {
+    const inv = outOfScope({
+      declaredTotals: {
+        subtotals: [{ category: "O" as const, rate: 0, taxableAmount: 1500, taxAmount: 0 }],
+      },
+    });
+    expect(allIds(inv)).not.toContain("BR-DE-14");
+  });
+
+  it("still fires when the document states a breakdown group with no BT-119", () => {
+    const inv = outOfScope({
+      declaredTotals: {
+        subtotals: [{ category: "O" as const, taxableAmount: 1500, taxAmount: 0 }],
+      },
+    });
+    expect(errorIds(inv)).toContain("BR-DE-14");
+  });
 });
 
 describe("BR-DE-18 Skonto grammar in BT-20", () => {

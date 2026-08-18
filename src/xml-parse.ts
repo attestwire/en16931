@@ -50,24 +50,43 @@ export interface XmlLimits {
    * Maximum length of the input, in characters (UTF-16 code units).
    *
    * Stops a very large upload from being turned into an even larger object
-   * graph before anything can reject it. The number is chosen from measured
-   * retained memory, not from the input size: every element in the tree costs
-   * roughly 250–400 bytes retained (the `XmlElement` object, its `qname`,
-   * `local`, `namespace` and `path` strings, its attribute array, and its
-   * children array), and the smallest element that can appear in a document is
-   * four characters (`<x/>`). A document at the cap can therefore hold on the
-   * order of 100,000 elements and retain roughly 25–40 MB.
+   * graph before anything can reject it.
    *
-   * The earlier default of 10,000,000 was measured, on Node 22, to retain
-   * about 81 MB of heap and about 306 MB of RSS for a document made entirely
-   * of legal elements — well over the 128 MB a Cloudflare Workers isolate is
-   * allowed, so a single such request would be killed rather than rejected.
-   * A 785 KB body already retained about 47 MB.
+   * ⚠ RAISED FROM 400,000 TO 8,000,000 IN 0.7.3, and the reason is that the
+   * old number refused documents the official validators accept. The benchmark
+   * against KoSIT and the CEN schematrons (2026-08-16) found five: four
+   * documents from the KoSIT XRechnung test suite at 420–436 KB, and the
+   * ConnectingEurope CEN example `FT G2G_TD01 con Allegato, Bonifico e Split
+   * Payment.xml` at 3.29 MB. KoSIT validates all five. "We refuse a document
+   * the regulator's own validator validates" is not a defensible answer from a
+   * compliance engine, and there was no DoS argument left to make at that size:
    *
-   * 400,000 characters is still far above any real invoice: the largest
-   * fixture in this repository is under 10 KB, and an invoice with a thousand
-   * line items lands around 300 KB. Raise it deliberately, with the memory
-   * arithmetic above in mind, if you must parse something larger.
+   *   - The 3.29 MB document is one embedded attachment (BT-125, a base64
+   *     `cbc:EmbeddedDocumentBinaryObject`), not a large tree. Measured: 12 ms
+   *     to parse, 0.4 MB retained. The memory arithmetic below never applied
+   *     to it at all — a big text node is one string, not a hundred thousand
+   *     objects — so the character cap was rejecting it for a cost it does not
+   *     have.
+   *   - `maxElements` is the limit that actually bounds retention, and it is
+   *     independent of this one. Fifty thousand elements at 250–400 bytes each
+   *     is 12–20 MB whatever the character count, and the counter refuses at
+   *     element 50,001, before the rest of the document is read.
+   *
+   * So the character cap's real job is bounding the raw source string and the
+   * slices taken out of it, and 8,000,000 characters is 16 MB of UTF-16.
+   * Measured worst case at the new default, on Node 25: a document holding the
+   * maximum permitted element count followed by one 8 MB text node parses in
+   * 35 ms and retains 16.3 MB. That is a quarter of the 128 MB a Cloudflare
+   * Workers isolate is allowed, with `maxElements` still holding the tree
+   * side down.
+   *
+   * For scale, the largest official test document anywhere in the benchmark
+   * corpus is that 3.29 MB one; the largest fixture in this repository is
+   * under 10 KB, and an invoice with a thousand line items lands around 300 KB.
+   * The historical measurement that produced the 400,000 default — 10,000,000
+   * characters retaining about 81 MB of heap and 306 MB of RSS — was taken on a
+   * document made entirely of legal elements, which `maxElements` now refuses
+   * outright at element 50,001.
    */
   maxCharacters: number;
   /**
@@ -102,7 +121,7 @@ export interface XmlLimits {
 }
 
 export const DEFAULT_XML_LIMITS: XmlLimits = {
-  maxCharacters: 400_000,
+  maxCharacters: 8_000_000,
   maxDepth: 100,
   maxElements: 50_000,
   maxAttributes: 256,

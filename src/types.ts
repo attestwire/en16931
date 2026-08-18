@@ -387,6 +387,37 @@ export interface DeclaredTaxSubtotal {
   taxAmount?: number;
 }
 
+/**
+ * A monetary amount whose *serialised* form in the source document carries more
+ * than two decimal places.
+ *
+ * WHY THE MODEL HAS TO CARRY THIS AT ALL. The BR-DEC family is written against
+ * the lexical value — `string-length(substring-after(., '.')) <= 2` — and the
+ * moment a reader turns `1500.000000` into a JavaScript number, the evidence is
+ * gone: it is the same double as `1500`, and no amount of arithmetic recovers
+ * the six digits the regulator counted. So the readers record the count at the
+ * point of reading, in document order, and `rules-decimals.ts` reports it under
+ * the BR-DEC id for the business term.
+ *
+ * Written by `parseUblInvoice` / `parseCiiInvoice` only. A caller building an
+ * `InvoiceInput` by hand has no lexical form to over-serialise: the library
+ * writes every amount it generates with `formatAmount`, at exactly two places.
+ */
+export interface OverPreciseAmount {
+  /** The business term, which is what selects the BR-DEC rule id. */
+  field: `BT-${number}`;
+  /** Digits after the decimal point, trailing zeros included. */
+  decimals: number;
+  /** The amount exactly as the document writes it, for the message. */
+  text: string;
+  /** Where it was found. */
+  xpath: string;
+  /** 1-based invoice line, for a line-level term (BT-131). */
+  line?: number;
+  /** 1-based VAT breakdown group, for BT-116 and BT-117. */
+  group?: number;
+}
+
 export interface DeclaredTotals {
   /**
    * BT-131 invoice line net amount, as stated on each line, in document order.
@@ -446,6 +477,15 @@ export interface DeclaredTotals {
    * reported once. Nothing here ever throws out of `validateInput`.
    */
   defects?: DeclaredTotalDefect[];
+  /**
+   * Monetary amounts the source document serialised with more than two decimal
+   * places, in document order. See {@link OverPreciseAmount} for why a number
+   * cannot answer this and the reader has to.
+   *
+   * Read as defensively as `defects`, and for the same reason: this type is
+   * public and the JSON endpoints hand `validateInput` whatever was posted.
+   */
+  overPrecise?: OverPreciseAmount[];
 }
 
 /**

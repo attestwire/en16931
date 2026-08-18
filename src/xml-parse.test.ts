@@ -219,29 +219,51 @@ describe("parseXml: security defences", () => {
 
   it("has limits that are documented constants, not magic numbers", () => {
     expect(DEFAULT_XML_LIMITS).toEqual({
-      maxCharacters: 400_000,
+      maxCharacters: 8_000_000,
       maxDepth: 100,
       maxElements: 50_000,
       maxAttributes: 256,
     });
   });
 
-  // Regression, finding 3. The default character cap used to be 10,000,000,
-  // which a measurement put at ~81 MB retained heap and ~306 MB RSS — over the
-  // 128 MB a Workers isolate gets. The cap must stay in the low hundreds of
-  // thousands, and must stay overridable for a caller who has the headroom.
-  it("keeps the default size cap inside a Workers isolate's budget", () => {
-    expect(DEFAULT_XML_LIMITS.maxCharacters).toBeLessThanOrEqual(1_000_000);
-    // At ~250-400 bytes retained per element and four characters per element,
-    // the cap bounds retained memory at roughly 40 MB.
-    const worstCaseElements = DEFAULT_XML_LIMITS.maxCharacters / 4;
-    expect(worstCaseElements * 400).toBeLessThan(64 * 1024 * 1024);
-    // Still overridable upwards.
+  // Regression, finding 3, restated in 0.7.3.
+  //
+  // The character cap used to be 10,000,000, measured at ~81 MB retained and
+  // ~306 MB RSS on a document made entirely of legal elements — over the 128 MB
+  // a Workers isolate gets. The fix was a 400,000-character cap, and that
+  // over-corrected: the benchmark found five documents KoSIT validates and we
+  // refused, including a 3.29 MB CEN example whose bulk is one base64
+  // attachment (12 ms to parse, 0.4 MB retained).
+  //
+  // What actually bounds retention is `maxElements`, and it is independent of
+  // the character count. So the invariant to hold is the one below: the tree
+  // side is bounded by the element cap, the string side by the character cap,
+  // and their sum stays inside the isolate budget.
+  it("keeps the default limits inside a Workers isolate's budget", () => {
+    // Tree side: 50,000 elements at a generous 400 bytes retained each.
+    const treeBytes = DEFAULT_XML_LIMITS.maxElements * 400;
+    // String side: UTF-16, so two bytes per character, and allow the same again
+    // for the slices taken out of it.
+    const stringBytes = DEFAULT_XML_LIMITS.maxCharacters * 2 * 2;
+    expect(treeBytes + stringBytes).toBeLessThan(64 * 1024 * 1024);
+    // Every official test document in the benchmark corpus fits. The largest is
+    // the ConnectingEurope CEN example at 3.29 MB.
+    expect(DEFAULT_XML_LIMITS.maxCharacters).toBeGreaterThan(4_000_000);
+    // Still a cap, and still overridable upwards.
     const big = `<a>${"x".repeat(DEFAULT_XML_LIMITS.maxCharacters)}</a>`;
     expect(codeOf(() => parseXml(big))).toBe("xml_too_large");
     expect(() =>
-      parseXml(big, { maxCharacters: DEFAULT_XML_LIMITS.maxCharacters * 4 }),
+      parseXml(big, { maxCharacters: DEFAULT_XML_LIMITS.maxCharacters * 2 }),
     ).not.toThrow();
+  });
+
+  // The element cap is what stops the attack the character cap used to be
+  // asked to stop: a flat document of millions of tiny elements is refused at
+  // element 50,001, whatever its character count.
+  it("refuses a document of many tiny elements regardless of the character cap", () => {
+    const wide = `<a>${"<b/>".repeat(60_000)}</a>`;
+    expect(wide.length).toBeLessThan(DEFAULT_XML_LIMITS.maxCharacters);
+    expect(codeOf(() => parseXml(wide))).toBe("xml_too_many_elements");
   });
 
   // Regression, finding 4. The per-element attribute count was uncapped, so a

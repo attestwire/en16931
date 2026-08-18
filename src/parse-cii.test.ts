@@ -584,3 +584,93 @@ describe("content nested inside a consumed leaf (finding 10)", () => {
     expect(unmapped).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Two places where the CII binding is not the UBL binding, and we had assumed
+// it was. Both found by the benchmark against KoSIT on
+// kosit-testsuite/cius/01.02_comprehensive_test_uncefact.xml, 2026-08-16 —
+// a document KoSIT accepts and we rejected with four findings.
+describe("CII bindings that differ from UBL", () => {
+  const ciiFixture = (patch: (xml: string) => string) =>
+    parseCiiInvoice(patch(generateCii({ ...minimalXRechnungCii })));
+
+  // BT-84 is ram:IBANID when the account is an IBAN and ram:ProprietaryID when
+  // it is not. Reading only IBANID left the account identifier missing, and
+  // BR-61, BR-50 and BR-DE-23-a all reported a field the document states.
+  it("reads BT-84 from ram:ProprietaryID as well as ram:IBANID", () => {
+    const { invoice } = ciiFixture((xml) =>
+      xml.replace(/<ram:IBANID>([^<]*)<\/ram:IBANID>/, "<ram:ProprietaryID>$1</ram:ProprietaryID>"),
+    );
+    expect(invoice.payment?.iban).toBe(minimalXRechnungCii.payment!.iban);
+    const ids = validateInput(invoice).errors.map((e) => e.rule);
+    expect(ids).not.toContain("BR-61");
+    expect(ids).not.toContain("BR-50");
+    expect(ids).not.toContain("BR-DE-23-a");
+  });
+
+  // BT-8's code list is syntax-specific: UNTDID 2005 (3/35/432) in UBL,
+  // UNTDID 2475 (5/29/72) in CII. We checked the UBL list against both, so a
+  // conformant CII invoice failed BR-CL-06 here and passed at KoSIT.
+  const withTaxPointCode = (code: string) =>
+    generateCii({
+      ...minimalXRechnungCii,
+      invoicingPeriod: { descriptionCode: "3" },
+    }).replace(
+      /<ram:DueDateTypeCode>[^<]*<\/ram:DueDateTypeCode>/,
+      `<ram:DueDateTypeCode>${code}</ram:DueDateTypeCode>`,
+    );
+
+  it("reads the CII code list into the model's EN 16931 code", () => {
+    for (const [cii, model] of [
+      ["5", "3"],
+      ["29", "35"],
+      ["72", "432"],
+    ] as const) {
+      const { invoice } = parseCiiInvoice(withTaxPointCode(cii));
+      expect(invoice.invoicingPeriod?.descriptionCode).toBe(model);
+      expect(validateInput(invoice).errors.map((e) => e.rule)).not.toContain(
+        "BR-CL-06",
+      );
+    }
+  });
+
+  it("writes BT-8 back in the CII code list, so the round trip is stable", () => {
+    const xml = generateCii({
+      ...minimalXRechnungCii,
+      invoicingPeriod: { descriptionCode: "35" },
+    });
+    expect(xml).toContain("<ram:DueDateTypeCode>29</ram:DueDateTypeCode>");
+    expect(parseCiiInvoice(xml).invoice.invoicingPeriod?.descriptionCode).toBe("35");
+  });
+
+  it("still reports a code that is in neither list", () => {
+    const { invoice } = parseCiiInvoice(withTaxPointCode("137"));
+    expect(invoice.invoicingPeriod?.descriptionCode).toBe("137");
+    expect(validateInput(invoice).errors.map((e) => e.rule)).toContain("BR-CL-06");
+  });
+
+  // BT-41 is ram:PersonName OR ram:DepartmentName in CII — a named individual
+  // or a department. Reading only PersonName left the seller contact point
+  // missing, and BR-DE-5 demanded a field the document states.
+  // kosit-testsuite/cius/01.03 and 01.04_comprehensive_test_uncefact.xml.
+  it("reads BT-41 from ram:DepartmentName as well as ram:PersonName", () => {
+    const xml = generateCii({ ...minimalXRechnungCii }).replace(
+      /<ram:PersonName>([^<]*)<\/ram:PersonName>/,
+      "<ram:DepartmentName>$1</ram:DepartmentName>",
+    );
+    const { invoice } = parseCiiInvoice(xml);
+    expect(invoice.seller.contact?.name).toBe(
+      minimalXRechnungCii.seller.contact!.name,
+    );
+    expect(validateInput(invoice).errors.map((e) => e.rule)).not.toContain("BR-DE-5");
+  });
+
+  // The UBL side is unchanged: it writes and reads UNTDID 2005 directly.
+  it("leaves the UBL code list alone", () => {
+    const xml = generateXRechnungUBL({
+      ...minimalXRechnung,
+      invoicingPeriod: { descriptionCode: "35" },
+    });
+    expect(xml).toContain("<cbc:DescriptionCode>35</cbc:DescriptionCode>");
+  });
+});

@@ -77,6 +77,28 @@ export function parseXsDecimal(raw: string): number | undefined {
 }
 
 /**
+ * How many digits an xs:decimal lexical form carries after the decimal point.
+ *
+ * ⚠ TRAILING ZEROS COUNT, and that is not an oversight. The BR-DEC rules test
+ * `string-length(substring-after(., '.')) <= 2` on the serialised text, so
+ * `1500.000000` is six decimals to the regulator even though it is numerically
+ * identical to `1500`. Counting the "significant" decimals instead would make
+ * the rule unable to fire on the one document shape it exists to catch — a
+ * ledger that serialises everything at six places — which is exactly the
+ * silent-accept our own benchmark corpus probes with
+ * `adv-huge-decimal-precision.xml`.
+ *
+ * The value is expected to already be in the xs:decimal lexical space (no
+ * exponent, one dot at most); a sign is skipped and anything else is measured
+ * as written.
+ */
+export function countLexicalDecimals(lexical: string): number {
+  const text = lexical.trim().replace(/^[+-]/, "");
+  const dot = text.indexOf(".");
+  return dot === -1 ? 0 : text.length - dot - 1;
+}
+
+/**
  * Why `parseXsDecimal` turned this text down, in words for the person who wrote
  * the document.
  *
@@ -246,6 +268,26 @@ export class TreeReader {
     namespace: string,
     local: string,
   ): number | undefined {
+    return this.numberAt(parent, namespace, local)?.value;
+  }
+
+  /**
+   * The same read, with the document's own lexical form kept beside the value.
+   *
+   * The BR-DEC family is written against the *serialised* decimal —
+   * `string-length(substring-after(., '.')) <= 2` — and a number cannot answer
+   * that question. `1500.000000` and `1500` parse to the identical double, so
+   * every caller that went through {@link number} lost the only evidence the
+   * rule cares about, and a line net amount written with six decimal places
+   * validated clean here while the CEN schematron rejected it under BR-DEC-23.
+   * Callers that map an element to a business term with a BR-DEC rule use this
+   * and record {@link countLexicalDecimals} of `lexical`.
+   */
+  numberAt(
+    parent: XmlElement,
+    namespace: string,
+    local: string,
+  ): { value: number; lexical: string; xpath: string } | undefined {
     const el = this.leafEl(parent, namespace, local);
     if (!el) return undefined;
     const raw = el.text.trim();
@@ -260,7 +302,7 @@ export class TreeReader {
       this.note(el, "unknown", `${decimalRejectionReason(raw)} ${VALUE_LEFT_OUT}`);
       return undefined;
     }
-    return value;
+    return { value, lexical: raw, xpath: el.path };
   }
 
   /** Walk the tree and report every element nobody claimed. */

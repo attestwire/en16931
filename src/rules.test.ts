@@ -183,6 +183,49 @@ describe("mandatory document-level fields (BR-02..BR-16)", () => {
     });
     expect(rules).not.toContain("BR-CO-26");
   });
+
+  // The rule names BT-29, BT-30 and BT-31, and only those three. The check read
+  // BT-32 instead of BT-29 until 0.7.3, so it was wrong in both directions at
+  // once — see the note on the rule in rules.ts.
+  it("BR-CO-26 is satisfied by the seller identifier (BT-29) alone", () => {
+    const rules = rulesOf({
+      ...base,
+      seller: {
+        ...base.seller,
+        vatId: undefined,
+        taxRegistrationId: undefined,
+        legalRegistrationId: undefined,
+        identifier: { value: "4025678000107", schemeId: "0088" },
+      },
+    });
+    expect(rules).not.toContain("BR-CO-26");
+  });
+
+  it("BR-CO-26 is NOT satisfied by the tax registration identifier (BT-32)", () => {
+    const rules = rulesOf({
+      ...base,
+      seller: {
+        ...base.seller,
+        vatId: undefined,
+        legalRegistrationId: undefined,
+        taxRegistrationId: "201/123/12345",
+      },
+    });
+    expect(rules).toContain("BR-CO-26");
+  });
+
+  it("BR-CO-26 names the three terms the rule names", () => {
+    const finding = validateInput({
+      ...base,
+      seller: {
+        ...base.seller,
+        vatId: undefined,
+        taxRegistrationId: undefined,
+        legalRegistrationId: undefined,
+      },
+    }).errors.find((e) => e.rule === "BR-CO-26")!;
+    expect(finding.field).toEqual(["BT-29", "BT-30", "BT-31"]);
+  });
 });
 
 describe("per-line mandatory fields (BR-21..BR-27)", () => {
@@ -768,13 +811,105 @@ describe("BR-CO arithmetic against declared totals", () => {
     expect(err!.message).toContain("-0.50");
   });
 
-  it("BR-CO-14 / BR-CO-15: wrong VAT and gross totals are each reported", () => {
+  it("BR-CO-14: a wrong VAT total is reported against the lines", () => {
     const rules = rulesOf({
       ...base,
       declaredTotals: { taxAmount: 280, taxInclusiveAmount: 1780 },
     });
     expect(rules).toContain("BR-CO-14");
-    expect(rules).toContain("BR-CO-15");
+    // ...and BR-CO-15 stays quiet, which is the correction made in 0.7.3.
+    // BR-CO-15 asserts BT-112 = BT-109 + BT-110 over the figures the document
+    // STATES: 1500 (no BT-109 stated, so the computed one stands in) + 280 =
+    // 1780, exactly what is declared. The VAT total is wrong and BR-CO-14 says
+    // so once; propagating that same cent-and-more into BR-CO-15 reported one
+    // defect twice, and did it on documents the official validators accept.
+    expect(rules).not.toContain("BR-CO-15");
+  });
+
+  // The 03.01a shape, from the first benchmark run against KoSIT and the CEN
+  // schematrons (2026-08-16). Every stated figure is internally consistent —
+  // the stated line amounts sum to exactly BT-106 = BT-109, plus the stated VAT
+  // gives BT-112, minus nothing gives BT-115 — but one line's own quantity ×
+  // price rounds a cent away from the amount that line states. We used to
+  // answer that with three fatal findings (BR-CO-13, BR-CO-15, BR-CO-16); the
+  // official validators answer with none, and they are right: those three rules
+  // never look at the line arithmetic.
+  it("BR-CO-13/-15/-16 stay silent when the stated chain is consistent and one line rounds a cent away", () => {
+    const result = validateInput({
+      ...base,
+      lines: [
+        // 3 × 33.335 = 100.005 → 100.01 computed, 100.00 stated.
+        { id: "1", name: "Rounder", quantity: 3, unitPrice: 33.335, unitCode: "C62", vatCategory: "S", vatRate: 19 },
+      ],
+      declaredTotals: {
+        lineNetAmounts: [100],
+        lineExtensionAmount: 100,
+        taxExclusiveAmount: 100,
+        taxAmount: 19,
+        subtotals: [{ category: "S", rate: 19, taxableAmount: 100, taxAmount: 19 }],
+        taxInclusiveAmount: 119,
+        payableAmount: 119,
+      },
+    });
+    const rules = result.errors.map((e) => e.rule);
+    expect(rules).not.toContain("BR-CO-13");
+    expect(rules).not.toContain("BR-CO-15");
+    expect(rules).not.toContain("BR-CO-16");
+  });
+
+  // The other direction, so the fix is not "stop checking". A stated BT-109
+  // that does not follow from the stated BT-106 is exactly what BR-CO-13 is
+  // for, and it must still be fatal even though the lines themselves are fine.
+  it("BR-CO-13 still fires when the stated chain itself is broken", () => {
+    const rules = rulesOf({
+      ...base,
+      declaredTotals: {
+        lineExtensionAmount: 1500,
+        taxExclusiveAmount: 1400,
+      },
+    });
+    expect(rules).toContain("BR-CO-13");
+  });
+
+  // BT-107 and BT-108 are part of the same link, and they pull in opposite
+  // directions: a 100 allowance and a 40 charge against a 1500 line total
+  // require BT-109 = 1440.
+  it("BR-CO-13 chains through the stated document allowance and charge totals", () => {
+    const withCorrect = rulesOf({
+      ...base,
+      declaredTotals: {
+        lineExtensionAmount: 1500,
+        allowanceTotalAmount: 100,
+        chargeTotalAmount: 40,
+        taxExclusiveAmount: 1440,
+      },
+    });
+    expect(withCorrect).not.toContain("BR-CO-13");
+    const withNetted = rulesOf({
+      ...base,
+      declaredTotals: {
+        lineExtensionAmount: 1500,
+        allowanceTotalAmount: 100,
+        chargeTotalAmount: 40,
+        // The classic mistake: allowances subtracted, charges forgotten.
+        taxExclusiveAmount: 1400,
+      },
+    });
+    expect(withNetted).toContain("BR-CO-13");
+  });
+
+  // BR-CO-16's own link, with a prepayment — the adv-off-by-a-cent-payable
+  // shape from the benchmark corpus.
+  it("BR-CO-16 fires on a payable amount that does not follow from the stated BT-112", () => {
+    const rules = rulesOf({
+      ...base,
+      paidAmount: 500,
+      declaredTotals: {
+        taxInclusiveAmount: 1785,
+        payableAmount: 1284.99,
+      },
+    });
+    expect(rules).toContain("BR-CO-16");
   });
 
   it("teaches the sum-of-rounded-values rule in the fix text", () => {

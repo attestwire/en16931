@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Regenerate `src/codelists/peppol-eas.ts` from the official Peppol BIS
+ * Regenerate `src/codelists/peppol.ts` from the official Peppol BIS
  * Billing 3.0 schematron.
  *
  * Wave A's `build-codelists.mjs` does the same job for the CEN artefact. This

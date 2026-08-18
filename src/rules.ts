@@ -544,14 +544,28 @@ const baseInputRules: RuleFn[] = [
       : null,
 
   // BR-CO-26: the seller must be identifiable.
+  //
+  // The rule names exactly three terms: the seller identifier (BT-29), the
+  // seller legal registration identifier (BT-30) and the seller VAT identifier
+  // (BT-31). Any one of them satisfies it.
+  //
+  // ⚠ THIS CHECK USED TO READ A DIFFERENT LIST, and it was wrong in both
+  // directions at once. It accepted BT-32, the seller tax registration
+  // identifier, which the rule does not name — so a document identified only
+  // by a national tax number passed here and was rejected downstream. And it
+  // ignored BT-29, which the rule does name — so a document identified by a
+  // GLN or a national organisation number, and by nothing else, was rejected
+  // here and accepted downstream. The message underneath already listed the
+  // right three terms, which is how the mismatch was found: the prose and the
+  // code disagreed.
   (inv) =>
     inv.seller &&
-    blank(inv.seller.vatId) &&
-    blank(inv.seller.taxRegistrationId) &&
-    blank(inv.seller.legalRegistrationId)
+    blank(inv.seller.identifier?.value) &&
+    blank(inv.seller.legalRegistrationId) &&
+    blank(inv.seller.vatId)
       ? err({
           rule: "BR-CO-26",
-          field: ["BT-30", "BT-31"],
+          field: ["BT-29", "BT-30", "BT-31"],
           severity: "fatal",
           message:
             "In order for the buyer to automatically identify you, the invoice must carry at least one of the seller identifier (BT-29), seller legal registration identifier (BT-30) or seller VAT identifier (BT-31). A name and address alone are not machine-resolvable to a supplier record.",
@@ -983,6 +997,14 @@ const baseInputRules: RuleFn[] = [
       field: `BT-${number}`,
       formula: string,
       why: string,
+      /**
+       * How the expected figure was arrived at, for the message. The three
+       * chained totals (BR-CO-13/-15/-16) are checked against the document's
+       * OWN stated summands, not against the line arithmetic — see
+       * {@link stated} — so "the invoice lines compute to" would be a lie
+       * there.
+       */
+      source = "the invoice lines compute to",
     ) => {
       // `typeof NaN === "number"`, and round2 throws on a non-finite input, so
       // a declared total of NaN or Infinity used to take down the whole rule
@@ -995,7 +1017,7 @@ const baseInputRules: RuleFn[] = [
         rule,
         field,
         severity: "fatal",
-        message: `${rule} requires ${formula}. You declared ${round2(declaredValue).toFixed(2)} for ${field}, but the invoice lines compute to ${computedValue.toFixed(2)} — a difference of ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ${inv.currency}. ${why}`,
+        message: `${rule} requires ${formula}. You declared ${round2(declaredValue).toFixed(2)} for ${field}, but ${source} ${computedValue.toFixed(2)} — a difference of ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ${inv.currency}. ${why}`,
         fix: `Either correct the line data so it sums to your declared figure, or drop declaredTotals.${field === "BT-106" ? "lineExtensionAmount" : field === "BT-109" ? "taxExclusiveAmount" : field === "BT-110" ? "taxAmount" : field === "BT-112" ? "taxInclusiveAmount" : "payableAmount"} and let the library compute it. Note that EN 16931 sums *rounded* line amounts: round each line to 2 decimals first, then add — rounding only the final sum drifts by a cent or two on long invoices.`,
         example: `"declaredTotals": { "${field === "BT-106" ? "lineExtensionAmount" : field === "BT-109" ? "taxExclusiveAmount" : field === "BT-110" ? "taxAmount" : field === "BT-112" ? "taxInclusiveAmount" : "payableAmount"}": ${computedValue.toFixed(2)} }`,
         docsUrl: `${DOCS}/${rule}`,
@@ -1036,13 +1058,58 @@ const baseInputRules: RuleFn[] = [
         "This is a pure addition check, so a mismatch means either a line is missing from your total or a line amount was rounded differently.",
       );
     }
+    // --- BR-CO-13 / -15 / -16 are CHAINED totals, and the chain is stated ----
+    //
+    // Root cause of 74 disagreement cells over 26 documents in the first
+    // benchmark run (2026-08-16), every one of them a false positive of ours.
+    //
+    // These three rules do not re-derive the invoice. They assert an identity
+    // between figures the document *states*:
+    //
+    //     BT-109 = BT-106 − BT-107 + BT-108
+    //     BT-112 = BT-109 + BT-110
+    //     BT-115 = BT-112 − BT-113 + BT-114
+    //
+    // We were comparing each declared total against our own recomputation from
+    // the line data instead. On a document whose stated totals are internally
+    // perfect that is a different question, and it answers differently the
+    // moment any line's own arithmetic rounds a cent away from its stated
+    // BT-131 — the recomputed BT-106 shifts by 0.01, and the shift then
+    // propagates into BT-109, BT-112 and BT-115, so ONE line's rounding emits
+    // three fatal findings on a document every official validator accepts.
+    // kosit-testsuite/standard/03.01a-INVOICE_uncefact.xml is the worked
+    // example: fourteen stated line amounts summing to exactly 687.28 = BT-109,
+    // + 117.58 VAT = 804.86 = BT-112, and we said 804.87.
+    //
+    // The correct reading is the one BR-CO-10 and BR-CO-14 already got (see the
+    // note above): a stated summand is the summand. Line-versus-stated is a
+    // real check and it is still made — by BR-CO-10 on BT-106, by BR-CO-14 on
+    // BT-110, and per line by PEPPOL-EN16931-R120 — so nothing is lost here
+    // except three findings that were counting the same cent three times.
+    //
+    // The fallback to the computed figure is what keeps the JSON path working:
+    // a caller who hands us lines and only a `payableAmount` has stated no
+    // BT-112 for BR-CO-16 to chain from, and "compute it for me" is precisely
+    // what an omitted total means in `InvoiceInput`.
+    const stated = (
+      value: number | undefined,
+      fallback: number,
+    ): number => (typeof value === "number" && Number.isFinite(value) ? round2(value) : fallback);
+
+    const CHAINED = "the document's own stated figures give";
+
     compare(
       declared.taxExclusiveAmount,
-      computed.taxExclusiveAmount,
+      round2(
+        stated(declared.lineExtensionAmount, computed.lineExtensionAmount) -
+          stated(declared.allowanceTotalAmount, computed.allowanceTotalAmount) +
+          stated(declared.chargeTotalAmount, computed.chargeTotalAmount),
+      ),
       "BR-CO-13",
       "BT-109",
-      "the invoice total without VAT (BT-109) to equal Σ BT-131 − document allowances (BT-107) + document charges (BT-108)",
+      "the invoice total without VAT (BT-109) to equal BT-106 − document allowances (BT-107) + document charges (BT-108)",
       "BT-107 and BT-108 are separate disclosures, not a net figure: a document allowance and a document charge of the same size leave BT-109 unchanged and still both appear. Check that your own BT-109 subtracts the allowances and adds the charges, in that order.",
+      CHAINED,
     );
     if (!statesGroupTaxAmounts) {
       compare(
@@ -1056,19 +1123,28 @@ const baseInputRules: RuleFn[] = [
     }
     compare(
       declared.taxInclusiveAmount,
-      computed.taxInclusiveAmount,
+      round2(
+        stated(declared.taxExclusiveAmount, computed.taxExclusiveAmount) +
+          stated(declared.taxAmount, computed.taxAmount),
+      ),
       "BR-CO-15",
       "BT-112",
       "the invoice total with VAT (BT-112) to equal BT-109 + BT-110",
       "Check whether one of BT-109 or BT-110 is also flagged above; BR-CO-15 often fails only as a consequence.",
+      CHAINED,
     );
     compare(
       declared.payableAmount,
-      computed.payableAmount,
+      round2(
+        stated(declared.taxInclusiveAmount, computed.taxInclusiveAmount) -
+          computed.paidAmount +
+          computed.roundingAmount,
+      ),
       "BR-CO-16",
       "BT-115",
       "the amount due for payment (BT-115) to equal BT-112 − paid amount (BT-113) + rounding amount (BT-114)",
       "BT-113 (paid amount) is subtracted and BT-114 (rounding amount) is added — and BT-114 is signed, so a rounding-down carries a negative value. A payable amount that equals BT-112 on an invoice with a deposit is the usual shape of this failure.",
+      CHAINED,
     );
     return out;
   },

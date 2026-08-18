@@ -47,8 +47,10 @@ import type {
   DeclaredTotalKey,
   DeclaredTotalState,
   DeclaredTotals,
+  OverPreciseAmount,
 } from "./types.js";
 import {
+  countLexicalDecimals,
   decimalRejectionReason,
   parseXsDecimal,
   TreeReader,
@@ -341,6 +343,7 @@ export function readDeclaredTotal(
   declared: DeclaredTotals,
   defects: DeclaredTotalDefect[],
   namespace: string,
+  overPrecise?: OverPreciseAmount[],
 ): void {
   const el = block ? r.leafEl(block, namespace, local) : undefined;
   if (!el) {
@@ -351,8 +354,35 @@ export function readDeclaredTotal(
     }
     return;
   }
-  const value = readDeclaredTotalValue(r, el, term, xpath, defects);
+  const value = readDeclaredTotalValue(r, el, term, xpath, defects, overPrecise);
   if (value !== undefined) declared[term.key] = value;
+}
+
+/**
+ * Record an amount whose serialised form carries more than two decimals.
+ *
+ * One place, so the readers cannot disagree about what counts. Nothing is
+ * recorded for two decimals or fewer: the array is a list of violations, not a
+ * census of every amount in the document.
+ */
+export function noteLexicalPrecision(
+  into: OverPreciseAmount[] | undefined,
+  field: `BT-${number}`,
+  lexical: string,
+  xpath: string,
+  where: { line?: number; group?: number } = {},
+): void {
+  if (!into) return;
+  const decimals = countLexicalDecimals(lexical);
+  if (decimals <= 2) return;
+  into.push({
+    field,
+    decimals,
+    text: lexical.slice(0, 40),
+    xpath,
+    ...(where.line !== undefined ? { line: where.line } : {}),
+    ...(where.group !== undefined ? { group: where.group } : {}),
+  });
 }
 
 /**
@@ -378,6 +408,7 @@ export function readDeclaredTotalValue(
   term: DeclaredTotalTerm,
   xpath: string,
   defects: DeclaredTotalDefect[],
+  overPrecise?: OverPreciseAmount[],
 ): number | undefined {
   const raw = el.text.trim();
   if (raw === "") {
@@ -409,5 +440,9 @@ export function readDeclaredTotalValue(
     });
     return undefined;
   }
+  // Readable, and possibly written at a precision no BR-DEC rule allows. The
+  // value is kept either way — an over-precise total is still the total the
+  // document states, and BR-CO-13 and friends have to compare it.
+  noteLexicalPrecision(overPrecise, term.field, raw, xpath);
   return value;
 }

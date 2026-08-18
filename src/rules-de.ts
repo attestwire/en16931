@@ -86,13 +86,36 @@ export const germanRules: RuleFn[] = [
   // forbids the rate on the line, so no rate reaches the breakdown, so
   // BR-DE-14 fails. Worth saying out loud, because the document validates
   // clean against core EN 16931 and is then rejected by a German portal.
+  //
+  // ⚠ IT IS THE STATED BREAKDOWN THAT IS CHECKED, not the computed one, and
+  // that changed in 0.7.3. The rule is a presence check on an element —
+  // "cbc:Percent is there and is not empty" — so the only breakdown it can be
+  // asked about is the one the document writes. We asked it of ours instead,
+  // and ours never carries a rate for category O by construction
+  // (`effectiveRate` returns undefined for it, because BR-O-05 forbids one on
+  // the line). A document that states `<cbc:Percent>0</cbc:Percent>` on its
+  // category-O group therefore satisfied KoSIT and failed here — four cells in
+  // the first benchmark run, including
+  // kosit-testsuite/standard/01.04a-INVOICE_ubl.xml and its CII twin.
+  //
+  // The paragraph above still holds for a document *we* generate: no rate
+  // reaches a category-O group, so the fallback below reports it. What changed
+  // is that a document that states the element is now taken at its word.
   (inv, ctx) => {
     if (!isXRechnung(inv)) return null;
     if (linesOf(inv).length === 0) return null;
     const { totals: computed } = totalsOutcomeOf(inv, ctx);
     if (!computed) return null;
+    const declaredSubtotals = inv.declaredTotals?.subtotals;
+    const groups =
+      Array.isArray(declaredSubtotals) && declaredSubtotals.length > 0
+        ? declaredSubtotals.map((sub, index) => ({
+            category: sub?.category ?? computed.subtotals[index]?.category ?? "",
+            rate: sub?.rate,
+          }))
+        : computed.subtotals;
     const out: TeachingError[] = [];
-    for (const [index, subtotal] of computed.subtotals.entries()) {
+    for (const [index, subtotal] of groups.entries()) {
       if (subtotal.rate !== undefined) continue;
       out.push({
         rule: "BR-DE-14",

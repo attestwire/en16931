@@ -3,6 +3,12 @@ import { computeTotals } from "./totals.js";
 import { decimalPlaces } from "./rule-kit.js";
 import { allIds, clean, findingFor, withInvoice } from "./testkit.js";
 import type { DeclaredTotals } from "./types.js";
+import { generateXRechnungUBL } from "./generate.js";
+import { generateCii } from "./generate-cii.js";
+import { parseUblInvoice } from "./parse.js";
+import { parseCiiInvoice } from "./parse-cii.js";
+import { validateInput } from "./index.js";
+import { countLexicalDecimals } from "./xml-reader.js";
 
 /** The totals `clean` actually computes to: 10 x 150 = 1500.00 net, 19% VAT. */
 const exact = computeTotals(clean);
@@ -124,5 +130,93 @@ describe("BR-DEC-*", () => {
   it("suggests the rounded value in its example", () => {
     const finding = findingFor(declared({ taxAmount: 285.0004 }), "BR-DEC-13")!;
     expect(finding.example).toContain("285.00");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BR-DEC on the SERIALISED value.
+//
+// Found by the benchmark's adversarial corpus, 2026-08-16
+// (adv-huge-decimal-precision.xml): a line net amount written `1500.000000` is
+// numerically identical to 1500.00, so every total still balanced and every
+// arithmetic rule stayed quiet — and we reported nothing at all, while the CEN
+// schematron rejected the document under BR-DEC-23. The rules measure
+// `string-length(substring-after(., '.'))` on the text, which a parsed number
+// cannot answer, so the readers now count the digits and record them in
+// `declaredTotals.overPrecise`.
+describe("BR-DEC-* against the document's own serialised decimals", () => {
+  // Every occurrence of the element, because BT-106 and BT-131 share the local
+  // name `LineExtensionAmount` in UBL: the document total and the line amount
+  // are the same tag in two places, and a first-match replace silently edits
+  // the total when the test meant the line.
+  const overPrecise = (xml: string, element: string, value: string) =>
+    xml.replace(
+      new RegExp(`(<(?:cbc|ram):${element}[^>]*>)[^<]+(</)`, "g"),
+      `$1${value}$2`,
+    );
+
+  it("BR-DEC-23: a UBL line net amount serialised at six decimals is fatal", () => {
+    const xml = overPrecise(
+      generateXRechnungUBL(clean),
+      "LineExtensionAmount",
+      "1500.000000",
+    );
+    const { invoice } = parseUblInvoice(xml);
+    const finding = validateInput(invoice).errors.find((e) => e.rule === "BR-DEC-23");
+    expect(finding).toBeDefined();
+    expect(finding!.field).toBe("BT-131");
+    expect(finding!.message).toContain("1500.000000");
+    expect(finding!.message).toContain("6");
+  });
+
+  it("BR-DEC-23: the same defect in CII produces the same rule id", () => {
+    const xml = overPrecise(
+      generateCii({ ...clean, profile: "xrechnung-cii" }),
+      "LineTotalAmount",
+      "1500.000000",
+    );
+    const { invoice } = parseCiiInvoice(xml);
+    const ids = validateInput(invoice).errors.map((e) => e.rule);
+    expect(ids).toContain("BR-DEC-23");
+  });
+
+  it("trailing zeros count: 1500.00 is fine, 1500.000 is not", () => {
+    const ok = parseUblInvoice(generateXRechnungUBL(clean)).invoice;
+    expect(validateInput(ok).errors.map((e) => e.rule)).not.toContain("BR-DEC-23");
+    const bad = parseUblInvoice(
+      overPrecise(generateXRechnungUBL(clean), "LineExtensionAmount", "1500.000"),
+    ).invoice;
+    expect(validateInput(bad).errors.map((e) => e.rule)).toContain("BR-DEC-23");
+  });
+
+  it("BR-DEC-12: a document total serialised at six decimals is fatal too", () => {
+    const xml = overPrecise(
+      generateXRechnungUBL(clean),
+      "TaxExclusiveAmount",
+      "1500.000000",
+    );
+    const { invoice } = parseUblInvoice(xml);
+    const finding = validateInput(invoice).errors.find((e) => e.rule === "BR-DEC-12");
+    expect(finding).toBeDefined();
+    expect(finding!.field).toBe("BT-109");
+  });
+
+  it("reports one finding per term, not one from the text and one from the number", () => {
+    const xml = overPrecise(
+      generateXRechnungUBL(clean),
+      "TaxExclusiveAmount",
+      "1500.0000001",
+    );
+    const { invoice } = parseUblInvoice(xml);
+    const hits = validateInput(invoice).errors.filter((e) => e.rule === "BR-DEC-12");
+    expect(hits).toHaveLength(1);
+  });
+
+  it("counts the lexical form, sign and all", () => {
+    expect(countLexicalDecimals("1500")).toBe(0);
+    expect(countLexicalDecimals("1500.00")).toBe(2);
+    expect(countLexicalDecimals("1500.000000")).toBe(6);
+    expect(countLexicalDecimals("-1500.000")).toBe(3);
+    expect(countLexicalDecimals("  1500.0001  ")).toBe(4);
   });
 });

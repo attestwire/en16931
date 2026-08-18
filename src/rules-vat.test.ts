@@ -30,7 +30,14 @@ const inCategory = (
     profile: "en16931",
     seller:
       category === "O"
-        ? { ...clean.seller, vatId: undefined, taxRegistrationId: "18/181/08155" }
+        ? {
+            ...clean.seller,
+            vatId: undefined,
+            taxRegistrationId: "18/181/08155",
+            // BR-CO-26 names BT-29/BT-30/BT-31; BT-32 is not one of them, so a
+            // category-O seller still needs one of the three.
+            legalRegistrationId: "HRB 12345",
+          }
         : clean.seller,
     buyer:
       category === "O"
@@ -233,7 +240,15 @@ describe("the -10 family: exemption reasons", () => {
 describe("BR-O-11 / BR-O-12: category O owns the whole document", () => {
   const mixed = withInvoice({
     profile: "en16931",
-    seller: { ...clean.seller, vatId: undefined, taxRegistrationId: "18/181/08155" },
+    // BT-30 as well as BT-32: BR-CO-26 names BT-29/BT-30/BT-31 and not BT-32,
+    // so a seller carrying only a national tax number is a BR-CO-26 failure and
+    // would drown out what this block is about.
+    seller: {
+      ...clean.seller,
+      vatId: undefined,
+      taxRegistrationId: "18/181/08155",
+      legalRegistrationId: "HRB 12345",
+    },
     buyer: { ...clean.buyer, vatId: undefined },
     lines: [
       cleanLine({ vatCategory: "O", vatRate: undefined }),

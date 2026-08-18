@@ -19,6 +19,7 @@
  */
 
 import { DEFAULT_INVOICE_TYPE_CODE } from "./document-type.js";
+import { taxPointCodeFromCii } from "./cii-tax-point-code.js";
 import {
   CII_NAMESPACES,
   SUPPORTING_DOCUMENT_TYPE_CODE,
@@ -45,6 +46,7 @@ import {
   readDeclaredTotalValue,
   TAX_AMOUNT_ACCOUNTING_TERM,
   TAX_AMOUNT_TERM,
+  noteLexicalPrecision,
 } from "./declared-totals.js";
 import type {
   DeclaredTaxSubtotal,
@@ -54,6 +56,7 @@ import type {
   DocumentAllowanceCharge,
   InvoiceInput,
   InvoiceLine,
+  OverPreciseAmount,
   InvoicingPeriod,
   ItemAttribute,
   ItemClassification,
@@ -234,7 +237,19 @@ function readParty(r: Reader, el: XmlElement): Party {
   const contact = r.grp(el, "DefinedTradeContact");
   if (contact) {
     const value: NonNullable<Party["contact"]> = {};
-    set(value, "name", r.ram(contact, "PersonName"));
+    // BT-41 has two elements in the CII binding — ram:PersonName for a named
+    // individual and ram:DepartmentName for a department or role — and either
+    // satisfies it. Reading only PersonName left BT-41 missing on a document
+    // that names a department, and BR-DE-5 then demanded a contact point the
+    // document states (benchmark, 2026-08-16:
+    // kosit-testsuite/cius/01.03 and 01.04_comprehensive_test_uncefact.xml).
+    // UBL has one element, cac:Contact/cbc:Name, which is why the model has one
+    // field. The generator writes PersonName, which is equally conformant.
+    set(
+      value,
+      "name",
+      r.ram(contact, "PersonName") ?? r.ram(contact, "DepartmentName"),
+    );
     const phone = r.grp(contact, "TelephoneUniversalCommunication");
     if (phone) set(value, "phone", r.ram(phone, "CompleteNumber"));
     const email = r.grp(contact, "EmailURIUniversalCommunication");
@@ -374,6 +389,8 @@ function readReferencedDocument(
 interface ReadLineResult {
   line: InvoiceLine;
   declaredNetAmount?: number;
+  /** BT-131 exactly as the line writes it, for BR-DEC-23. See `OverPreciseAmount`. */
+  declaredNetLexical?: { lexical: string; xpath: string };
 }
 
 function readLine(r: Reader, el: XmlElement): ReadLineResult {
@@ -383,6 +400,7 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
   const deliveryGroup = r.grp(el, "SpecifiedLineTradeDelivery");
   const settlement = r.grp(el, "SpecifiedLineTradeSettlement");
   let declaredNetAmount: number | undefined;
+  let declaredNetLexical: { lexical: string; xpath: string } | undefined;
 
   const quantity = deliveryGroup
     ? r.ramEl(deliveryGroup, "BilledQuantity")
@@ -514,7 +532,9 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
     // validated with zero errors while KoSIT rejected the document under
     // BR-CO-10 and PEPPOL-EN16931-R120.
     if (summation) {
-      declaredNetAmount = r.num(summation, "LineTotalAmount");
+      const read = r.numberAt(summation, RAM, "LineTotalAmount");
+      declaredNetAmount = read?.value;
+      if (read) declaredNetLexical = { lexical: read.lexical, xpath: read.xpath };
     }
 
     for (const reference of r.grpAll(settlement, "AdditionalReferencedDocument")) {
@@ -540,6 +560,7 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
 
   const result: ReadLineResult = { line };
   if (declaredNetAmount !== undefined) result.declaredNetAmount = declaredNetAmount;
+  if (declaredNetLexical) result.declaredNetLexical = declaredNetLexical;
   return result;
 }
 
@@ -761,6 +782,10 @@ export function parseCiiInvoice(
   const settlement = r.grp(transaction, "ApplicableHeaderTradeSettlement");
   const declared: DeclaredTotals = {};
   const defects: DeclaredTotalDefect[] = [];
+  // BR-DEC-19/-20/-23 and the BR-DEC document-total rules are written against
+  // the serialised decimal, so the count has to be taken while the text is
+  // still in hand. See `OverPreciseAmount`.
+  const overPrecise: OverPreciseAmount[] = [];
   let summation: XmlElement | undefined;
   if (settlement) {
     invoice.currency = (r.ram(settlement, "InvoiceCurrencyCode") ?? "").toUpperCase();
@@ -811,12 +836,29 @@ export function parseCiiInvoice(
         payment.card = value;
       }
 
+      // BT-84 and BT-91 each have TWO elements in the CII binding: ram:IBANID
+      // when the account is an IBAN, ram:ProprietaryID when it is not. Reading
+      // only IBANID left a document that uses the other one with no payment
+      // account identifier at all, and BR-61, BR-50 and BR-DE-23-a then all
+      // reported a field the document plainly states — three false positives on
+      // kosit-testsuite/cius/01.02_comprehensive_test_uncefact.xml alone
+      // (benchmark, 2026-08-16). UBL has no such split: BT-84 is
+      // cac:PayeeFinancialAccount/cbc:ID whatever kind of account it is, which
+      // is why the field on the model is one field and why both elements land
+      // in it.
       const debtor = r.grp(meansEl, "PayerPartyDebtorFinancialAccount");
-      if (debtor) debitedAccount = r.ram(debtor, "IBANID");
+      if (debtor) {
+        debitedAccount =
+          r.ram(debtor, "IBANID") ?? r.ram(debtor, "ProprietaryID");
+      }
 
       const creditor = r.grp(meansEl, "PayeePartyCreditorFinancialAccount");
       if (creditor) {
-        set(payment, "iban", r.ram(creditor, "IBANID"));
+        set(
+          payment,
+          "iban",
+          r.ram(creditor, "IBANID") ?? r.ram(creditor, "ProprietaryID"),
+        );
         set(payment, "accountName", r.ram(creditor, "AccountName"));
       }
 
@@ -876,10 +918,19 @@ export function parseCiiInvoice(
       // amount reached `valid: true` with zero errors while KoSIT rejected the
       // same document under BR-S-08 (or its per-category sibling) and BR-CO-14.
       const stated: DeclaredTaxSubtotal = {};
+      const group = declaredSubtotals.length + 1;
       if (category !== ("" as VatCategory)) stated.category = category;
       set(stated, "rate", r.num(tax, "RateApplicablePercent"));
-      set(stated, "taxAmount", r.num(tax, "CalculatedAmount"));
-      set(stated, "taxableAmount", r.num(tax, "BasisAmount"));
+      const statedTax = r.numberAt(tax, RAM, "CalculatedAmount");
+      const statedTaxable = r.numberAt(tax, RAM, "BasisAmount");
+      set(stated, "taxAmount", statedTax?.value);
+      set(stated, "taxableAmount", statedTaxable?.value);
+      if (statedTax) {
+        noteLexicalPrecision(overPrecise, "BT-117", statedTax.lexical, statedTax.xpath, { group });
+      }
+      if (statedTaxable) {
+        noteLexicalPrecision(overPrecise, "BT-116", statedTaxable.lexical, statedTaxable.xpath, { group });
+      }
       if (Object.keys(stated).length > 0) declaredSubtotals.push(stated);
       const reason = r.ram(tax, "ExemptionReason");
       if (reason !== undefined) exemptionReasons[category] = reason;
@@ -889,7 +940,10 @@ export function parseCiiInvoice(
         namespace: UDT,
         local: "DateString",
       });
-      taxPointCode ??= r.ram(tax, "DueDateTypeCode");
+      // BT-8's code list is syntax-specific — CII writes UNTDID 2475 (5, 29,
+      // 72) where UBL writes UNTDID 2005 (3, 35, 432). Translated here so the
+      // model carries one value and BR-CL-06 asks one question.
+      taxPointCode ??= taxPointCodeFromCii(r.ram(tax, "DueDateTypeCode"));
     }
     if (declaredSubtotals.length > 0) declared.subtotals = declaredSubtotals;
     if (Object.keys(exemptionReasons).length > 0) {
@@ -977,6 +1031,7 @@ export function parseCiiInvoice(
           inAccountingCurrency ? TAX_AMOUNT_ACCOUNTING_TERM : TAX_AMOUNT_TERM,
           amount.path,
           defects,
+          overPrecise,
         );
         if (value === undefined) continue;
         if (inAccountingCurrency) {
@@ -1052,6 +1107,7 @@ export function parseCiiInvoice(
       declared,
       defects,
       RAM,
+      overPrecise,
     );
   }
   if (defects.length > 0) declared.defects = defects;
@@ -1061,6 +1117,20 @@ export function parseCiiInvoice(
     .grpAll(transaction, "IncludedSupplyChainTradeLineItem")
     .map((line) => readLine(r, line));
   invoice.lines = readLines.map((read) => read.line);
+  for (const [index, read] of readLines.entries()) {
+    if (!read.declaredNetLexical) continue;
+    noteLexicalPrecision(
+      overPrecise,
+      "BT-131",
+      read.declaredNetLexical.lexical,
+      read.declaredNetLexical.xpath,
+      { line: index + 1 },
+    );
+  }
+  if (overPrecise.length > 0) {
+    declared.overPrecise = overPrecise;
+    invoice.declaredTotals = declared;
+  }
   if (readLines.some((read) => read.declaredNetAmount !== undefined)) {
     declared.lineNetAmounts = readLines.map((read) => read.declaredNetAmount);
     invoice.declaredTotals = declared;

@@ -825,4 +825,15 @@ npm run build
 
 ## Licence
 
-MIT
+MIT.
+
+### Trademark
+
+The MIT licence covers the code in this package and nothing else. "Attestwire"™ and
+the Attestwire logo are trademarks of this project's owner, and no trademark
+right is granted with the copyright licence.
+
+Say what is true and there is no problem: that your product uses this library, or
+is built on it, or validates with it. What the licence does not let you do is
+name or brand a product or service "Attestwire", or word things so a reader would
+take your work for ours or for something we endorse.
