@@ -343,8 +343,9 @@ describe("parseCiiInvoice: nothing is dropped silently", () => {
       "<ram:ChargeAmount>one hundred</ram:ChargeAmount>",
     );
     const { invoice, unmapped } = parseCiiInvoice(broken);
-    expect(invoice.lines[0]?.unitPrice).toBe(0);
+    expect(invoice.lines[0]?.unitPrice).toBeUndefined();
     expect(unknowns(unmapped).some((u) => u.name === "ram:ChargeAmount")).toBe(true);
+    expect(validateInput(invoice).errors.map((e) => e.rule)).toContain("BR-26");
   });
 
   it("reports a second document note rather than overwriting the first", () => {

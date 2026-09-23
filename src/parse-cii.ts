@@ -258,7 +258,9 @@ function readParty(r: Reader, el: XmlElement): Party {
   }
 
   const postal = r.grp(el, "PostalTradeAddress");
+  // No address is no address, not a blank one: see the same line in parse.ts.
   if (postal) party.address = readAddress(r, postal);
+  else delete (party as { address?: unknown }).address;
 
   const endpoint = r.grp(el, "URIUniversalCommunication");
   if (endpoint) {
@@ -417,16 +419,19 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
     r.note(
       quantity,
       "unknown",
-      `${decimalRejectionReason(quantity.text.trim())} The quantity was read as 0.`,
+      `${decimalRejectionReason(quantity.text.trim())} The quantity was left unset, so BR-22 reports it.`,
     );
   }
 
   const line: InvoiceLine = {
     id: lineDocument ? (r.ram(lineDocument, "LineID") ?? "") : "",
     description: "",
-    quantity: quantityValue ?? 0,
+    // Absent or unreadable is left unset, not read as 0: a 0 made BR-22
+    // unreachable from XML, and the document passed where the official
+    // validators reject it (differential test, 2026-09-23). BR-22 reports it.
+    quantity: quantityValue as number,
     unitCode: quantity ? (attr(quantity, "unitCode") ?? "") : "",
-    unitPrice: 0,
+    unitPrice: undefined as unknown as number, // set from the price element, or BR-26 reports it
     vatCategory: "" as VatCategory,
   };
 
@@ -481,7 +486,7 @@ function readLine(r: Reader, el: XmlElement): ReadLineResult {
 
     const netPrice = r.grp(agreement, "NetPriceProductTradePrice");
     if (netPrice) {
-      line.unitPrice = r.num(netPrice, "ChargeAmount") ?? 0;
+      line.unitPrice = r.num(netPrice, "ChargeAmount") as number; // absent: BR-26 reports it, see quantity
       set(line, "baseQuantity", r.num(netPrice, "BasisQuantity"));
     }
 
@@ -780,7 +785,7 @@ export function parseCiiInvoice(
 
   // --- ram:ApplicableHeaderTradeSettlement ---------------------------------
   const settlement = r.grp(transaction, "ApplicableHeaderTradeSettlement");
-  const declared: DeclaredTotals = {};
+  const declared: DeclaredTotals = { syntax: "cii", specificationIdentifier: customizationId?.trim() ?? "" };
   const defects: DeclaredTotalDefect[] = [];
   // BR-DEC-19/-20/-23 and the BR-DEC document-total rules are written against
   // the serialised decimal, so the count has to be taken while the text is
@@ -1013,8 +1018,11 @@ export function parseCiiInvoice(
       // unreadable first amount made the *second* one look like the first and a
       // readable BT-111 was then filed as BT-110. Position is a fact about the
       // document, not about whether the text parses.
+      const invoiceCurrency = invoice.currency?.trim().toUpperCase();
+      let inInvoiceCurrency = 0;
       for (const amount of r.ramAll(summation, "TaxTotalAmount")) {
         const currencyId = attr(amount, "currencyID")?.toUpperCase();
+        if (invoiceCurrency && currencyId?.trim() === invoiceCurrency) inInvoiceCurrency += 1;
         const inAccountingCurrency =
           accountingCurrency !== undefined &&
           currencyId === accountingCurrency &&
@@ -1040,6 +1048,7 @@ export function parseCiiInvoice(
           declared.taxAmount = value;
         }
       }
+      if (invoiceCurrency) declared.taxTotalsInInvoiceCurrency = inInvoiceCurrency;
     }
 
     const preceding: PrecedingInvoiceReference[] = [];

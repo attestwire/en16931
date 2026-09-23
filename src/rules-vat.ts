@@ -177,13 +177,23 @@ const taxableBaseFor = (
 
 export const vatRules: RuleFn[] = [
   // --- -01: the breakdown for a used category must exist, and be unique -----
+  //
+  // On a document that was read, the breakdown it STATES is what is checked.
+  // Until 2026-09-23 only the computed breakdown was, and that is built from
+  // the lines, so it could never lack a category: a document with a group
+  // deleted, or no breakdown at all, passed here and failed KoSIT.
   (inv, ctx) => {
     const totals = totalsOf(inv, ctx);
     if (!totals) return null;
+    const stated = inv.declaredTotals?.syntax
+      ? (inv.declaredTotals.subtotals ?? []).filter((s) => s && typeof s === "object")
+      : undefined;
     const out: TeachingError[] = [];
     for (const category of ALL_CATEGORIES) {
       const used = usesCategoryAnywhere(inv, category, ctx);
-      const groups = subtotalsFor(totals, category);
+      const groups = stated
+        ? stated.filter((s) => String(s.category ?? "").trim() === category)
+        : subtotalsFor(totals, category);
       const unique = EXACTLY_ONE.includes(category);
       const rule = ruleId(category, "01");
 
@@ -192,8 +202,10 @@ export const vatRules: RuleFn[] = [
           rule,
           field: "BT-118",
           severity: "fatal",
-          message: `An invoice line (BT-151), a document level allowance (BT-95) or a document level charge (BT-102) uses VAT category ${describe(category)}, so the VAT breakdown (BG-23) must contain ${unique ? "exactly one" : "at least one"} group with the VAT category code (BT-118) ${category} — but none was produced. The breakdown is the document's own summary of what VAT is due and why; a category that appears on the invoice but not in the breakdown means the tax authority cannot reconcile the two.`,
-          fix: "The VAT breakdown is always computed by this library from the lines and the document level allowances and charges, so a missing group means one of those carries a vatCategory this build does not recognise. Check it against the nine supported codes: S, Z, E, AE, K, G, O, L, M.",
+          message: `An invoice line (BT-151), a document level allowance (BT-95) or a document level charge (BT-102) uses VAT category ${describe(category)}, so the VAT breakdown (BG-23) must contain ${unique ? "exactly one" : "at least one"} group with the VAT category code (BT-118) ${category} — but ${stated ? "this document states none" : "none was produced"}. The breakdown is the document's own summary of what VAT is due and why; a category that appears on the invoice but not in the breakdown means the tax authority cannot reconcile the two.`,
+          fix: stated
+            ? `Add a VAT breakdown group (cac:TaxSubtotal, or ram:ApplicableTradeTax in CII) for category ${category}, with the taxable amount and VAT amount of the lines, allowances and charges that carry it.`
+            : "The VAT breakdown is always computed by this library from the lines and the document level allowances and charges, so a missing group means one of those carries a vatCategory this build does not recognise. Check it against the nine supported codes: S, Z, E, AE, K, G, O, L, M.",
           example: `"lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "${category}"${RATED_CATEGORIES.includes(category) ? ', "vatRate": 19' : ""} }]`,
           xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID",
           docsUrl: `${DOCS}/${rule}`,
@@ -214,7 +226,10 @@ export const vatRules: RuleFn[] = [
         });
       }
 
-      if (!used && groups.length > 0) {
+      // The reverse direction (a group with nothing behind it) is not in either
+      // official binding; they report the stated group's -08 instead. So it is
+      // checked on the computed breakdown only (differential test, 2026-09-23).
+      if (!used && groups.length > 0 && !stated) {
         out.push({
           rule,
           field: "BT-118",
@@ -342,17 +357,28 @@ export const vatRules: RuleFn[] = [
         ? `vatExemptionReasons.${category}`
         : `vatExemptionReasonCodes.${category}`;
       const rule = ruleId(category, "10");
+      // A document that was read (declaredTotals is what the readers fill in,
+      // see DeclaredTotals) already carries the reason, and the official
+      // schematron rejects it: fatal, as there. JSON input is different: the
+      // generator drops the value, so the XML it writes passes, and the
+      // finding is a warning that the intent was discarded. Until 0.8.x it was
+      // a warning in both cases, and the CLI passed files KoSIT rejects.
+      const fromDocument = inv.declaredTotals !== undefined;
       out.push({
         rule,
         field: ["BT-120", "BT-121"],
-        severity: "warning",
+        severity: fromDocument ? "fatal" : "warning",
         message: `A VAT breakdown with the VAT category code (BT-118) ${describe(category)} must not have a VAT exemption reason code (BT-121) or reason text (BT-120), but you supplied ${which} = "${String(supplied).trim()}". ${
           category === "S"
             ? "Standard-rated supplies are taxed, so there is no exemption to explain"
             : category === "Z"
               ? "Zero rating is a rate, not an exemption — the supply is inside the VAT system and taxed at 0%, so no reason is due"
               : `Category ${category} charges ${category === "L" ? "IGIC" : "IPSI"}, which is a tax actually levied on the supply — an exemption reason would claim relief from the very tax the breakdown says you collected`
-        }. ${rule} is fatal at document level; this finding is a warning because the library drops the value rather than emitting it, so the generated XML still passes — but your intent was silently discarded, which you should know about.`,
+        }. ${
+          fromDocument
+            ? `This document states it, and ${rule} is fatal: the official validators reject the file.`
+            : `${rule} is fatal at document level; this finding is a warning because the library drops the value rather than emitting it, so the generated XML still passes — but your intent was silently discarded, which you should know about.`
+        }`,
         fix: `Remove the "${category}" entry from ${!blank(text) ? "vatExemptionReasons" : "vatExemptionReasonCodes"}. If you need to say something to the buyer about this line, use the invoice note (BT-22) or the line note (BT-127), which carry free text without making a VAT claim.`,
         example: `"${!blank(text) ? "vatExemptionReasons" : "vatExemptionReasonCodes"}": { }, "lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "${category}", "vatRate": ${category === "S" ? 19 : category === "Z" ? 0 : category === "L" ? 7 : 10} }]`,
         xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason",
@@ -557,17 +583,23 @@ export const vatRules: RuleFn[] = [
   },
 
   // --- BR-CO-18: an invoice shall have at least one VAT breakdown group -----
+  //
+  // On a document that was read, the groups it states are counted (see -01).
   (inv, ctx) => {
     const totals = totalsOf(inv, ctx);
     if (!totals) return null;
-    if (totals.subtotals.length > 0) return null;
+    const stated = inv.declaredTotals?.syntax ? (inv.declaredTotals.subtotals ?? []) : undefined;
+    if ((stated ?? totals.subtotals).length > 0) return null;
+    if (stated && linesOf(inv).length === 0) return null; // BR-16 reports it
     return err({
       rule: "BR-CO-18",
       field: "BG-23",
       severity: "fatal",
       message:
         "An invoice shall have at least one VAT breakdown group (BG-23). Even a document on which no VAT is due must say so explicitly and say why — with a category (BT-118), a taxable amount (BT-116) and a tax amount of zero (BT-117) — because \"no VAT breakdown\" and \"no VAT due\" are different claims, and only the second is something a tax authority can accept.",
-      fix: "Add at least one invoice line with a vatCategory. The breakdown is derived from the lines, so a document with lines always produces one.",
+      fix: stated
+        ? "Add the VAT breakdown to the document: one group per VAT category and rate, with its taxable amount (BT-116), VAT amount (BT-117) and category (BT-118)."
+        : "Add at least one invoice line with a vatCategory. The breakdown is derived from the lines, so a document with lines always produces one.",
       example: `"lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "S", "vatRate": 19 }]`,
       xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal",
       docsUrl: `${DOCS}/BR-CO-18`,

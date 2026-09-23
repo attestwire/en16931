@@ -240,28 +240,60 @@ export const codelistRules: RuleFn[] = [
   },
 
   // BR-CL-17: the same code list, bound in UBL to cac:TaxCategory/cbc:ID —
-  // the *VAT breakdown* category (BT-118). Reported separately because the
-  // generated document carries both elements, and KoSIT reports both.
+  // the *VAT breakdown* category (BT-118).
+  //
+  // On a document that was read, the breakdown it STATES is what is checked.
+  // Until 2026-09-23 this looked only at the breakdown computed from the
+  // lines, so a bad code written in the document's own breakdown ("Q") passed
+  // while KoSIT rejected it, and a bad LINE code was reported twice (BR-CL-18
+  // and a derived BR-CL-17) where KoSIT reports BR-CL-18 once. On JSON input
+  // there is no stated breakdown; the generator writes one from the lines, so
+  // the computed one is checked, and both findings are correct there.
+  //
+  // The rule id depends on the syntax. The CEN CII schematron binds BR-CL-18
+  // to every ram:ApplicableTradeTax/ram:CategoryCode, which is the line's AND
+  // the breakdown's, and BR-CL-17 only to ram:CategoryTradeTax (allowances and
+  // charges). In UBL the breakdown is cac:TaxCategory, which is BR-CL-17.
   (inv, ctx) => {
-    if (linesOf(inv).length === 0) return null;
-    const { totals: computed } = totalsOutcomeOf(inv, ctx);
-    // malformed line data; BR-22 / BR-24 / BR-26 report it
-    if (!computed) return null;
+    const syntax =
+      inv.declaredTotals?.syntax ??
+      (inv.profile === "xrechnung-cii" || inv.profile === "facturx-en16931" ? "cii" : "ubl");
+    const stated = inv.declaredTotals?.subtotals;
+    let categories: string[];
+    let fromDocument: boolean;
+    if (Array.isArray(stated)) {
+      categories = stated.map((s) => String(s?.category ?? "").trim());
+      fromDocument = true;
+    } else {
+      if (linesOf(inv).length === 0) return null;
+      const { totals: computed } = totalsOutcomeOf(inv, ctx);
+      // malformed line data; BR-22 / BR-24 / BR-26 report it
+      if (!computed) return null;
+      categories = computed.subtotals.map((s) => String(s.category ?? "").trim());
+      fromDocument = false;
+      // In CII the generated breakdown code is the same element type as the
+      // line's, and BR-CL-18 on the line already reports it.
+      if (syntax === "cii") return null;
+    }
+    const rule = syntax === "cii" ? "BR-CL-18" : "BR-CL-17";
     const seen = new Set<string>();
     const out: TeachingError[] = [];
-    for (const subtotal of computed.subtotals) {
-      const code = String(subtotal.category ?? "").trim();
+    for (const code of categories) {
       if (!code || VAT_CATEGORY_CODES_SET.has(code) || seen.has(code)) continue;
       seen.add(code);
       out.push({
-        rule: "BR-CL-17",
+        rule,
         field: "BT-118",
         severity: "fatal",
-        message: `The VAT breakdown (BG-23) computed from your lines contains a VAT category code (BT-118) of "${code}", which is not in UNTDID 5305. The breakdown categories are taken straight from the line categories (BT-151), so this is the document-level consequence of the same bad code — KoSIT reports it against both elements, and so do we.`,
-        fix: "Correct the offending line's vatCategory. The breakdown is always computed from the lines, so there is nothing to fix at document level.",
+        message: fromDocument
+          ? `The VAT breakdown (BG-23) in this document states a VAT category code (BT-118) of "${code}", which is not in UNTDID 5305. EN 16931 admits exactly ${VAT_CATEGORY_CODES.length} codes: ${sample(VAT_CATEGORY_CODES, VAT_CATEGORY_CODES.length)}.`
+          : `The VAT breakdown (BG-23) computed from your lines contains a VAT category code (BT-118) of "${code}", which is not in UNTDID 5305. The breakdown categories are taken straight from the line categories (BT-151), so this is the document-level consequence of the same bad code — the generated document carries both elements, and KoSIT reports it against both.`,
+        fix: fromDocument
+          ? "Correct the category code in the VAT breakdown to the one the lines in that group carry."
+          : "Correct the offending line's vatCategory. The breakdown is always computed from the lines, so there is nothing to fix at document level.",
         example: `"vatCategory": "S", "vatRate": 19`,
         xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID",
-        docsUrl: `${DOCS}/BR-CL-17`,
+        docsUrl: `${DOCS}/${rule}`,
       });
     }
     return out;

@@ -10,6 +10,7 @@ import {
   effectiveRate,
   formatAmount,
   formatNumber,
+  formatQuantity,
   formatPrice,
 } from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
@@ -517,7 +518,7 @@ export function generateXRechnungUBL(
     return groupAlways(lineElement, [
       el("cbc:ID", line.id),
       el("cbc:Note", line.note),
-      el(quantityElement, formatNumber(line.quantity, 4), {
+      el(quantityElement, formatQuantity(line.quantity), {
         unitCode: line.unitCode,
       }),
       el("cbc:LineExtensionAmount", formatAmount(net), {
@@ -603,7 +604,7 @@ export function generateXRechnungUBL(
         }),
         line.baseQuantity === undefined
           ? null
-          : el("cbc:BaseQuantity", formatNumber(line.baseQuantity, 4), {
+          : el("cbc:BaseQuantity", formatQuantity(line.baseQuantity), {
               unitCode: line.unitCode,
             }),
         priceAllowance,

@@ -5,6 +5,112 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-09-23
+
+**A command line, and a validator that agrees with KoSIT on more of what a real
+document says.** `npx @attestwire/en16931 invoice.xml` validates files with no
+code. Documents read from XML are now judged on the figures they state, with the
+tolerances each official binding uses, which catches invoices that passed here
+and failed KoSIT. On 163 official documents: 96% agreement on the rules this
+package implements, no unexplained differences, none missed.
+
+**Upgrading:** validation is stricter on documents read from XML. An invoice
+that passed 0.8.0 may now fail a rule KoSIT already failed it on (BR-01, BR-08,
+BR-10, the `-01`, `-08` and `-09` families, BR-CO-15, BR-CO-18, BR-CL-17/18,
+BR-22, BR-26). JSON input is judged as before, except for the new ATW input
+checks.
+
+### Added
+
+- **A command line.** `npx @attestwire/en16931 invoice.xml` validates UBL, CII
+  and Factur-X / ZUGFeRD PDFs, or a whole directory, with no code and no
+  account. It exits 1 when any document fails and 2 on a usage error. A file it
+  cannot read is a fatal finding, never a skip, and a file that is not an
+  invoice is named for what it is (a ZIP, JSON, an HTML page, a PDF with no
+  invoice inside). Options: `--short` (one line per finding), `--quiet`,
+  `--json`, `--fail-on warning`, `--profile` (any case, with aliases and
+  "did you mean"), and `--large` for invoices past the default size limits.
+  It honours the declared encoding, explains Factur-X MINIMUM and BASIC WL
+  files, and shows a rule's location only when it is in the document's own
+  syntax. The CLI is a `bin` entry only:
+  it is not exported, and importing the package never loads it. The library is
+  still compiled without Node's types, so the browser guarantee is enforced by
+  the build.
+- **A Stripe recipe** in `examples/stripe/`: a finalized Stripe invoice to a
+  validated XRechnung or Factur-X XML, as one file to copy. It lives in the
+  repository only and is not part of the npm package. Its tests run in this
+  suite.
+
+- **New findings for input the generators cannot write faithfully**, so that
+  anything `validateInput` passes can be generated: `ATW-TEXT-NOT-XML` (text
+  with control characters or unpaired surrogates, fatal when nothing else is
+  left), `ATW-VAT-RATE-OUT-OF-RANGE` (over 100%), `ATW-NUMBER-NOT-FINITE` and
+  `ATW-NUMBER-TOO-LARGE` (allowance percentages and base amounts, gross prices,
+  quantities), and `ATW-INPUT-TYPE` (a field of the wrong type from a
+  JavaScript or JSON caller, once, instead of a TypeError).
+
+### Changed
+
+- **VAT in a currency with no minor unit is whole units.** For JPY, KRW and
+  the other ISO 4217 exponent-0 currencies, each VAT breakdown group's amount
+  (BT-117) is rounded half up to whole units: 1,234 JPY at 19% is 234 JPY of
+  VAT, not 234.46. Amounts are still written with two decimals (234.00).
+  `ZERO_DECIMAL_CURRENCIES` is exported.
+
+### Fixed
+
+Found by fuzzing, mutation testing and parameter sweeps on 2026-09-23.
+
+- **Quantities keep their decimals.** BT-129 and BT-149 were written with
+  exactly four decimals while the totals used the full value, so
+  `quantity: 3.3333333333` validated clean and generated a document whose own
+  lines no longer multiplied out (PEPPOL-EN16931-R120) and whose amount due
+  had drifted. Up to twelve decimals are now kept; four remain the minimum,
+  so existing output is unchanged.
+- **Credit notes no longer throw** on a non-finite quantity, price or VAT
+  rate. They report BR-22 / BR-24 / BR-S-05, as an invoice always did.
+- **BR-S-05 judges the rate as written.** A standard rate such as 0.001 or
+  1e-300 passed, then went out as `0.00` and failed the rule in the document.
+- **BR-S-10, BR-Z-10, BR-AF-10 and BR-AG-10 are fatal on a document that
+  states an exemption reason**, as in the official schematron. They were
+  warnings everywhere, so a file KoSIT rejects passed. On JSON input, where
+  the generator drops the value, they stay warnings.
+- **The `-08` tolerance follows each syntax's schematron.** The two bindings
+  disagree: UBL compares the stated taxable amount exactly for Z, E, AE, K, G
+  and O and within ±1 for S, L and M; CII is the other way round, and O is
+  exact in both. The readers now record `declaredTotals.syntax`.
+- **The `-09` rules are checked on a document's stated breakdown.** The VAT
+  amount of a Z, E, AE, K, G or O group must be exactly 0 (0.01 passed), and
+  an S, L or M group's amount is judged as BR-S-09 / BR-AF-09 / BR-AG-09, the
+  ids the official validators report (BR-CO-17 alone was raised).
+- **BR-01, BR-CO-18, the `-01` family, BR-08 and BR-10 are reachable from a
+  document.** A document without BT-24, with no VAT breakdown, with a
+  breakdown missing a category it uses, or without a seller or buyer postal
+  address passed, or was reported under another id: the readers filled in a
+  blank address, and the breakdown checks only saw the one computed from the
+  lines. A stated category O group now matches whatever rate it states.
+- **BR-CO-15 needs exactly one VAT total in the invoice currency.** The
+  readers took the first VAT total as BT-110 whatever its `currencyID`, so a
+  document whose only VAT total was in another currency passed. They now
+  record `declaredTotals.taxTotalsInInvoiceCurrency`.
+- **BR-CL-17 checks the breakdown the document states**, not only the one
+  computed from its lines: a bad code there was missed, and a bad line code
+  was reported twice. In CII the breakdown code is BR-CL-18, as in the CEN
+  CII binding.
+- **BR-24** no longer fires for a line whose amount is over
+  `MAX_MONETARY_AMOUNT`. Since 0.8.0 such a line was reported as
+  `ATW-AMOUNT-OUT-OF-RANGE` and also as BR-24, which blamed an "undefined" base
+  quantity (BT-149) and gave the wrong fix. Now only `ATW-AMOUNT-OUT-OF-RANGE`
+  fires. For a product that is not finite (1e200 × 1e200) it now names the
+  arithmetic instead of BT-149.
+
+### Tests
+
+- Every rule's severity is pinned in a snapshot. Mutation testing found 13
+  rules that could be downgraded from fatal to warning with every test green.
+- A speed budget (`npm run speed`, run in CI) fails on a large slowdown, or on
+  validation time that stops growing linearly with invoice length.
+
 ## [0.8.0] — 2026-09-22
 
 **Totals are summed in exact cents.** Every monetary sum — the line total, the

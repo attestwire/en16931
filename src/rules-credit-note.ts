@@ -1,7 +1,6 @@
 import { documentKindOf, isCreditNote } from "./document-type.js";
 import { LIMITS_DOCS, err, linesOf, totalsOutcomeOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
-import { AmountRangeError } from "./totals.js";
 import type { InvoiceInput, TeachingError } from "./types.js";
 
 /**
@@ -60,25 +59,15 @@ export const creditNoteRules: RuleFn[] = [
   // is an invoice with extra steps, and no validator will tell you.
   (inv, ctx) => {
     if (!isCreditNote(inv)) return null;
-    // The only `computeTotals` site in the rule set that does not swallow a
-    // throw, and it stays that way. Every other site catches and returns null
-    // because BR-22 / BR-24 / BR-26 already report the malformed line; this one
-    // never had a catch, so a defect here has always propagated out of
-    // `validateInput`, and quietly turning that into a swallowed finding would
-    // be a behaviour change smuggled in under a performance change.
-    //
-    // The run cache records the error rather than raising it when it is built,
-    // so rethrowing it here reproduces the old timing exactly: the same error
-    // object, surfacing at this rule, after the rules before it have run.
-    //
-    // One exception: an AmountRangeError is already reported, once, as
-    // ATW-AMOUNT-OUT-OF-RANGE. Rethrowing it would turn that finding back into
-    // the exception the finding exists to replace, for credit notes only.
+    // Until 0.8.x this was the one `computeTotals` site that rethrew, kept so
+    // a performance refactor would not change behaviour silently. A fuzz run
+    // on 2026-09-23 showed what that cost: a credit note with a NaN quantity,
+    // price or VAT rate crashed `validateInput` with a bare RangeError, while
+    // the same line on an invoice (380) produced BR-22 / BR-24 / BR-S-05. It
+    // now returns null like every other site: those rules report the line, on
+    // credit notes too.
     const outcome = totalsOutcomeOf(inv, ctx);
-    if (outcome.threw) {
-      if (outcome.error instanceof AmountRangeError) return null;
-      throw outcome.error;
-    }
+    if (outcome.threw) return null;
     const totals = outcome.totals;
     const negativeLines = totals.lineNetAmounts
       .map((amount, index) => ({ amount, index }))

@@ -72,6 +72,13 @@ describe("BR-24 invoice line net amount", () => {
     expect(findingFor(inv, "BR-24")!.message).toContain("base quantity (BT-149) is 0");
   });
 
+  it("blames the arithmetic, not BT-149, when the product is not finite", () => {
+    const inv = withLine({ quantity: 1e200, unitPrice: 1e200 });
+    const message = findingFor(inv, "BR-24")!.message;
+    expect(message).toContain("does not produce a finite amount");
+    expect(message).not.toContain("BT-149) is");
+  });
+
   it("still refuses generation, and says the same thing first", () => {
     const inv = withLine({ baseQuantity: 0 });
     expect(errorIds(inv)).toContain("BR-24");

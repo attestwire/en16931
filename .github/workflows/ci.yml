@@ -17,9 +17,9 @@ jobs:
         # the job below rather than here.
         node: ["20", "22"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -30,6 +30,10 @@ jobs:
 
       - run: npm test
 
+      # Fails on a large slowdown or on work that stops scaling linearly with
+      # invoice length. See the script for the budgets and how they were set.
+      - run: node scripts/speed-budget.mjs
+
   node18:
     # engines says >=18, so 18 is part of the contract and gets tested — on the
     # built package, which is what a Node 18 user installs. Build with a Node the
@@ -38,9 +42,9 @@ jobs:
     name: node 18 (built package)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -49,7 +53,7 @@ jobs:
 
       - run: npm run build
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "18"
 

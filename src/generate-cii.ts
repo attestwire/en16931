@@ -4,6 +4,7 @@ import {
   effectiveRate,
   formatAmount,
   formatNumber,
+  formatQuantity,
   formatPrice,
 } from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
@@ -470,7 +471,7 @@ export function generateCii(
               el("ram:ChargeAmount", formatPrice(line.grossUnitPrice)),
               line.baseQuantity === undefined
                 ? null
-                : el("ram:BasisQuantity", formatNumber(line.baseQuantity, 4), {
+                : el("ram:BasisQuantity", formatQuantity(line.baseQuantity), {
                     unitCode: line.unitCode,
                   }),
               groupAlways("ram:AppliedTradeAllowanceCharge", [
@@ -489,13 +490,13 @@ export function generateCii(
           el("ram:ChargeAmount", formatPrice(line.unitPrice)),
           line.baseQuantity === undefined
             ? null
-            : el("ram:BasisQuantity", formatNumber(line.baseQuantity, 4), {
+            : el("ram:BasisQuantity", formatQuantity(line.baseQuantity), {
                 unitCode: line.unitCode,
               }),
         ]),
       ]),
       groupAlways("ram:SpecifiedLineTradeDelivery", [
-        el("ram:BilledQuantity", formatNumber(line.quantity, 4), {
+        el("ram:BilledQuantity", formatQuantity(line.quantity), {
           unitCode: line.unitCode,
         }),
       ]),

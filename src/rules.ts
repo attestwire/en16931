@@ -1,5 +1,5 @@
 import { COUNTRY_CODES_SET } from "./codelists/country.js";
-import { effectiveRate, round2 } from "./totals.js";
+import { VAT_RATE_DECIMALS, effectiveRate, round2, roundTo } from "./totals.js";
 import { DEFAULT_INVOICE_TYPE_CODE, documentNoun, isCreditNote, xpathRoot } from "./document-type.js";
 import { extendedRules } from "./rules-extended.js";
 import {
@@ -14,6 +14,7 @@ import {
 import type { RuleFn } from "./rule-kit.js";
 import type {
   InvoiceInput,
+  InvoiceLine,
   Party,
   TeachingError,
   VatCategory,
@@ -48,6 +49,21 @@ const DOCS = "https://attestwire.com/rules";
  * Findings that carry an `ATW-` rule id are ours, not the regulator's.
  */
 const LIMITS_DOCS = "https://github.com/attestwire/en16931#not-implemented-yet";
+
+/**
+ * Categories whose `-08` rule compares EXACTLY, per syntax, as the CEN
+ * schematrons write it (read from CEN-EN16931-UBL.sch / -CII.sch, Peppol
+ * 3.0.20). The two bindings disagree: UBL is exact for the zero-rate
+ * categories and ±1 for S, L, M; CII is the other way round, except O,
+ * which is exact in both. JSON input has no syntax and keeps ±1.
+ */
+const EXACT_08: Record<"ubl" | "cii", ReadonlySet<string>> = {
+  ubl: new Set(["Z", "E", "AE", "K", "G", "O"]),
+  cii: new Set(["S", "O", "L", "M"]),
+};
+
+/** Categories whose `-09` rule requires the stated VAT amount to be exactly 0. */
+const ZERO_TAX_09: ReadonlySet<string> = new Set(["Z", "E", "AE", "K", "G", "O"]);
 
 const XRECHNUNG_PROFILES = new Set(["xrechnung-ubl", "xrechnung-cii"]);
 const isXRechnung = (inv: InvoiceInput) => XRECHNUNG_PROFILES.has(inv.profile);
@@ -494,7 +510,10 @@ const baseInputRules: RuleFn[] = [
       path: string,
     ) => {
       const code = party?.address?.countryCode;
-      if (!party?.address) return; // BR-08 / BR-10 already reported it
+      // With no address, BR-08 / BR-10 report it. In UBL, BR-09 / BR-11 are
+      // scoped to the address and so do not fire as well; in CII they are
+      // asserted from the document root and do (differential test, 2026-09-23).
+      if (!party?.address && inv.declaredTotals?.syntax !== "cii") return;
       if (blank(code) || !/^[A-Za-z]{2}$/.test(code!)) {
         out.push({
           rule,
@@ -865,15 +884,24 @@ const baseInputRules: RuleFn[] = [
       : null,
 
   // BR-IC-11: intra-community supply requires a delivery date or invoicing period.
+  //
+  // The official test is `string-length(ActualDeliveryDate) > 1 or
+  // exists(InvoicePeriod/*)`. Until 2026-09-23 only BT-72 was checked, so a
+  // K invoice that stated its period and no delivery date was rejected here
+  // and accepted by KoSIT (7 documents in the ZUGFeRD corpus).
   (inv) =>
-    usesCategory(inv, "K") && blank(inv.deliveryDate)
+    usesCategory(inv, "K") &&
+    blank(inv.deliveryDate) &&
+    blank(inv.invoicingPeriod?.startDate) &&
+    blank(inv.invoicingPeriod?.endDate) &&
+    blank(inv.invoicingPeriod?.descriptionCode)
       ? err({
           rule: "BR-IC-11",
           field: "BT-72",
           severity: "fatal",
           message:
             "An invoice with an intra-community supply (category K) must state the actual delivery date (BT-72) or an invoicing period (BG-14). The delivery date determines the period in which the supply is reported on your recapitulative statement.",
-          fix: 'Set deliveryDate to the date the goods left, as "YYYY-MM-DD".',
+          fix: 'Set deliveryDate to the date the goods left, as "YYYY-MM-DD", or state the invoicing period (invoicingPeriod.startDate and endDate) the supplies fall in.',
           example: `"deliveryDate": "2026-08-05"`,
           xpath: "/ubl:Invoice/cac:Delivery/cbc:ActualDeliveryDate",
           docsUrl: `${DOCS}/BR-IC-11`,
@@ -886,13 +914,15 @@ const baseInputRules: RuleFn[] = [
     for (const [index, line] of linesOf(inv).entries()) {
       if (line.vatCategory !== "S") continue;
       const rate = line.vatRate;
-      if (typeof rate === "number" && rate > 0) continue;
+      // Judged as written: BT-152 has two decimals, so 1e-300 goes out as
+      // 0.00 and the document then fails the rule this let it through.
+      if (typeof rate === "number" && Number.isFinite(rate) && roundTo(rate, VAT_RATE_DECIMALS) > 0) continue;
       out.push({
         rule: "BR-S-05",
         field: "BT-152",
         severity: "fatal",
         message: `Line ${index + 1} uses VAT category S (standard rated), so the invoiced item VAT rate (BT-152) must be greater than zero, but it is ${
-          rate === undefined ? "missing" : rate
+          rate === undefined ? "missing" : typeof rate === "number" && rate > 0 ? `${rate}, which is written as 0.00 at two decimals` : rate
         }. A zero rate with category S is contradictory — if you genuinely charge no VAT, the category is Z, E, AE, K, G or O, and each of those has different evidencing requirements.`,
         fix: 'Set line.vatRate to the applicable percentage as a number (19 for the German standard rate, 7 for the reduced rate). If no VAT is due, change vatCategory instead of setting the rate to 0.',
         example: `"vatCategory": "S", "vatRate": 19`,
@@ -1121,7 +1151,14 @@ const baseInputRules: RuleFn[] = [
         "VAT is computed per category-and-rate group and rounded there (BR-CO-17), then summed. Computing VAT on the document total instead of per group is the usual cause of a one-cent break.",
       );
     }
-    compare(
+    // The CII binding of BR-CO-15 ends `or GrandTotal = TaxBasisTotal`: a CII
+    // invoice whose total with VAT equals its total without passes whatever
+    // its VAT total says (differential test, 2026-09-23; see rules-core.ts).
+    const ciiNoVat =
+      declared.syntax === "cii" &&
+      typeof declared.taxInclusiveAmount === "number" &&
+      declared.taxInclusiveAmount === declared.taxExclusiveAmount;
+    if (!ciiNoVat) compare(
       declared.taxInclusiveAmount,
       round2(
         stated(declared.taxExclusiveAmount, computed.taxExclusiveAmount) +
@@ -1170,11 +1207,21 @@ const baseInputRules: RuleFn[] = [
     if (lines.length === 0) return null;
 
     const outcome = totalsOutcomeOf(inv, ctx);
-    // a malformed line is already reported by BR-22 / BR-26
-    if (outcome.threw) return null;
-    const computed = outcome.totals;
-
     const out: TeachingError[] = [];
+
+    // Peppol's own reading of a line with a missing factor: quantity 1,
+    // price 0, base quantity 1 (the `let` defaults in PEPPOL-EN16931-UBL.sch).
+    // Used for R120 when the engine cannot compute the lines, which is exactly
+    // when a quantity or price is absent; returning early then (as until
+    // 2026-09-23) hid 14 R120 findings KoSIT reports.
+    const peppolLine = (line: InvoiceLine | undefined): number | undefined => {
+      if (!line) return undefined;
+      const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+      const base = num(line.baseQuantity, 1) || 1;
+      const sum = (entries: { amount?: number }[] | undefined) =>
+        (entries ?? []).reduce((t, e) => t + num(e?.amount, 0), 0);
+      return round2((num(line.quantity, 1) * num(line.unitPrice, 0)) / base + sum(line.charges) - sum(line.allowances));
+    };
 
     // --- PEPPOL-EN16931-R120: BT-131 = BT-129 × BT-146 / BT-149 − ΣBT-136 + ΣBT-141
     //
@@ -1187,7 +1234,7 @@ const baseInputRules: RuleFn[] = [
     if (declaredLines && (isPeppol(inv) || isXRechnung(inv))) {
       for (const [index, stated] of declaredLines.entries()) {
         if (typeof stated !== "number" || !Number.isFinite(stated)) continue;
-        const derived = computed.lineNetAmounts[index];
+        const derived = outcome.threw ? peppolLine(lines[index]) : outcome.totals.lineNetAmounts[index];
         if (derived === undefined) continue;
         // The Peppol rule's own slack: `u:slack(exp, val, 0.02)`, i.e. 0.02 of
         // the invoice currency (0.5 for HUF). Not an exact comparison — a
@@ -1207,6 +1254,11 @@ const baseInputRules: RuleFn[] = [
         });
       }
     }
+
+    // Everything below compares against the computed totals. A line the
+    // engine cannot compute is already reported by BR-22 / BR-26.
+    if (outcome.threw) return out;
+    const computed = outcome.totals;
 
     // --- BR-CO-10: BT-106 = Σ BT-131, using the amounts the document states.
     //
@@ -1246,8 +1298,14 @@ const baseInputRules: RuleFn[] = [
     // --- BR-{S,Z,E,AE,IC,G,O,AF,AG}-08 and BR-CO-17, per breakdown group.
     const declaredSubtotals = declared.subtotals;
     if (declaredSubtotals && declaredSubtotals.length > 0) {
+      // Category O has no rate in the model (BT-119 is not stated for it), but
+      // documents commonly write 0. Keyed on the rate, the stated O group then
+      // matched nothing and its -08 check never ran (differential test,
+      // 2026-09-23: BR-O-08 missed). O is keyed on the category alone.
       const key = (category: string | undefined, rate: number | undefined) =>
-        `${category ?? ""}|${rate === undefined ? "" : round2(rate)}`;
+        category === "O"
+          ? "O|"
+          : `${category ?? ""}|${rate === undefined ? "" : round2(rate)}`;
       const computedByKey = new Map(
         computed.subtotals.map((sub) => [key(sub.category, sub.rate), sub]),
       );
@@ -1291,17 +1349,31 @@ const baseInputRules: RuleFn[] = [
                 computedGroup.taxableAmount + (statedGroupDelta.get(groupKey) ?? 0),
               ),
             }
-          : undefined;
+          : // No line, allowance or charge has this category and rate: the
+            // official rule sums nothing, gets 0, and compares (a stated group
+            // at a rate no line carries was missed until 2026-09-23). Only on a
+            // document; JSON input groups are keyed identically by construction.
+            inv.declaredTotals?.syntax !== undefined && stated.category
+            ? { taxableAmount: 0 }
+            : undefined;
 
         // BT-116, against what the lines in that group state between them.
-        // The `-08` family's tolerance is the schematron's own ±1 whole unit
-        // of currency, signed on both sides — see `withinSignedTolerance`.
-        // Comparing exactly here would reject documents KoSIT accepts.
+        // In UBL the `-08` family's tolerance is the schematron's own ±1 whole
+        // unit of currency, signed on both sides (see `withinSignedTolerance`),
+        // and comparing exactly would reject documents KoSIT accepts. The CEN
+        // CII schematron is not the same: BR-S-08, BR-O-08, BR-AF-08 and
+        // BR-AG-08 there test `BasisAmount = round(sum(...))`, exactly, while
+        // Z, E, AE, K and G keep the ±1. A differential run against KoSIT on
+        // 2026-09-23 found 60 CII documents passed here and rejected there.
+        const syntax = inv.declaredTotals?.syntax;
+        const exact = syntax !== undefined && EXACT_08[syntax].has(stated.category ?? "S");
+        const agrees = (a: number, b: number) =>
+          exact ? round2(a) === round2(b) : withinSignedTolerance(a, b);
         if (
           match &&
           typeof stated.taxableAmount === "number" &&
           Number.isFinite(stated.taxableAmount) &&
-          !withinSignedTolerance(round2(stated.taxableAmount), match.taxableAmount)
+          !agrees(round2(stated.taxableAmount), match.taxableAmount)
         ) {
           const rule = stated.category
             ? `BR-${CATEGORY_RULE_INFIX[stated.category] ?? "S"}-08`
@@ -1311,7 +1383,7 @@ const baseInputRules: RuleFn[] = [
             rule,
             field: "BT-116",
             severity: "fatal",
-            message: `The VAT breakdown for category ${stated.category ?? "?"}${stated.rate === undefined ? "" : ` at ${stated.rate}%`} states a taxable amount (BT-116) of ${round2(stated.taxableAmount).toFixed(2)}, but the lines and document allowances and charges in that group come to ${match.taxableAmount.toFixed(2)} between them — a difference of ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ${inv.currency}. ${rule} requires the two to agree, and the summands are the line amounts the document states (BT-131), not what those lines compute to.`,
+            message: `The VAT breakdown for category ${stated.category ?? "?"}${stated.rate === undefined ? "" : ` at ${stated.rate}%`} states a taxable amount (BT-116) of ${round2(stated.taxableAmount).toFixed(2)}, but the lines and document allowances and charges in that group come to ${match.taxableAmount.toFixed(2)} between them — a difference of ${delta > 0 ? "+" : ""}${delta.toFixed(2)} ${inv.currency}. ${rule} requires the two to agree${exact ? ` exactly: the ${syntax?.toUpperCase()} binding of this rule allows no tolerance` : ""}, and the summands are the line amounts the document states (BT-131), not what those lines compute to.`,
             fix: `BT-116 is Σ BT-131 for the group, less the document allowances (BT-92) in it and plus the document charges (BT-99) in it. Correct the group's lines, or drop declaredTotals.subtotals and let the library compute the breakdown.`,
             example: `"declaredTotals": { "subtotals": [{ "category": "${stated.category ?? "S"}", "taxableAmount": ${match.taxableAmount.toFixed(2)} }] }`,
             xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount",
@@ -1329,6 +1401,60 @@ const baseInputRules: RuleFn[] = [
         // document KoSIT accepts — the probe caught it. `rules-vat.ts` applies
         // the same helpers to the *computed* breakdown; this applies them to
         // the *stated* one, which is where a parsed document's corruption is.
+        // BR-S-09 / BR-AF-09 / BR-AG-09 on the stated group: BT-117 within 1
+        // (exclusive) of round(|BT-116| × BT-119) / 100, as the schematron
+        // writes it. BR-CO-17 below tests the same thing under its own id; the
+        // official validators report the category id, so both are raised.
+        // In CII, BR-AF-09 and BR-AG-09 are `true()` and never fire.
+        if (
+          stated.category &&
+          (stated.category === "S" ||
+            ((stated.category === "L" || stated.category === "M") && inv.declaredTotals?.syntax !== "cii")) &&
+          typeof stated.taxAmount === "number" &&
+          Number.isFinite(stated.taxAmount) &&
+          typeof stated.taxableAmount === "number" &&
+          Number.isFinite(stated.taxableAmount) &&
+          typeof stated.rate === "number" &&
+          Number.isFinite(stated.rate)
+        ) {
+          const expected = Math.round(Math.abs(stated.taxableAmount) * stated.rate) / 100;
+          if (!withinAbsoluteTolerance(stated.taxAmount, expected)) {
+            const rule = `BR-${CATEGORY_RULE_INFIX[stated.category] ?? stated.category}-09`;
+            out.push({
+              rule,
+              field: "BT-117",
+              severity: "fatal",
+              message: `The VAT breakdown for category ${stated.category} at ${stated.rate}% states a VAT amount (BT-117) of ${round2(stated.taxAmount).toFixed(2)} ${inv.currency} on a taxable amount of ${round2(stated.taxableAmount).toFixed(2)}, which at that rate is ${expected.toFixed(2)}. ${rule} allows a difference of strictly less than 1.00.`,
+              fix: "Compute the group's VAT amount from its own taxable amount and rate, and check the rate matches the lines in the group.",
+              xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount",
+              docsUrl: `${DOCS}/${rule}`,
+            });
+          }
+        }
+
+        // BR-{Z,E,AE,IC,G,O}-09: in these categories the stated VAT amount
+        // must be exactly 0, in both syntaxes. BR-CO-17 below allowed anything
+        // that rounds to 0 (up to 0.49); KoSIT rejects 0.01 (differential
+        // test, 2026-09-23).
+        if (
+          stated.category &&
+          ZERO_TAX_09.has(stated.category) &&
+          typeof stated.taxAmount === "number" &&
+          Number.isFinite(stated.taxAmount) &&
+          round2(stated.taxAmount) !== 0
+        ) {
+          const rule = `BR-${CATEGORY_RULE_INFIX[stated.category] ?? stated.category}-09`;
+          out.push({
+            rule,
+            field: "BT-117",
+            severity: "fatal",
+            message: `The VAT breakdown for category ${stated.category} states a VAT amount (BT-117) of ${round2(stated.taxAmount).toFixed(2)} ${inv.currency}. ${rule} requires it to be exactly 0: category ${stated.category} charges no VAT, and no tolerance applies.`,
+            fix: `Set the group's VAT amount to 0.00. If VAT is really due on these lines, their category is not ${stated.category}.`,
+            xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount",
+            docsUrl: `${DOCS}/${rule}`,
+          });
+        }
+
         if (
           typeof stated.taxAmount === "number" &&
           Number.isFinite(stated.taxAmount) &&
@@ -1742,11 +1868,35 @@ export function runInputRules(inv: InvoiceInput): TeachingError[] {
   // still raises it, at the point in the run where it always did.
   const ctx = makeRuleContext(inv);
   const out: TeachingError[] = [];
+  let typeError: TypeError | RangeError | null = null;
   for (const rule of inputRules) {
-    const result = rule(inv, ctx);
+    let result;
+    try {
+      result = rule(inv, ctx);
+    } catch (error) {
+      // The rules trust the InvoiceInput types. A JavaScript or JSON caller
+      // can still pass a number where text belongs, and a rule calling
+      // `.trim()` on it threw out of validateInput (fuzz run, 2026-09-23).
+      // Report it once, as a finding; anything else is a bug and propagates.
+      // A RangeError is the same thing for numbers (a NaN or 1e308 the rule
+      // cannot round); the input check usually names it already.
+      if (!(error instanceof TypeError) && !(error instanceof RangeError)) throw error;
+      typeError ??= error;
+      continue;
+    }
     if (!result) continue;
     if (Array.isArray(result)) out.push(...result);
     else out.push(result);
+  }
+  if (typeError && !out.some((f) => /^ATW-(INPUT-TYPE|NUMBER-|VAT-RATE-OUT|AMOUNT-OUT|DECLARED-TOTAL)/.test(f.rule))) {
+    out.push({
+      rule: "ATW-INPUT-TYPE",
+      field: [],
+      severity: "fatal",
+      message: `A field of the invoice has a value of the wrong type, so some rules could not run (${typeError.message}). The input model expects text as strings, amounts as numbers, and lists as arrays.`,
+      fix: "Check the invoice object against the InvoiceInput type, for example by building it in TypeScript. A value parsed from JSON or a form is the usual cause: \"19\" where 19 is expected, or a number where text is.",
+      docsUrl: LIMITS_DOCS,
+    });
   }
   return out;
 }

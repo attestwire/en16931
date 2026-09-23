@@ -126,6 +126,14 @@ describe("MAX_MONETARY_AMOUNT", () => {
     expect(findings[0]!.docsUrl).toBe("https://github.com/attestwire/en16931#not-implemented-yet");
   });
 
+  // lineNetAmount throws AmountRangeError for this line too. BR-24 used to catch
+  // every throw and blame the base quantity ("BT-149 is undefined"), so the one
+  // real problem came back as three findings, two of them with the wrong fix.
+  it("is reported once, not also as BR-24 blaming the base quantity", () => {
+    const rules = validateInput(overLimit).errors.map((e) => e.rule);
+    expect(rules).not.toContain("BR-24");
+  });
+
   // The credit-note idiom check is the one rule that rethrows arithmetic
   // failures; it must not rethrow this one.
   it("is a finding on a credit note too", () => {

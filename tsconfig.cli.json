@@ -1,0 +1,9 @@
+{
+  "//": "The command line (src/cli.ts, src/bin.ts) is the only code given Node's types. tsconfig.json builds the library without them, so a node: import or a `process` that creeps into the library fails the build instead of shipping to browsers.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src/cli.ts", "src/bin.ts"],
+  "exclude": []
+}

@@ -94,6 +94,17 @@ function roundedRatio(numerator: bigint, denominator: bigint): bigint {
   return sign * ((2n * n + denominator) / (2n * denominator));
 }
 
+/**
+ * Currencies with no minor unit (ISO 4217 exponent 0). Their VAT per
+ * breakdown group (BT-117) is rounded to whole units: 1,234 JPY at 19% is
+ * 234 JPY of VAT, not 234.46, which no one can pay. Until 2026-09-23 it was
+ * computed in hundredths like every other currency; the amounts are still
+ * written with two decimals (234.00), as EN 16931's decimal rules expect.
+ */
+export const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  "BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "UYI", "VND", "VUV", "XAF", "XOF", "XPF",
+]);
+
 /** Render an amount for XML: always exactly 2 decimals, no exponent, no `-0`. */
 export function formatAmount(value: number): string {
   const rounded = round2(value);
@@ -201,6 +212,40 @@ export function formatPrice(value: number): string {
   const [whole, decimals = ""] = fixed.split(".");
   const trimmed = decimals.replace(/0+$/, "");
   const kept = trimmed.length < 2 ? decimals.slice(0, 2) : trimmed;
+  return `${whole}.${kept}`;
+}
+
+/** Maximum decimals kept on a quantity. See {@link formatQuantity}. */
+export const MAX_QUANTITY_DECIMALS = 12;
+
+/**
+ * Render a quantity (BT-129 invoiced quantity, BT-149 base quantity) at its
+ * natural precision, never below four decimals.
+ *
+ * ⚠ Until 0.8.x quantities were written with `formatNumber(q, 4)`, while the
+ * totals were computed from the unrounded quantity. `quantity: 3.3333333333`
+ * therefore validated clean and generated `3.3333`, and the document's own
+ * line amounts no longer multiplied out: PEPPOL-EN16931-R120 failed and the
+ * payable amount a reader recomputes drifted (by 0.80 on one fuzzed Stripe
+ * invoice). EN 16931 sets no decimal cap on BT-129, and Stripe's
+ * `quantity_decimal` carries up to twelve, so twelve are kept. Four is the
+ * floor so every committed fixture stays byte-identical.
+ */
+export function formatQuantity(value: number): string {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`Cannot format non-finite quantity: ${value}`);
+  }
+  if (Math.abs(value) >= 1e21) {
+    throw new RangeError(
+      `Cannot format the quantity ${value}: it is at or above 1e21, where JavaScript ` +
+        `switches to exponent notation and xs:decimal has no exponent form.`,
+    );
+  }
+  const rounded = roundTo(value, MAX_QUANTITY_DECIMALS);
+  const fixed = (rounded === 0 ? 0 : rounded).toFixed(MAX_QUANTITY_DECIMALS);
+  const [whole, decimals = ""] = fixed.split(".");
+  const trimmed = decimals.replace(/0+$/, "");
+  const kept = trimmed.length < 4 ? decimals.slice(0, 4) : trimmed;
   return `${whole}.${kept}`;
 }
 
@@ -402,11 +447,17 @@ export function computeTotals(inv: InvoiceInput): InvoiceTotals {
     add(entry.vatCategory, effectiveAllowanceChargeRate(entry), amount);
   }
 
+  const wholeUnits = ZERO_DECIMAL_CURRENCIES.has(String(inv.currency ?? "").trim().toUpperCase());
   const subtotals: TaxSubtotal[] = [...groups.values()].map((group) => {
     // The rate is normalised to VAT_RATE_DECIMALS (2), so rate x 100 is an
-    // integer and taxable x rate / 100 is one exact ratio over 10,000.
+    // integer and taxable x rate / 100 is one exact ratio over 10,000 (in
+    // cents), or over 1,000,000 (in whole units, then back to cents).
     const rate = BigInt(Math.round((group.rate ?? 0) * 100));
-    const taxAmount = fromCents(roundedRatio(group.taxable * rate, 10_000n));
+    const taxAmount = fromCents(
+      wholeUnits
+        ? roundedRatio(group.taxable * rate, 1_000_000n) * 100n
+        : roundedRatio(group.taxable * rate, 10_000n),
+    );
     const reason =
       inv.vatExemptionReasons?.[group.category] ??
       DEFAULT_EXEMPTION_REASONS[group.category];

@@ -1,6 +1,6 @@
 import { DEFAULT_INVOICE_TYPE_CODE } from "./generate.js";
 import { usableDefects } from "./declared-totals.js";
-import { lineNetAmount } from "./totals.js";
+import { AmountRangeError, lineNetAmount } from "./totals.js";
 import {
   DOCS,
   LIMITS_DOCS,
@@ -69,6 +69,59 @@ const TOTAL_SPECS: {
 ];
 
 export const coreRules: RuleFn[] = [
+  // BR-01: an Invoice shall have a Specification identifier (BT-24).
+  // Reachable only from a document: the readers record BT-24 as stated, and
+  // until 2026-09-23 a document without it was validated against a guessed
+  // profile with no finding at all.
+  (inv) => {
+    const id = inv.declaredTotals?.specificationIdentifier;
+    if (id === undefined || id !== "") return null;
+    return err({
+      rule: "BR-01",
+      field: "BT-24",
+      severity: "fatal",
+      message:
+        "This document has no specification identifier (BT-24: cbc:CustomizationID in UBL, the GuidelineSpecifiedDocumentContextParameter ID in CII). It is what names the rules the invoice follows, EN 16931 core, XRechnung or Peppol, and a receiver routes and validates on it. It was validated here against the core EN 16931 profile as a fallback.",
+      fix: 'State BT-24, e.g. "urn:cen.eu:en16931:2017" for core EN 16931, or the XRechnung or Peppol identifier your receiver expects.',
+      xpath: "/ubl:Invoice/cbc:CustomizationID",
+      docsUrl: `${DOCS}/BR-01`,
+    });
+  },
+
+  // BR-CO-15, the half that selects BT-110 by currency. The official test is
+  // `count(TaxTotal/TaxAmount[@currencyID = $DocumentCurrency]) eq 1 and
+  // TaxInclusive = TaxExclusive + that amount`. The readers used to take the
+  // first VAT total as BT-110 whatever its currency, so a document whose only
+  // VAT total was in another currency passed here and failed in KoSIT
+  // (differential test, 2026-09-23). The count is recorded by the readers;
+  // on the JSON model it is absent and this does not run.
+  (inv) => {
+    const count = inv.declaredTotals?.taxTotalsInInvoiceCurrency;
+    if (count === undefined || count === 1) return null;
+    // The CII binding adds `or GrandTotalAmount = TaxBasisTotalAmount`: a CII
+    // invoice with no VAT (category O, or minimal documents) may omit the VAT
+    // total entirely. UBL has no such clause. Missing this clause flagged three
+    // official CII examples that KoSIT accepts (benchmark, 2026-09-23).
+    if (inv.declaredTotals?.syntax === "cii") {
+      const gross = inv.declaredTotals.taxInclusiveAmount;
+      const net = inv.declaredTotals.taxExclusiveAmount;
+      if (typeof gross !== "number" || typeof net !== "number" || gross === net) return null;
+    }
+    const currency = (inv.currency ?? "").trim().toUpperCase();
+    return err({
+      rule: "BR-CO-15",
+      field: ["BT-110", "BT-5"],
+      severity: "fatal",
+      message:
+        count === 0
+          ? `No VAT total (BT-110) in this document is stated in the invoice currency ${currency} (BT-5). BR-CO-15 reads BT-110 as the VAT total whose currencyID is the invoice currency, so the document has none, and its amount with VAT (BT-112) cannot equal BT-109 + BT-110. A VAT total in another currency is BT-111, the VAT accounting currency (BT-6) restatement, and does not count.`
+          : `This document states ${count} VAT totals (BT-110) in the invoice currency ${currency} (BT-5). BR-CO-15 requires exactly one: any further total belongs to the VAT accounting currency (BT-6), in that currency.`,
+      fix: `State the VAT total once with currencyID="${currency || "EUR"}". If you also report VAT in an accounting currency, add BT-6 and a second total in that currency.`,
+      xpath: "/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount",
+      docsUrl: `${DOCS}/BR-CO-15`,
+    });
+  },
+
   // BR-04: An Invoice shall have an Invoice type code (BT-3).
   //
   // The model defaults BT-3 to "380", so this fires only when a caller sets the
@@ -182,8 +235,16 @@ export const coreRules: RuleFn[] = [
       let reason: string | undefined;
       try {
         amount = lineNetAmount(line);
-      } catch {
-        reason = `the item price base quantity (BT-149) is ${line.baseQuantity}, and dividing by it is undefined`;
+      } catch (error) {
+        // Over the monetary ceiling is ATW-AMOUNT-OUT-OF-RANGE's finding, not
+        // a base-quantity problem; blaming BT-149 for it gave the wrong fix.
+        if (error instanceof AmountRangeError) continue;
+        // lineNetAmount throws for a zero base quantity, and round2 for a
+        // product that is not finite (1e200 x 1e200). Name the one that happened.
+        reason =
+          line.baseQuantity === 0
+            ? `the item price base quantity (BT-149) is 0, and dividing by it is undefined`
+            : `the computation ${line.quantity} x ${line.unitPrice}${line.baseQuantity !== undefined ? ` / ${line.baseQuantity}` : ""} does not produce a finite amount`;
       }
       if (amount !== undefined && !Number.isFinite(amount)) {
         reason = `the computation ${line.quantity} x ${line.unitPrice}${line.baseQuantity !== undefined ? ` / ${line.baseQuantity}` : ""} does not produce a finite amount`;

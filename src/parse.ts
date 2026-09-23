@@ -294,7 +294,11 @@ function readParty(
   }
 
   const postal = r.cac(el, "PostalAddress");
+  // No PostalAddress is no address, not a blank one: BR-08 / BR-10 report the
+  // missing group. The blank default made them unreachable from XML, and the
+  // document got BR-09 (country code) where KoSIT reports BR-08 (2026-09-23).
   if (postal) party.address = readAddress(r, postal);
+  else delete (party as { address?: unknown }).address;
 
   for (const taxScheme of r.cacAll(el, "PartyTaxScheme")) {
     const companyId = r.cbc(taxScheme, "CompanyID");
@@ -417,16 +421,19 @@ function readLine(
     r.note(
       quantity,
       "unknown",
-      `${decimalRejectionReason(quantity.text.trim())} The quantity was read as 0.`,
+      `${decimalRejectionReason(quantity.text.trim())} The quantity was left unset, so BR-22 reports it.`,
     );
   }
 
   const line: InvoiceLine = {
     id: r.cbc(el, "ID") ?? "",
     description: "",
-    quantity: quantityValue ?? 0,
+    // Absent or unreadable is left unset, not read as 0: a 0 made BR-22
+    // unreachable from XML, and the document passed where the official
+    // validators reject it (differential test, 2026-09-23). BR-22 reports it.
+    quantity: quantityValue as number,
     unitCode: quantity ? (attr(quantity, "unitCode") ?? "") : "",
-    unitPrice: 0,
+    unitPrice: undefined as unknown as number, // set from the price element, or BR-26 reports it
     vatCategory: "" as VatCategory,
   };
 
@@ -514,7 +521,7 @@ function readLine(
   }
 
   if (price) {
-    line.unitPrice = r.num(price, "PriceAmount") ?? 0;
+    line.unitPrice = r.num(price, "PriceAmount") as number; // absent: BR-26 reports it, see quantity
     set(line, "baseQuantity", r.num(price, "BaseQuantity"));
     // BT-147/BT-148: a gross price with a discount hangs off cac:Price as an
     // allowance, never as a second price element.
@@ -920,7 +927,7 @@ export function parseUbl(
   // The VAT breakdown is recomputed from the lines, so only the two things the
   // model cannot derive are read here: the declared total (BT-110), and the
   // exemption reasons (BT-120 / BT-121), which are free text.
-  const declared: DeclaredTotals = {};
+  const declared: DeclaredTotals = { syntax: "ubl", specificationIdentifier: customizationId?.trim() ?? "" };
   const defects: DeclaredTotalDefect[] = [];
   // BR-DEC-19/-20/-23 and the BR-DEC document-total rules are written against
   // the serialised decimal, so the count has to be taken while the text is
@@ -931,10 +938,13 @@ export function parseUbl(
   const exemptionReasonCodes: Partial<Record<VatCategory, string>> = {};
   const taxCurrencyCode = invoice.vatAccountingCurrency;
   let taxTotalIndex = 0;
+  const invoiceCurrency = invoice.currency?.trim().toUpperCase();
+  let inInvoiceCurrency = 0;
   for (const taxTotal of r.cacAll(root, "TaxTotal")) {
     const amountEl = r.cbcEl(taxTotal, "TaxAmount");
     const subtotals = r.cacAll(taxTotal, "TaxSubtotal");
     const currencyId = amountEl ? attr(amountEl, "currencyID") : undefined;
+    if (invoiceCurrency && currencyId?.trim().toUpperCase() === invoiceCurrency) inInvoiceCurrency += 1;
     const isFirstTaxTotal = taxTotalIndex === 0;
     taxTotalIndex += 1;
 
@@ -1026,6 +1036,7 @@ export function parseUbl(
       if (reasonCode !== undefined) exemptionReasonCodes[code] = reasonCode;
     }
   }
+  if (invoiceCurrency) declared.taxTotalsInInvoiceCurrency = inInvoiceCurrency;
   if (declaredSubtotals.length > 0) declared.subtotals = declaredSubtotals;
   if (Object.keys(exemptionReasons).length > 0) {
     invoice.vatExemptionReasons = exemptionReasons;

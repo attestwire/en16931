@@ -2,9 +2,10 @@ import { readFileSync, readdirSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 import { inputRules, validateInput } from "./index.js";
-import { CATEGORY_RULE_INFIX } from "./rule-kit.js";
+import { CATEGORY_RULE_INFIX, makeRuleContext } from "./rule-kit.js";
+import type { RuleContext } from "./rule-kit.js";
 import { clean, cleanLine, withInvoice, withLine } from "./testkit.js";
-import type { InvoiceInput, TeachingError } from "./types.js";
+import type { InvoiceInput, InvoiceTotals, TeachingError, VatCategory } from "./types.js";
 
 /**
  * Cross-cutting guarantees about the whole rule set.
@@ -862,6 +863,25 @@ const BATTERY: [string, InvoiceInput][] = [
   // did put "you cannot trip this rule" on eight pages that readers can trip.
   // One fixture per category, so no member can go unexercised again.
   ...declaredTaxableWrongPerCategory,
+  // Input the generators cannot write faithfully (rules-representable.ts,
+  // from the 2026-09-23 fuzz run), and a wrongly typed field (ATW-INPUT-TYPE).
+  ["textOnlyNul", withInvoice({ note: "\u0000" })],
+  ["vatRateHuge", withLine({ vatRate: 1e308 })],
+  ["allowancePercentNaN", withLine({ allowances: [{ amount: 1, percentage: Number.NaN, reason: "Discount" }] })],
+  ["grossPriceHuge", withLine({ grossUnitPrice: 1e21 })],
+  ["wrongType", withInvoice({ payment: { ...clean.payment!, meansCode: 58 as unknown as string } })],
+  // A document read from XML (declaredTotals.syntax is what the readers set):
+  // BT-24 absent is BR-01; no stated VAT breakdown is BR-CO-18 and BR-S-01,
+  // which a computed breakdown can never trigger (differential test, 2026-09-23).
+  ["documentNoBT24", withInvoice({
+    declaredTotals: {
+      syntax: "ubl",
+      specificationIdentifier: "",
+      subtotals: [{ category: "S", rate: 19, taxableAmount: 1500, taxAmount: 285 }],
+    },
+  })],
+  ["unknownProfile", withInvoice({ profile: "zz" as never })],
+  ["documentNoBreakdown", withInvoice({ declaredTotals: { syntax: "ubl", specificationIdentifier: "urn:cen.eu:en16931:2017" } })],
 ];
 
 /** Every finding the battery produces, tagged with the case that produced it. */
@@ -947,8 +967,6 @@ const ARITHMETIC_INVARIANTS: Record<string, string> = {
     "Every computed breakdown group is built carrying a VAT amount (BT-117).",
   "BR-48":
     "Every computed breakdown group is built carrying a VAT rate (BT-119).",
-  "BR-CO-18":
-    "A breakdown group is emitted for every category on the lines, so an invoice with lines always has one.",
   "BR-DEC-19":
     "BT-106 goes through the same two-decimal rounding helper as every other computed amount.",
   "BR-DEC-20":
@@ -957,14 +975,27 @@ const ARITHMETIC_INVARIANTS: Record<string, string> = {
     "BT-115 goes through the same two-decimal rounding helper as every other computed amount.",
   ...Object.fromEntries(
     Object.values(CATEGORY_RULE_INFIX).flatMap((infix) => [
-      [
-        `BR-${infix}-01`,
-        "The breakdown group for this category is created from the lines that carry it, so it exists whenever the category is used.",
-      ],
-      [
-        `BR-${infix}-09`,
-        "This group's VAT amount is computed from its own taxable amount and rate, by the one helper that does it.",
-      ],
+      // BR-S-01 is reachable from a document that states no S group (the
+      // documentNoBreakdown fixture); the other categories' -01 are reachable
+      // the same way but have no fixture, so they stay listed.
+      ...(infix === "S"
+        ? []
+        : [
+            [
+              `BR-${infix}-01`,
+              "The breakdown group for this category is created from the lines that carry it, so it exists whenever the category is used.",
+            ] as [string, string],
+          ]),
+      // The rated categories' -09 is also checked on a stated breakdown
+      // (rules.ts), which the battery reaches; the zero-rate ones stay listed.
+      ...(["S", "AF", "AG"].includes(infix)
+        ? []
+        : [
+            [
+              `BR-${infix}-09`,
+              "This group's VAT amount is computed from its own taxable amount and rate, by the one helper that does it.",
+            ] as [string, string],
+          ]),
     ]),
   ),
 };
@@ -1006,6 +1037,94 @@ describe("the rule set as a whole", () => {
   // emit is either fired by the battery or named in ARITHMETIC_INVARIANTS with
   // the reason it cannot be. A new rule that nobody exercises fails this test
   // and the failure names the id.
+  // Pins each rule's severity. Mutation testing on 2026-09-23 found that 13
+  // rules could be downgraded from fatal to warning with every test still
+  // green: the suite checked which rule ids fired, never how severe they were,
+  // and a warning does not make an invoice invalid. The battery above reaches
+  // every reachable rule (the test below enforces that), so one snapshot of
+  // rule -> severities covers them all, including rules added later.
+  //
+  // A deliberate severity change shows up here as a snapshot diff: review it,
+  // then run vitest with -u.
+  it("keeps every rule at its reviewed severity", () => {
+    const seen = new Map<string, Set<string>>();
+    for (const [, inv] of BATTERY) {
+      const r = validateInput(inv);
+      for (const f of [...r.errors, ...r.warnings, ...r.information]) {
+        if (!seen.has(f.rule)) seen.set(f.rule, new Set());
+        seen.get(f.rule)!.add(f.severity);
+      }
+    }
+    const pinned = Object.fromEntries(
+      [...seen.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([rule, sev]) => [rule, [...sev].sort().join("|")]),
+    );
+    expect(pinned).toMatchSnapshot();
+  });
+
+  // The arithmetic invariants above cannot fire from caller input, which is
+  // why they are listed rather than exercised. Mutation testing on 2026-09-23
+  // showed the cost: each of them could be deleted, or downgraded to a
+  // warning, with the suite green. Here they are handed deliberately corrupted
+  // totals through the rule context, and each must fire, fatal.
+  it("fires every arithmetic invariant, fatal, on corrupted totals", () => {
+    const rateFor: Record<string, number | undefined> = { S: 19, L: 7, M: 10, O: undefined };
+    const corruptions: [string, (t: InvoiceTotals) => InvoiceTotals][] = [
+      ["no breakdown", (t) => ({ ...t, subtotals: [] })],
+      ["taxable +5", (t) => ({ ...t, subtotals: t.subtotals.map((g) => ({ ...g, taxableAmount: g.taxableAmount + 5 })) })],
+      ["tax +5", (t) => ({ ...t, subtotals: t.subtotals.map((g) => ({ ...g, taxAmount: g.taxAmount + 5 })) })],
+      ["group fields missing", (t) => ({
+        ...t,
+        subtotals: t.subtotals.map((g) => ({ ...g, taxableAmount: undefined, taxAmount: undefined, rate: undefined }) as never),
+      })],
+      ["three-decimal breakdown", (t) => ({
+        ...t,
+        subtotals: t.subtotals.map((g) => ({ ...g, taxableAmount: g.taxableAmount + 0.001, taxAmount: g.taxAmount + 0.001 })),
+      })],
+      ["three decimals", (t) => ({
+        ...t,
+        lineNetAmounts: t.lineNetAmounts.map((a) => a + 0.001),
+        lineExtensionAmount: t.lineExtensionAmount + 0.001,
+        taxExclusiveAmount: t.taxExclusiveAmount + 0.001,
+        payableAmount: t.payableAmount + 0.001,
+      })],
+    ];
+    const fired = new Map<string, Set<string>>();
+    for (const category of ["S", ...Object.keys(CATEGORY_RULE_INFIX)] as VatCategory[]) {
+      const inv = withInvoice({
+        lines: [cleanLine({ vatCategory: category, vatRate: rateFor[category] ?? 0 })],
+        vatExemptionReasons: category === "E" ? { E: "Exempt under Article 135" } : undefined,
+        buyer: category === "G" ? { ...clean.buyer, address: { ...clean.buyer.address, countryCode: "US" } } : clean.buyer,
+      });
+      const base = makeRuleContext(inv);
+      if (!base.totals.totals) continue;
+      for (const [, corrupt] of corruptions) {
+        const ctx: RuleContext = { ...base, totals: { totals: corrupt(base.totals.totals) } };
+        for (const rule of inputRules) {
+          let result;
+          try {
+            result = rule(inv, ctx);
+          } catch (error) {
+            // A rule other than the one under test may trip over a group with
+            // no amounts (real totals always carry them); runInputRules turns
+            // that into ATW-INPUT-TYPE, and here it is simply skipped (as is a
+            // RangeError from rounding the missing amount).
+            if (error instanceof TypeError || error instanceof RangeError) continue;
+            throw error;
+          }
+          for (const f of [result].flat()) {
+            if (!f) continue;
+            if (!fired.has(f.rule)) fired.set(f.rule, new Set());
+            fired.get(f.rule)!.add(f.severity);
+          }
+        }
+      }
+    }
+    const notFatal = Object.keys(ARITHMETIC_INVARIANTS).filter((id) => !fired.get(id)?.has("fatal"));
+    expect(notFatal, "invariants that no corruption made fire as fatal").toEqual([]);
+  });
+
   it("fires every rule a caller can reach, and none that they cannot", () => {
     const unaccounted = ALL_RULE_IDS.filter(
       (id) =>

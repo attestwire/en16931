@@ -9,7 +9,9 @@
 //   npm run build && node scripts/smoke-dist.mjs
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const dist = new URL("../dist/index.js", import.meta.url);
 const fixture = new URL("../fixtures/xrechnung-ubl-minimal.xml", import.meta.url);
@@ -39,5 +41,17 @@ assert.throws(() => computeTotals(over), AmountRangeError);
 const overResult = validateInput(over);
 assert.equal(overResult.valid, false);
 assert.ok(overResult.errors.some((e) => e.rule === "ATW-AMOUNT-OUT-OF-RANGE"));
+assert.ok(!overResult.errors.some((e) => e.rule === "BR-24"), "over-limit line also reported as BR-24");
+
+// 3. The command line, run as npx would run it: exit 0 on a conformant file,
+//    1 on a failing one, 2 on a usage error.
+const bin = fileURLToPath(new URL("../dist/bin.js", import.meta.url));
+const cli = (...args) => spawnSync(process.execPath, [bin, ...args], { encoding: "utf8" });
+const pass = cli(fileURLToPath(fixture));
+assert.equal(pass.status, 0, pass.stdout + pass.stderr);
+assert.match(pass.stdout, /1 document: 1 passed, 0 failed/);
+const pdf = fileURLToPath(new URL("../fixtures/facturx/facturx-minimum-rechnung.pdf", import.meta.url));
+assert.equal(cli(pdf).status, 1);
+assert.equal(cli("--no-such-flag").status, 2);
 
 console.log(`dist smoke test passed on Node ${process.versions.node}`);

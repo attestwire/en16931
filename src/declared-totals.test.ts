@@ -657,18 +657,21 @@ for (const syntax of [UBL, CII]) {
     it("gates the line quantity (BT-129) the same way", () => {
       // Old: `Number("1e2")` gave a quantity of 100, the line was priced from
       // it, and the totals disagreed for a reason no message explained. New:
-      // the quantity falls back to 0, exactly as it does for "notanumber", and
-      // the reason is noted against the element.
+      // the quantity is left unset, exactly as for "notanumber", the reason is
+      // noted against the element, and BR-22 reports it. (Until 2026-09-23 it
+      // fell back to 0, which made BR-22 unreachable from XML.)
       const broken = swap(xml, syntax.quantity("10.0000"), syntax.quantity("1e2"));
       const { invoice, unmapped } = syntax.parse(broken) as unknown as {
         invoice: { lines: { quantity: number }[] };
         unmapped: { path: string; reason: string }[];
       };
-      expect(invoice.lines[0]?.quantity).toBe(0);
+      expect(invoice.lines[0]?.quantity).toBeUndefined();
       const entry = unmapped.find((u) => syntax.quantityXpath.test(u.path));
       expect(entry?.reason).toContain("xs:decimal");
-      expect(entry?.reason).toContain("quantity was read as 0");
-      expect(validateInput(invoice as never).valid).toBe(false);
+      expect(entry?.reason).toContain("quantity was left unset");
+      const result = validateInput(invoice as never);
+      expect(result.valid).toBe(false);
+      expect(result.errors.map((e) => e.rule)).toContain("BR-22");
     });
 
     it("leaves a quantity that IS a valid decimal alone", () => {

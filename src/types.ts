@@ -420,6 +420,29 @@ export interface OverPreciseAmount {
 
 export interface DeclaredTotals {
   /**
+   * The syntax the document was read from. Set by the readers, never by the
+   * JSON model. It matters because the official CEN schematrons are not the
+   * same in both: BR-S-08 / BR-O-08 / BR-AF-08 / BR-AG-08 compare the stated
+   * taxable amount EXACTLY in CII, and within ±1 in UBL. Until 2026-09-23 the
+   * engine applied ±1 to both, and passed CII files KoSIT rejects.
+   */
+  syntax?: "ubl" | "cii";
+  /**
+   * How many VAT totals (UBL `cac:TaxTotal/cbc:TaxAmount`, CII
+   * `ram:TaxTotalAmount`) carry `@currencyID` equal to the invoice currency
+   * (BT-5). Set by the readers. BR-CO-15 requires exactly one: it selects
+   * BT-110 by that attribute, so a document whose only VAT total is in another
+   * currency has no BT-110 at all. The readers used to take the first total
+   * whatever its currency said (differential test against KoSIT, 2026-09-23).
+   */
+  taxTotalsInInvoiceCurrency?: number;
+  /**
+   * BT-24 as the document states it, trimmed; empty when the element is
+   * absent. Set by the readers so BR-01 can be judged: the JSON model always
+   * has a profile, so the rule is only reachable from a document.
+   */
+  specificationIdentifier?: string;
+  /**
    * BT-131 invoice line net amount, as stated on each line, in document order.
    * `undefined` where a line states none.
    *

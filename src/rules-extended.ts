@@ -6,6 +6,7 @@ import { decimalRules } from "./rules-decimals.js";
 import { germanRules } from "./rules-de.js";
 import { peppolRules } from "./rules-peppol.js";
 import { referenceRules } from "./rules-references.js";
+import { representableRules } from "./rules-representable.js";
 import { vatRules } from "./rules-vat.js";
 import type { RuleFn } from "./rule-kit.js";
 
@@ -32,4 +33,5 @@ export const extendedRules: RuleFn[] = [
   ...referenceRules,
   ...germanRules,
   ...peppolRules,
+  ...representableRules,
 ];

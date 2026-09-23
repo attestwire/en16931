@@ -10,12 +10,37 @@ errors that teach the regulation.**
 Zero runtime dependencies, TypeScript-first, and entirely local: installing this
 package needs no account and no key, and nothing it does makes a network call.
 
-No JVM, no server. The package uses no platform API beyond the JavaScript
+No JVM, no server. The library uses no platform API beyond the JavaScript
 standard library; even the DEFLATE decoder the Factur-X reader needs is
 implemented in-repo, not borrowed from Node. The same build runs unchanged in
-Node, Deno, Bun, Cloudflare Workers and the browser.
+Node, Deno, Bun, Cloudflare Workers and the browser. (The command line below is
+the one part that reads files, and importing the package never loads it.)
 [The playground](https://attestwire.com/playground) is this package running
 client-side: the invoice never leaves the tab.
+
+## Command line
+
+Check invoices you already have without writing any code:
+
+```bash
+npx @attestwire/en16931 invoice.xml
+npx @attestwire/en16931 invoices/          # every .xml and .pdf, recursively
+npx @attestwire/en16931 factur-x.pdf       # the CII payload inside the PDF
+```
+
+Each finding names the rule, the business term, the reason and the fix, with a
+link to the rule's page. The exit status is 0 when every document passes, 1
+when any fails and 2 on a usage error, so it drops straight into a script or a
+CI step. A file it cannot read counts as a failure, never a skip. Options:
+`--short` prints one line per finding, `--quiet` prints only failures,
+`--json` prints machine-readable output, `--fail-on warning` fails on warnings
+too, `--profile <name>` judges every document against one profile, and
+`--large` accepts invoices past the default size limits (about 3,000 lines).
+Run `npx @attestwire/en16931 --help` for the full list.
+
+On GitHub, the
+[Validate E-Invoice action](https://github.com/attestwire/validate-einvoice-action)
+runs the same checks on every pull request and annotates the failing files.
 
 ## Quickstart
 
@@ -111,6 +136,13 @@ example cannot drift from the library.
   POST JSON, get validated XRechnung XML back.
 - **[Severity, and what `valid` means](#teaching-errors)**: fatal, warning and
   information are three separate arrays.
+- **[GitHub Action](https://github.com/attestwire/validate-einvoice-action)**:
+  this engine in CI, offline, with pull-request annotations and SARIF.
+- **[Medusa plugin](https://github.com/attestwire/medusa-plugin-einvoice)**:
+  XRechnung and Factur-X for Medusa v2 orders.
+- **[Stripe recipe](https://github.com/attestwire/en16931/tree/main/examples/stripe)**:
+  a finalized Stripe invoice to a validated XRechnung or Factur-X XML, in one
+  file you copy.
 
 ## What this package does
 

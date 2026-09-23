@@ -11,5 +11,5 @@
     "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/testkit.ts"]
+  "exclude": ["src/**/*.test.ts", "src/testkit.ts", "src/cli.ts", "src/bin.ts"]
 }
