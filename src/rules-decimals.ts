@@ -1,5 +1,6 @@
 import { usableDefects } from "./declared-totals.js";
-import { DOCS, LIMITS_DOCS, decimalPlaces, err } from "./rule-kit.js";
+import { DOCS, LIMITS_DOCS, decimalPlaces, err, totalsOutcomeOf } from "./rule-kit.js";
+import { AmountRangeError, MAX_MONETARY_AMOUNT } from "./totals.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { DeclaredTotals, TeachingError } from "./types.js";
 
@@ -157,6 +158,28 @@ const LEXICAL_SPECS: Record<
 };
 
 export const decimalRules: RuleFn[] = [
+  // ATW-AMOUNT-OUT-OF-RANGE: ours, and a limit of this library, not of EN 16931.
+  //
+  // computeTotals refuses to sum past MAX_MONETARY_AMOUNT rather than lose the
+  // cents. Before this finding existed that refusal was a throw: the totals-based
+  // rules swallowed it, as they swallow every arithmetic throw, and an invoice
+  // for a quadrillion euros came back `valid: true`. Reported here once, as a
+  // fatal finding, so validateInput keeps its contract of returning findings.
+  (inv, ctx) => {
+    const outcome = totalsOutcomeOf(inv, ctx);
+    if (!outcome.threw || !(outcome.error instanceof AmountRangeError)) return null;
+    const max = MAX_MONETARY_AMOUNT.toLocaleString("en-US", { minimumFractionDigits: 2 });
+    return err({
+      rule: "ATW-AMOUNT-OUT-OF-RANGE",
+      field: ["BT-131", "BT-115"],
+      severity: "fatal",
+      message: `An amount on this invoice, or a total computed from its amounts, is ${String(outcome.error.amount)}, beyond the ${max} this library can compute with exactly. This is not a rule of the regulation — EN 16931 sets no maximum — but past that size a JavaScript number cannot hold every cent, so the totals would be silently wrong. The usual cause is not a genuinely huge invoice but a unit slip: a price in cents where euros were meant, a quantity multiplied twice, or an amount parsed from a string with its decimal separator dropped.`,
+      fix: `Check the line quantities (BT-129), prices (BT-146) and allowance or charge amounts for a value in the wrong unit. If the invoice really is this large, split it: no single amount or total may exceed ${max} in absolute value.`,
+      example: `"lines": [{ "quantity": 3, "unitPrice": 1250.00 }]`,
+      docsUrl: LIMITS_DOCS,
+    });
+  },
+
   // ATW-DECLARED-TOTAL-NOT-FINITE: ours, not the regulator's.
   //
   // `typeof NaN === "number"`, so a NaN or Infinity in declaredTotals passed

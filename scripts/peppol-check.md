@@ -3,14 +3,16 @@
 `scripts/kosit-check.sh` puts our XRechnung output to the German regulator's own
 tool. This does the same for Peppol. It matters because the package has
 advertised a `peppol-bis-3` profile since 0.3.0, the CHANGELOG has said "Not
-verified" about it ever since, and `scripts/kosit-check.md:440` recorded that
+verified" about it ever since, and `scripts/kosit-check.md:433` recorded that
 the Peppol rules in this build had never been run against a Peppol artefact at
 all. Until this script, the only external check on any Peppol claim here was
 that a handful of `PEPPOL-EN16931-*` rules happen to be embedded in the
 XRechnung schematron and were seen firing there.
 
-Scope: five documents, UBL only. This is a conformance check on those
-documents, not a schematron parity suite.
+Scope: the first run below covers five documents, UBL only. The second run,
+recorded in the addendum, covers the same five inputs emitted in both syntaxes,
+ten documents. Both are conformance checks on those documents, not a schematron
+parity suite.
 
 ## Running it
 
@@ -198,7 +200,7 @@ independent confirmation of the KoSIT result through a different artefact
 
 ### 4. What this run did *not* settle
 
-`scripts/kosit-check.md:440` records a gap: the XRechnung schematron carries
+`scripts/kosit-check.md:433` records a gap: the XRechnung schematron carries
 some `PEPPOL-EN16931-*` rules, `R040` among them, and this build gates its
 Peppol rules on `profile: "peppol-bis-3"`, so those rules do not run for an
 XRechnung input here even though KoSIT runs them. **That gap is untouched by
@@ -444,7 +446,7 @@ invoice rejected.
 ### 6. What this addendum still does not settle
 
 Everything in "What this run did *not* settle" above stands, unchanged: the
-XRechnung-profile gating gap at `scripts/kosit-check.md:440`, the unmeasured
+XRechnung-profile gating gap at `scripts/kosit-check.md:433`, the unmeasured
 ratio of Peppol assertions implemented, `PEPPOL-EN16931-R040` with a percentage,
 the twelve national rule sets other than R040, and the whole Peppol network
 layer. Added to it by this run:

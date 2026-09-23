@@ -3,10 +3,10 @@
  *
  * Source:  OpenPEPPOL/peppol-bis-invoice-3
  *          rules/sch/PEPPOL-EN16931-UBL.sch
- * Ref:     master
+ * Ref:     v3.0.20
  * Lists:   PEPPOL-EN16931-CL008 (Peppol Participant Identifier Scheme)
  *          PEPPOL-EN16931-CL007 (ISO 4217 alpha-3, Peppol's copy)
- * Emitted: 2026-08-10 by scripts/build-peppol.mjs
+ * Emitted: 2026-08-17 by scripts/build-peppol.mjs
  *
  * Regenerate with: node scripts/build-peppol.mjs
  */

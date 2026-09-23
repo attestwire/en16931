@@ -1,6 +1,7 @@
 import { documentKindOf, isCreditNote } from "./document-type.js";
 import { LIMITS_DOCS, err, linesOf, totalsOutcomeOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
+import { AmountRangeError } from "./totals.js";
 import type { InvoiceInput, TeachingError } from "./types.js";
 
 /**
@@ -69,8 +70,15 @@ export const creditNoteRules: RuleFn[] = [
     // The run cache records the error rather than raising it when it is built,
     // so rethrowing it here reproduces the old timing exactly: the same error
     // object, surfacing at this rule, after the rules before it have run.
+    //
+    // One exception: an AmountRangeError is already reported, once, as
+    // ATW-AMOUNT-OUT-OF-RANGE. Rethrowing it would turn that finding back into
+    // the exception the finding exists to replace, for credit notes only.
     const outcome = totalsOutcomeOf(inv, ctx);
-    if (outcome.threw) throw outcome.error;
+    if (outcome.threw) {
+      if (outcome.error instanceof AmountRangeError) return null;
+      throw outcome.error;
+    }
     const totals = outcome.totals;
     const negativeLines = totals.lineNetAmounts
       .map((amount, index) => ({ amount, index }))

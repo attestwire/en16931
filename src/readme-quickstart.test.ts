@@ -1,11 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createRequire } from "node:module";
+import { createRequire, stripTypeScriptTypes } from "node:module";
 import { join } from "node:path";
 import { formatWithOptions } from "node:util";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { validateInput } from "./index.js";
@@ -79,17 +78,18 @@ function runQuickstart(): {
 } {
   // Erase the types, then run. `satisfies InvoiceInput` and `type` imports are
   // TypeScript-only syntax and `new Function` would throw on either, so the
-  // snippets go through the compiler's transpiler first — which strips types and
+  // snippets go through Node's own type-stripper first — which strips types and
   // touches nothing else, so what executes is still the text on the page.
+  // (Node's stripTypeScriptTypes rather than ts.transpileModule: TypeScript 7
+  // no longer ships the JS compiler API. Needs Node >= 22.13 to run the tests;
+  // the published library itself keeps its wider engines range.)
   const source = tsBlocks
     .join("\n")
     .split("\n")
     .filter((l) => !/^import\s/.test(l))
     .join("\n");
   const body =
-    ts.transpileModule(source, {
-      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
-    }).outputText + "\nreturn { invoice, result, rejected };\n";
+    stripTypeScriptTypes(source) + "\nreturn { invoice, result, rejected };\n";
 
   const logged: string[] = [];
   const fakeConsole = {

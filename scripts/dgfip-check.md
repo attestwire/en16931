@@ -16,10 +16,10 @@ failures, and they are worth wildly different amounts of work:
 - **(c) a profile mismatch** — the document is fine and is simply not the
   profile being asked for.
 
-Every one of the 22 fixture × profile combinations is **(c)**. Not one is (a),
-and — this is the measurement everything else rests on — not one is (b), because the French
-"D22B" CII schema accepts D16B content outright. Details below, with the
-evidence for each.
+Every one of the 22 fixture × profile combinations is **(c)**. Not one is (a).
+Not one is (b), because the French "D22B" CII schema accepts D16B content
+outright; that measurement is the one everything else here rests on. Details
+below, with the evidence for each.
 
 ## Running it
 
@@ -111,9 +111,9 @@ this package executes them. So there is no French rule id to cite for any
 failure above, and inventing one would put words in the DGFiP's mouth. What
 `xmllint` cites is `cvc-complex-type.2.4.a`, every time.
 
-## The decisive question: does the French base schema accept D16B?
+## Does the French base schema accept D16B?
 
-**Yes. Unreservedly.** This is the fact that sizes a France build, so it was
+**Yes.** This is the fact that sizes a France build, so it was
 measured rather than reasoned, by comparing the DGFiP's D22B modules with
 UN/CEFACT's D16B modules declaration by declaration, reading *through* the
 DGFiP's comment markers so the comparison is against D22B and not against the
@@ -155,8 +155,10 @@ tightened. The Factur-X 1.09.2 (2026-08-04) claim that D22B is backward
 compatible with D16B holds here for a reason more specific than compatibility:
 on the invoice message there is nothing to be compatible *with*.
 
-**Migrating this package from D16B to D22B for France is a zero-line change.**
-The failures above have nothing to do with the version.
+**Moving this package from the D16B to the D22B namespace and version string
+for France is a zero-line change.** The 32 cardinality tightenings tabulated
+below are not: they are schema requirements a France build would still have to
+meet. The failures above have nothing to do with the version.
 
 The 32 cardinality changes are real French constraints and are worth reading —
 they are requirements a `france-2026` capability inherits. The ones our fixtures
@@ -273,8 +275,9 @@ run. Sized from the artefacts, not estimated:
    business rules unverified — which, by the standard the rest of this package
    holds itself to, means it would ship as "not verified".
 
-The honest one-line summary: the version question is free, the schema question
-is a day, and the business-rule and transport questions are the build.
+Summary: no work is needed on the XML version. Matching the French schemas is a
+small change. Implementing the 42 French business rules and the filing layer is
+the real project, and there is no official tool to check that work against.
 
 ## Scope of the claim
 

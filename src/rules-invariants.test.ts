@@ -320,6 +320,8 @@ const BATTERY: [string, InvoiceInput][] = [
   ["nonFiniteTotals", withInvoice({
     declaredTotals: { taxAmount: Number.NaN, payableAmount: Number.POSITIVE_INFINITY },
   })],
+  // One cent past MAX_MONETARY_AMOUNT: the arithmetic refuses to sum it.
+  ["amountOutOfRange", withLine({ quantity: 1, unitPrice: 1_000_000_000_000 })],
 
   // The XML path, in model form. `declaredTotals.defects` is what the two
   // readers write when the *document* fails to state a total readably, and it

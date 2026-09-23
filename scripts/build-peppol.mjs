@@ -13,7 +13,7 @@
  * the rules that cite them cite different ids.
  *
  *   node scripts/build-peppol.mjs                  # fetch pinned ref, rewrite the list
- *   PEPPOL_REF=master node scripts/build-peppol.mjs
+ *   PEPPOL_REF=v3.0.21 node scripts/build-peppol.mjs   # try a newer tag
  *
  * Requires network access. The generated file is committed, so a normal
  * build/test run never touches the network.
@@ -37,8 +37,11 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(HERE, "..", "src", "codelists");
 
-/** Ref of OpenPEPPOL/peppol-bis-invoice-3 the list is taken from. */
-const REF = process.env.PEPPOL_REF ?? "master";
+/** Ref of OpenPEPPOL/peppol-bis-invoice-3 the list is taken from. Pinned to
+ * the release the conformance record (scripts/peppol-check.md) was run
+ * against; a branch here would let the vendored list drift from the version
+ * the site claims. */
+const REF = process.env.PEPPOL_REF ?? "v3.0.20";
 const SCH_URL = `https://raw.githubusercontent.com/OpenPEPPOL/peppol-bis-invoice-3/${REF}/rules/sch/PEPPOL-EN16931-UBL.sch`;
 
 const GENERATED_ON = new Date().toISOString().slice(0, 10);

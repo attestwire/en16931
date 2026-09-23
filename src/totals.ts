@@ -37,6 +37,63 @@ export function round2(value: number): number {
   return (sign * Math.round(scaled)) / 100;
 }
 
+/**
+ * The largest absolute monetary amount this library computes with, including
+ * every total it derives: 999,999,999,999.99.
+ *
+ * Not an EN 16931 rule — the standard sets no ceiling. It is a representation
+ * limit of the number-based API: `round2` re-normalises through 15 significant
+ * digits, and 14 digits of cents keeps every amount a digit inside that, where
+ * a JS number still holds the cents exactly. Further out a sum would lose cents
+ * without saying so, so the arithmetic refuses instead: `computeTotals` and the generators throw `AmountRangeError`,
+ * and `validateInput` reports ATW-AMOUNT-OUT-OF-RANGE as a finding.
+ */
+export const MAX_MONETARY_AMOUNT = 999_999_999_999.99;
+const MAX_CENTS = 99_999_999_999_999n;
+
+/** An amount, or a total computed from amounts, is beyond `MAX_MONETARY_AMOUNT`. */
+export class AmountRangeError extends RangeError {
+  /** The offending amount, as supplied or as computed. */
+  readonly amount: number;
+  constructor(amount: number) {
+    super(
+      `Monetary amount ${amount} exceeds the supported absolute maximum of ${MAX_MONETARY_AMOUNT}.`,
+    );
+    this.name = "AmountRangeError";
+    this.amount = amount;
+  }
+}
+
+/**
+ * Totals are summed in exact integer cents. Each amount is rounded half-up
+ * first (so the sum is of already-rounded amounts, as EN 16931 requires) and
+ * then added as a BigInt, so a 10,000-line invoice cannot drift by the cent
+ * that repeated float addition loses.
+ */
+function toCents(value: number): bigint {
+  if (Math.abs(value) > MAX_MONETARY_AMOUNT) throw new AmountRangeError(value);
+  return BigInt(Math.round(round2(value) * 100));
+}
+
+function fromCents(value: bigint): number {
+  if (value > MAX_CENTS || value < -MAX_CENTS) {
+    throw new AmountRangeError(Number(value) / 100);
+  }
+  return Number(value) / 100;
+}
+
+/** Σ of already-rounded amounts, exact, negative adjustments included. */
+function sumAmounts(values: readonly number[]): number {
+  return fromCents(values.reduce((sum, value) => sum + toCents(value), 0n));
+}
+
+/** numerator / denominator, rounded half-up away from zero, like `round2`. */
+function roundedRatio(numerator: bigint, denominator: bigint): bigint {
+  const sign = numerator < 0n ? -1n : 1n;
+  const n = numerator < 0n ? -numerator : numerator;
+  return sign * ((2n * n + denominator) / (2n * denominator));
+}
+
 /** Render an amount for XML: always exactly 2 decimals, no exponent, no `-0`. */
 export function formatAmount(value: number): string {
   const rounded = round2(value);
@@ -230,13 +287,13 @@ function sumLineAllowanceCharges(
   entries: LineAllowanceCharge[] | undefined,
 ): number {
   if (!entries || entries.length === 0) return 0;
-  let sum = 0;
+  let sum = 0n;
   for (const entry of entries) {
     const amount = entry?.amount;
     if (typeof amount !== "number" || !Number.isFinite(amount)) continue;
-    sum = round2(sum + round2(amount));
+    sum += toCents(amount);
   }
-  return sum;
+  return fromCents(sum);
 }
 
 /**
@@ -259,7 +316,7 @@ export function lineNetAmount(line: InvoiceLine): number {
   const gross = (line.quantity * line.unitPrice) / base;
   const allowances = sumLineAllowanceCharges(line.allowances);
   const charges = sumLineAllowanceCharges(line.charges);
-  return round2(gross - allowances + charges);
+  return fromCents(toCents(round2(gross - allowances + charges)));
 }
 
 /** Σ BT-92 or Σ BT-99 over the document level entries, each rounded first. */
@@ -267,13 +324,13 @@ function sumDocumentAllowanceCharges(
   entries: DocumentAllowanceCharge[] | undefined,
 ): number {
   if (!entries || entries.length === 0) return 0;
-  let sum = 0;
+  let sum = 0n;
   for (const entry of entries) {
     const amount = entry?.amount;
     if (typeof amount !== "number" || !Number.isFinite(amount)) continue;
-    sum = round2(sum + round2(amount));
+    sum += toCents(amount);
   }
-  return sum;
+  return fromCents(sum);
 }
 
 /** The (category, rate) pair a line or a document allowance/charge belongs to. */
@@ -304,27 +361,27 @@ const groupKey = (category: VatCategory, rate: number | undefined): string =>
 export function computeTotals(inv: InvoiceInput): InvoiceTotals {
   const lineNetAmounts = inv.lines.map(lineNetAmount);
 
-  const lineExtensionAmount = round2(
-    lineNetAmounts.reduce((sum, amount) => sum + amount, 0),
-  );
+  const lineExtensionAmount = sumAmounts(lineNetAmounts);
   const allowanceTotalAmount = sumDocumentAllowanceCharges(inv.allowances);
   const chargeTotalAmount = sumDocumentAllowanceCharges(inv.charges);
-  const taxExclusiveAmount = round2(
-    lineExtensionAmount - allowanceTotalAmount + chargeTotalAmount,
-  );
+  const taxExclusiveAmount = sumAmounts([
+    lineExtensionAmount,
+    -allowanceTotalAmount,
+    chargeTotalAmount,
+  ]);
 
   // Group by (category, rate). Insertion order is preserved, and lines are
   // visited before document allowances and charges, so the breakdown comes out
   // in the order the categories first appear on the invoice.
   const groups = new Map<
     string,
-    { category: VatCategory; rate?: number; taxable: number }
+    { category: VatCategory; rate?: number; taxable: bigint }
   >();
   const add = (category: VatCategory, rate: number | undefined, amount: number) => {
     const key = groupKey(category, rate);
     const existing = groups.get(key);
-    if (existing) existing.taxable = round2(existing.taxable + amount);
-    else groups.set(key, { category, rate, taxable: amount });
+    if (existing) existing.taxable += toCents(amount);
+    else groups.set(key, { category, rate, taxable: toCents(amount) });
   };
 
   for (const [index, line] of inv.lines.entries()) {
@@ -346,14 +403,17 @@ export function computeTotals(inv: InvoiceInput): InvoiceTotals {
   }
 
   const subtotals: TaxSubtotal[] = [...groups.values()].map((group) => {
-    const taxAmount = round2((group.taxable * (group.rate ?? 0)) / 100);
+    // The rate is normalised to VAT_RATE_DECIMALS (2), so rate x 100 is an
+    // integer and taxable x rate / 100 is one exact ratio over 10,000.
+    const rate = BigInt(Math.round((group.rate ?? 0) * 100));
+    const taxAmount = fromCents(roundedRatio(group.taxable * rate, 10_000n));
     const reason =
       inv.vatExemptionReasons?.[group.category] ??
       DEFAULT_EXEMPTION_REASONS[group.category];
     const reasonCode = inv.vatExemptionReasonCodes?.[group.category];
     const subtotal: TaxSubtotal = {
       category: group.category,
-      taxableAmount: group.taxable,
+      taxableAmount: fromCents(group.taxable),
       taxAmount,
     };
     if (group.rate !== undefined) subtotal.rate = group.rate;
@@ -368,10 +428,8 @@ export function computeTotals(inv: InvoiceInput): InvoiceTotals {
     return subtotal;
   });
 
-  const taxAmount = round2(
-    subtotals.reduce((sum, subtotal) => sum + subtotal.taxAmount, 0),
-  );
-  const taxInclusiveAmount = round2(taxExclusiveAmount + taxAmount);
+  const taxAmount = sumAmounts(subtotals.map((subtotal) => subtotal.taxAmount));
+  const taxInclusiveAmount = sumAmounts([taxExclusiveAmount, taxAmount]);
 
   const paidAmount =
     typeof inv.paidAmount === "number" && Number.isFinite(inv.paidAmount)
@@ -381,7 +439,11 @@ export function computeTotals(inv: InvoiceInput): InvoiceTotals {
     typeof inv.roundingAmount === "number" && Number.isFinite(inv.roundingAmount)
       ? round2(inv.roundingAmount)
       : 0;
-  const payableAmount = round2(taxInclusiveAmount - paidAmount + roundingAmount);
+  const payableAmount = sumAmounts([
+    taxInclusiveAmount,
+    -paidAmount,
+    roundingAmount,
+  ]);
 
   return {
     lineNetAmounts,

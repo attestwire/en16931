@@ -88,6 +88,8 @@ export {
   type XmlAttribute,
 } from "./xml-parse.js";
 export {
+  MAX_MONETARY_AMOUNT,
+  AmountRangeError,
   computeTotals,
   lineNetAmount,
   round2,

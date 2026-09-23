@@ -57,12 +57,6 @@ generator are unchanged. Re-run the check after any change to `generate.ts`,
 a rule-set change alone cannot alter the emitted document, but a new fixture is
 a document nobody has validated.
 
-⚠ `apps/site` (attestwire.com/llms.txt and the homepage) still scopes this
-result to "the three fixtures shipped in the repository". That was true until
-2026-08-11 and is now stale — there are eleven. The site is outside this
-package; whoever updates it should take the count from the table below, which
-is the record.
-
 ## Last recorded result
 
 Run on **2026-08-13** with validator 1.6.2 and XRechnung configuration 3.0.2
@@ -229,8 +223,8 @@ Run on 2026-08-11 with validator 1.6.2 and XRechnung configuration 3.0.2
 | `xrechnung-cii-reverse-charge.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
 
 `Acceptable: 7  Rejected: 0`. The seven report XMLs contain zero
-`failed-assert`, zero `successful-report` and zero `rep:message` elements — so
-"no error, warning or information findings" is a count, not an impression.
+`failed-assert`, zero `successful-report` and zero `rep:message` elements, so
+there were no error, warning or information findings.
 
 **Re-run 2026-08-12**, same validator and configuration, after the 0.4.0
 rule-coverage fixes (BR-CO-09 on BT-63, BR-CL-14 on BT-69, and the BR-CO-09
@@ -278,8 +272,7 @@ Acceptable:  7  Rejected:  0
 ```
 
 `grep -c "failed-assert\|successful-report\|rep:message" out/*.xml` returns `0`
-for all seven reports, so "no error, warning or information findings" is again a
-count and not an impression.
+for all seven reports: again no error, warning or information findings.
 
 ### What the check settled, 2026-08-12 (adversarial review)
 
