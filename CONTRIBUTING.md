@@ -55,12 +55,15 @@ product, so a message that teaches the wrong thing is a real bug.
 
 ## Running the tests
 
-Node 18 or newer.
+Node 20 or newer to develop: the test runner (vitest 4) needs it. The published
+package itself still runs on Node 18, which CI checks by running
+`scripts/smoke-dist.mjs` against the build on Node 18.
 
 ```bash
 npm install
 npm test          # vitest run — the whole suite
 npm run build     # tsc, into dist/
+node scripts/smoke-dist.mjs   # the built package, end to end, no dependencies
 ```
 
 To run one file while you iterate:
