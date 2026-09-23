@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createRequire, stripTypeScriptTypes } from "node:module";
+import * as nodeModule from "node:module";
 import { join } from "node:path";
 import { formatWithOptions } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,16 @@ import { describe, expect, it } from "vitest";
 
 import { validateInput } from "./index.js";
 import type { InvoiceInput } from "./types.js";
+
+const { createRequire } = nodeModule;
+
+// module.stripTypeScriptTypes arrived in Node 22.13. The tests that execute the
+// README snippets need it; on an older Node (CI still runs the suite on 20)
+// they are skipped rather than failed, and the Node 22 job runs them.
+const stripTypeScriptTypes = (
+  nodeModule as { stripTypeScriptTypes?: (source: string) => string }
+).stripTypeScriptTypes;
+const canRunSnippets = typeof stripTypeScriptTypes === "function";
 
 // The README's quickstart is the first thing a developer sees on npmjs.com, and
 // a published tarball cannot be edited. So the two snippets in it are not
@@ -89,7 +99,7 @@ function runQuickstart(): {
     .filter((l) => !/^import\s/.test(l))
     .join("\n");
   const body =
-    stripTypeScriptTypes(source) + "\nreturn { invoice, result, rejected };\n";
+    stripTypeScriptTypes!(source) + "\nreturn { invoice, result, rejected };\n";
 
   const logged: string[] = [];
   const fakeConsole = {
@@ -140,7 +150,7 @@ describe("README quickstart", () => {
     expect(json.length).toBe(1);
   });
 
-  it("the first snippet's invoice really is valid", () => {
+  it.skipIf(!canRunSnippets)("the first snippet's invoice really is valid", () => {
     const { invoice } = runQuickstart();
     const result = validateInput(invoice);
     expect(result.valid).toBe(true);
@@ -149,7 +159,7 @@ describe("README quickstart", () => {
     expect(result.information).toEqual([]);
   });
 
-  it("the second snippet trips exactly BR-DE-15 and nothing else", () => {
+  it.skipIf(!canRunSnippets)("the second snippet trips exactly BR-DE-15 and nothing else", () => {
     const { rejected } = runQuickstart();
     expect(rejected.valid).toBe(false);
     expect(rejected.errors.map((e) => e.rule)).toEqual(["BR-DE-15"]);
@@ -158,12 +168,12 @@ describe("README quickstart", () => {
     expect(rejected.information).toEqual([]);
   });
 
-  it("prints what it says it prints", () => {
+  it.skipIf(!canRunSnippets)("prints what it says it prints", () => {
     const { logged } = runQuickstart();
     expect(logged).toEqual(statedOutputs());
   });
 
-  it("quotes the error object the engine actually returns", () => {
+  it.skipIf(!canRunSnippets)("quotes the error object the engine actually returns", () => {
     const { rejected } = runQuickstart();
     expect(JSON.parse(json[0])).toEqual(JSON.parse(JSON.stringify(rejected.errors[0])));
   });
@@ -269,7 +279,7 @@ describe("README teaching-errors section", () => {
   // three fields. Derived here rather than trusted: an earlier revision claimed
   // "errors: 3  warnings: 2" and the real answer was 3 fatal, 0 warnings and
   // one `information` advisory.
-  it("states the count the engine produces", () => {
+  it.skipIf(!canRunSnippets)("states the count the engine produces", () => {
     const { invoice } = runQuickstart();
     const { buyerReference, payment, ...rest } = invoice as InvoiceInput & {
       payment?: unknown;
