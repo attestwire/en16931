@@ -12,6 +12,7 @@ import {
   DOCS,
   RATED_CATEGORIES,
   VAT_TOLERANCE,
+  allowanceChargesOf,
   blank,
   documentAllowanceCharges,
   err,
@@ -38,6 +39,9 @@ import type { InvoiceInput, InvoiceTotals, TaxSubtotal, TeachingError, VatCatego
  *     BR-O-11 / BR-O-12 (category O may not share a document with any other
  *     category) are fully falsifiable from caller input. They catch real
  *     mistakes today.
+ *   - (Since 0.9.0 a document that was READ is also judged on the breakdown
+ *     it states: `-01`, `-08`, `-09`, BR-CO-18, and since 0.10.0 BR-45, BR-46,
+ *     BR-47 and BR-48. The paragraph below is about JSON input.)
  *   - The `-01`, `-08` and `-09` families, and BR-45..BR-48 / BR-CO-17 /
  *     BR-CO-18, are evaluated against the breakdown `computeTotals` derives
  *     from your lines, your document allowances (BG-20) and your document
@@ -206,7 +210,13 @@ export const vatRules: RuleFn[] = [
           fix: stated
             ? `Add a VAT breakdown group (cac:TaxSubtotal, or ram:ApplicableTradeTax in CII) for category ${category}, with the taxable amount and VAT amount of the lines, allowances and charges that carry it.`
             : "The VAT breakdown is always computed by this library from the lines and the document level allowances and charges, so a missing group means one of those carries a vatCategory this build does not recognise. Check it against the nine supported codes: S, Z, E, AE, K, G, O, L, M.",
-          example: `"lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "${category}"${RATED_CATEGORIES.includes(category) ? ', "vatRate": 19' : ""} }]`,
+          // A JSON example only where the fix is in the JSON: for a read
+          // document the fix is in the document's own breakdown.
+          ...(stated
+            ? {}
+            : {
+                example: `"lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "${category}"${RATED_CATEGORIES.includes(category) ? ', "vatRate": 19' : ""} }]`,
+              }),
           xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID",
           docsUrl: `${DOCS}/${rule}`,
         });
@@ -487,6 +497,9 @@ export const vatRules: RuleFn[] = [
     const totals = totalsOf(inv, ctx);
     if (!totals) return null;
     const out: TeachingError[] = [];
+    const inputHasUncategorised =
+      linesOf(inv).some((line) => blank(line?.vatCategory as unknown as string)) ||
+      allowanceChargesOf(inv, ctx).some((t) => blank(t.entry.vatCategory as unknown as string));
     for (const [index, subtotal] of totals.subtotals.entries()) {
       const at = `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[${index + 1}]`;
       const which = `The VAT breakdown group for category ${subtotal.category}`;
@@ -515,7 +528,14 @@ export const vatRules: RuleFn[] = [
           docsUrl: `${DOCS}/BR-46`,
         });
       }
-      if (blank(subtotal.category as unknown as string)) {
+      // A computed group has no category only when an input line, allowance or
+      // charge has none, and BR-CO-04 / BR-32 / BR-37 already report that on
+      // the item itself. Reporting it again here, as a defect in this library,
+      // was wrong twice over: KoSIT does not, and on a read document it also
+      // duplicated the stated-group BR-47 below (review, 2026-09-23). What is
+      // left is the arithmetic guard: a computed group with no category and
+      // no uncategorised input.
+      if (blank(subtotal.category as unknown as string) && !inputHasUncategorised) {
         out.push({
           rule: "BR-47",
           field: "BT-118",
@@ -533,6 +553,73 @@ export const vatRules: RuleFn[] = [
           severity: "fatal",
           message: `${which} has no VAT category rate (BT-119). Each VAT breakdown (BG-23) shall have one, with a single exception: category O ("Not subject to VAT"), where the transaction is outside the scope of VAT and therefore has no rate at all — which is a different statement from a rate of zero. Category ${subtotal.category} is inside the scope, so the rate must be present even though it is 0.`,
           fix: advice,
+          xpath: `${at}/cac:TaxCategory/cbc:Percent`,
+          docsUrl: `${DOCS}/BR-48`,
+        });
+      }
+    }
+
+    // On a document that was read, the groups it STATES are complete or not in
+    // their own right. The readers keep a group whose BT-116, BT-117 or BT-119
+    // is missing rather than dropping it, and until this check a UBL file with
+    // no cbc:TaxableAmount in a group validated with no finding at all, while
+    // KoSIT rejects it under BR-45 (adversarial review, 2026-09-23). This is
+    // what moved BR-45, BR-46 and BR-48 off the arithmetic-invariant list.
+    // Input without declaredTotals.syntax is not judged here: a JSON caller
+    // who states part of a group is asking for a cross-check, not writing the
+    // document. A caller CAN set syntax, so entries that are not objects are
+    // skipped rather than trusted (`[null]` threw here and took the computed
+    // checks down with it; ATW-INPUT-TYPE reports the entry itself).
+    const stated = inv.declaredTotals?.syntax
+      ? (inv.declaredTotals.subtotals ?? []).filter((g) => g !== null && typeof g === "object" && !Array.isArray(g))
+      : [];
+    for (const [index, group] of stated.entries()) {
+      const at = `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[${index + 1}]`;
+      const which = `VAT breakdown group ${index + 1} of the document${
+        group.category ? ` (category ${group.category})` : ""
+      }`;
+      const fix = (term: string, what: string) =>
+        `State ${what} (${term}) on every VAT breakdown group of the document. It is mandatory in the group whatever its value, zero included.`;
+      if (typeof group.taxableAmount !== "number" || !Number.isFinite(group.taxableAmount)) {
+        out.push({
+          rule: "BR-45",
+          field: "BT-116",
+          severity: "fatal",
+          message: `${which} states no readable VAT category taxable amount (BT-116): the element is missing, empty, or not a plain decimal number such as 1500.00. Each VAT breakdown (BG-23) shall have one: it is the base the VAT was calculated on, and without it neither BR-CO-17 nor the group's -08 and -09 rules can be evaluated.`,
+          fix: fix("BT-116", "the taxable amount"),
+          xpath: `${at}/cbc:TaxableAmount`,
+          docsUrl: `${DOCS}/BR-45`,
+        });
+      }
+      if (typeof group.taxAmount !== "number" || !Number.isFinite(group.taxAmount)) {
+        out.push({
+          rule: "BR-46",
+          field: "BT-117",
+          severity: "fatal",
+          message: `${which} states no readable VAT category tax amount (BT-117): the element is missing, empty, or not a plain decimal number. Each VAT breakdown (BG-23) shall have one, even when it is zero — an absent amount and a zero amount are different claims, and BR-CO-14 sums these values into the document VAT total.`,
+          fix: fix("BT-117", "the VAT amount"),
+          xpath: `${at}/cbc:TaxAmount`,
+          docsUrl: `${DOCS}/BR-46`,
+        });
+      }
+      if (blank(group.category as unknown as string)) {
+        out.push({
+          rule: "BR-47",
+          field: "BT-118",
+          severity: "fatal",
+          message: `${which} states no VAT category code (BT-118). Each VAT breakdown (BG-23) shall be defined through one: the code selects the rule family the group is judged by, so a group without it cannot be interpreted.`,
+          fix: "State the VAT category code (BT-118) on every VAT breakdown group of the document: the code of the lines and allowances the group sums.",
+          xpath: `${at}/cac:TaxCategory/cbc:ID`,
+          docsUrl: `${DOCS}/BR-47`,
+        });
+      }
+      if (group.rate === undefined && group.category !== "O") {
+        out.push({
+          rule: "BR-48",
+          field: "BT-119",
+          severity: "fatal",
+          message: `${which} states no readable VAT category rate (BT-119): the element is missing, empty, or not a plain decimal number. Each VAT breakdown (BG-23) shall have one, with a single exception: category O ("Not subject to VAT"), which has no rate at all — a different statement from a rate of zero.`,
+          fix: "State the VAT rate (BT-119) on every VAT breakdown group of the document, zero included. The only group without one is category O, not subject to VAT.",
           xpath: `${at}/cac:TaxCategory/cbc:Percent`,
           docsUrl: `${DOCS}/BR-48`,
         });
@@ -600,7 +687,9 @@ export const vatRules: RuleFn[] = [
       fix: stated
         ? "Add the VAT breakdown to the document: one group per VAT category and rate, with its taxable amount (BT-116), VAT amount (BT-117) and category (BT-118)."
         : "Add at least one invoice line with a vatCategory. The breakdown is derived from the lines, so a document with lines always produces one.",
-      example: `"lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "S", "vatRate": 19 }]`,
+      ...(stated
+        ? {}
+        : { example: `"lines": [{ "id": "1", "description": "Beratung", "quantity": 1, "unitCode": "C62", "unitPrice": 100, "vatCategory": "S", "vatRate": 19 }]` }),
       xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal",
       docsUrl: `${DOCS}/BR-CO-18`,
     });

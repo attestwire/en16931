@@ -148,6 +148,13 @@ export interface XmlElement {
   qname: string;
   /** Path from the root, with a `[n]` index on repeated siblings. */
   path: string;
+  /**
+   * Where the start tag's `<` is, 1-based, so a finding can point at the line
+   * a person opens the file to. The column counts UTF-16 code units, which is
+   * what SARIF and most editors assume. A byte order mark is not counted.
+   */
+  line: number;
+  column: number;
   attributes: XmlAttribute[];
   children: XmlElement[];
   /**
@@ -282,6 +289,25 @@ export function parseXml(
   let root: XmlElement | undefined;
   let elementCount = 0;
 
+  // Line and column of an offset. Elements are met in document order, so the
+  // scan only ever moves forward and the whole document is walked once: O(n)
+  // in total, not O(n) per element. A line ends at LF, CRLF or a lone CR, as
+  // XML 1.0 section 2.11 and every editor have it: a file saved with classic
+  // Mac line endings is not one long line.
+  let scanned = i;
+  let lineNo = 1;
+  let lineStart = i;
+  const position = (at: number): [number, number] => {
+    for (; scanned < at; scanned += 1) {
+      const ch = source.charCodeAt(scanned);
+      if (ch === 10 || (ch === 13 && source.charCodeAt(scanned + 1) !== 10)) {
+        lineNo += 1;
+        lineStart = scanned + 1;
+      }
+    }
+    return [lineNo, at - lineStart + 1];
+  };
+
   const fail = (code: string, message: string): never => {
     throw new XmlSyntaxError(code, `${message} (at character ${i})`);
   };
@@ -386,6 +412,12 @@ export function parseXml(
             `end with a hyphen`,
         );
       }
+      // The Char production covers comments too: a control character here is
+      // as ill-formed as one in text, and a reader that skips it would accept a
+      // file that every schema validator refuses.
+      if (ILLEGAL_XML_CHARS.test(body)) {
+        fail("xml_illegal_character", "A comment contains a control character that XML 1.0 does not permit");
+      }
       i = end + 3;
       continue;
     }
@@ -419,7 +451,11 @@ export function parseXml(
         fail("xml_unterminated_pi", "Unterminated processing instruction");
       }
       // Processing instructions are skipped, never acted on. A stylesheet PI in
-      // particular must not cause this library to fetch anything.
+      // particular must not cause this library to fetch anything. Skipped is
+      // not unchecked: the same characters are forbidden here as in text.
+      if (ILLEGAL_XML_CHARS.test(source.slice(i + 2, end))) {
+        fail("xml_illegal_character", "A processing instruction contains a control character that XML 1.0 does not permit");
+      }
       i = end + 2;
       continue;
     }
@@ -452,6 +488,7 @@ export function parseXml(
     }
 
     // --- start tag ----------------------------------------------------------
+    const [line, column] = position(i);
     i += 1;
     const qname = readName();
 
@@ -614,6 +651,8 @@ export function parseXml(
       local,
       qname,
       path,
+      line,
+      column,
       attributes,
       children: [],
       text: "",

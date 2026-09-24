@@ -61,6 +61,20 @@ export {
 } from "./facturx-pdf.js";
 
 /**
+ * One call for an existing file — new in 0.10.0.
+ *
+ * XML (UBL or CII, any declared encoding) or a Factur-X / ZUGFeRD PDF in, the
+ * same findings as `validateInput` out, each with the line and column of the
+ * element in the caller's file. Never throws for anything about the document.
+ */
+export {
+  validate,
+  type ValidateOptions,
+  type DocumentValidation,
+  type DocumentFinding,
+} from "./validate.js";
+
+/**
  * Findings → SARIF 2.1.0 and JUnit XML, for CI pipelines — new in 0.7.0.
  *
  * Both are pure functions over the findings `validateInput` already returns;

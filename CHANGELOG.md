@@ -5,6 +5,118 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-09-23
+
+**Check a file in one call and see the line each finding is about; every rule
+is now reachable, and the library's own findings about a file have distinct ids.** A
+document read from XML is judged on four more parts of the VAT breakdown it
+states, and the rule count the README states is corrected.
+
+**Upgrading:** a UBL or CII document whose VAT breakdown group omits its
+taxable amount, VAT amount, category code or rate now fails BR-45, BR-46,
+BR-47 or BR-48; KoSIT rejects the same documents (for UBL partly at its schema
+step, which requires `cac:TaxCategory` and `cbc:TaxAmount`). JSON input without
+`declaredTotals.syntax` is judged as before, except that eight more fields are
+type-checked and a line with no category no longer also draws BR-47. If you
+read the command line's `--json` output, `AW-PROFILE` is now
+`AW-PROFILE-SUBSET` or `AW-PROFILE-SYNTAX`. Nothing is removed by the new
+`validate(document)`: findings keep their ids and severities, and gain a
+`location` and a syntax-specific `xpath` (CII documents now get CII paths
+instead of UBL ones); `XmlElement` gains `line` and `column`.
+
+### Added
+
+- **`validate(document, options?)`.** UBL or CII XML (a string, or bytes whose
+  declared encoding is honoured) or a Factur-X / ZUGFeRD PDF in; the same
+  findings `validateInput` gives out, plus `syntax`, `container`, the invoice as
+  read and the unmapped elements. It never throws for anything about the file:
+  one that cannot be read is a single fatal `AW-` finding saying what it is (a
+  ZIP, JSON, an HTML page, a PDF with no invoice), with the reader's exception
+  in `error`. This is the logic the command line had, moved into the library;
+  the command line now calls it.
+- **Locations.** Every finding from `validate` carries `location: { line,
+  column, path, exact }` in the caller's file, and an `xpath` in the file's own
+  syntax. CII documents get CII paths (they used to get UBL paths, which the
+  command line dropped). A document's allowances and charges are matched in
+  the order the rules count them, whatever order the file uses. A missing
+  element, or one the file holds several candidates for, is located at the
+  nearest enclosing element with `exact: false`. From a PDF, `location.attachment`
+  names the embedded file the line is in.
+- `XmlElement` has `line` and `column` (1-based, of the start tag).
+- `toSarif` writes a `region` with the line and column when a finding has a
+  location in the file the log names.
+- The command line prints the line: `at:  line 76  /rsm:…/ram:CategoryCode`, or
+  where a missing element belongs and the nearest element that is there.
+
+### Fixed
+
+- **BR-45, BR-46, BR-47 and BR-48 are checked on the breakdown a document
+  states.** A group with no `cbc:TaxableAmount` (or `ram:BasisAmount`), no
+  category code or no rate validated with no finding at all. Category O still
+  needs no rate. A figure that is present but unreadable (`12,34`) is reported
+  here too, and the message says missing, empty or not a plain decimal.
+- **The readers keep a breakdown group with nothing readable in it.** Every
+  child of `ram:ApplicableTradeTax` is optional in the CII schema, so a group
+  holding only a `ram:TypeCode` is schema-valid; it was dropped, so no rule saw
+  it, while KoSIT rejects it under BR-45 to BR-48. A UBL `cac:TaxSubtotal`
+  without its `cac:TaxCategory` is kept as well (the UBL schema already
+  rejects that one).
+- **UBL category codes are read as the UBL schematron reads them**, with
+  `normalize-space`, on lines, document allowances and charges and breakdown
+  groups alike: `<cbc:ID> O </cbc:ID>` is category O, and no longer draws
+  BR-48 for its missing rate. CII codes are not trimmed, because the CII
+  schematron compares `ram:CategoryCode` literally.
+- **A line with no category is reported once.** It drew BR-CO-04 and then
+  BR-47 again on the computed breakdown group it produced, which KoSIT does not
+  report and which duplicated the stated group's BR-47 on a read document.
+- **Eight more fields are type-checked**: `deliverToName`, `schemeVersion`,
+  `mandateReference`, `creditorIdentifier`, `debitedAccount`, `holderName`,
+  `primaryAccountNumber` and `declaredTotals.syntax`. An object in one of the
+  first seven passed validation and then made the generator throw; it is
+  `ATW-INPUT-TYPE` now. A test compares the list with the input types.
+- **A finding about a document's own breakdown no longer carries a JSON input
+  example.** `-01`, BR-CO-18 and BR-CL-17 showed one when the fix is in the
+  document's breakdown.
+- **BR-DE-14 no longer names a category the group does not have.** For a
+  stated group with no category it borrowed the computed group's.
+- **No rule is described as impossible to trip any more.** The 0.9.0 README
+  said 296 rule ids, 271 reachable and 25 that no input can trip; the test
+  that keeps that list held twenty. None of the twenty is unreachable. On a
+  document read from XML, `-01` (a category the lines use with no breakdown
+  group for it) and `-09` (a group whose VAT is not its taxable amount times
+  its rate) fire for every category, and BR-DEC-19, BR-DEC-20 and BR-DEC-23 (a
+  taxable amount, VAT amount or line amount written with three decimals) fire
+  too; all of these already did in 0.9.0, and the battery simply had no
+  fixture for them. BR-45, BR-46 and BR-48 became reachable with the fix
+  above. All twenty also still guard the library's own computed breakdown, and
+  a test hands them corrupted totals to prove each fires as fatal. 305
+  distinct rule ids, all 305 reachable.
+- **`ATW-INPUT-TYPE` no longer quotes the runtime's exception text.** The
+  finding still says a field has the wrong type and how to fix it; the
+  JavaScript error message it used to include is the runtime's wording, not
+  ours, and services that return findings to their callers do not echo it.
+  Its per-field message also says "an object" where it said "a object".
+
+### Changed
+
+- **`AW-PROFILE` is two ids, from `validate()` and the command line.** `AW-PROFILE-SUBSET` (fatal)
+  is a Factur-X MINIMUM or BASIC WL file, which carries too little to be an
+  EN 16931 invoice. `AW-PROFILE-SYNTAX` (a warning) is a `--profile` or `options.profile` for the
+  other syntax than the document's. One id for a fatal finding and a warning
+  was ambiguous, and it read too much like `ATW-PROFILE-UNKNOWN`. The README
+  now lists all of the `AW-` findings, which are about the file
+  rather than the invoice and are not counted as rules.
+- **README.** Rewritten to lead with what the package does; the package
+  description says "290 official rules".
+
+### Corrected
+
+- The 0.9.0 notes said "On 163 official documents". 163 documents were
+  compared, 132 of them official test and example files from KoSIT, CEN and
+  OpenPeppol; the other 31 were this package's own fixtures, generated output
+  and adversarial documents. The 96% is agreement on the 51 rule and document
+  pairs where either side fired a rule this package implements.
+
 ## [0.9.0] — 2026-09-23
 
 **A command line, and a validator that agrees with KoSIT on more of what a real
@@ -1907,5 +2019,6 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.10.0]: https://github.com/attestwire/en16931/releases/tag/v0.10.0
 [0.1.0]: https://github.com/attestwire/en16931/releases/tag/v0.1.0
 [0.1.1]: https://github.com/attestwire/en16931/releases/tag/v0.1.1

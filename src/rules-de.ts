@@ -109,8 +109,11 @@ export const germanRules: RuleFn[] = [
     const declaredSubtotals = inv.declaredTotals?.subtotals;
     const groups =
       Array.isArray(declaredSubtotals) && declaredSubtotals.length > 0
-        ? declaredSubtotals.map((sub, index) => ({
-            category: sub?.category ?? computed.subtotals[index]?.category ?? "",
+        ? declaredSubtotals.map((sub) => ({
+            // The group's own category, or none. Borrowing the computed
+            // group's at the same index named "category S" for a stated group
+            // that has no category at all (review, 2026-09-23).
+            category: sub?.category ?? "",
             rate: sub?.rate,
           }))
         : computed.subtotals;
@@ -121,7 +124,7 @@ export const germanRules: RuleFn[] = [
         rule: "BR-DE-14",
         field: "BT-119",
         severity: "fatal",
-        message: `XRechnung requires the element "VAT category rate" (BT-119) on every VAT breakdown group (BG-23), but the group for category ${subtotal.category} has none. Core EN 16931 excuses exactly one case from this — BR-48 allows a missing rate when the category is "O" (not subject to VAT) — and the German CIUS does not carry that exception forward. The practical consequence is that category O cannot be used in an XRechnung at all: BR-O-05 forbids a rate on the line, so no rate can reach the breakdown, and BR-DE-14 then rejects the document. Core EN 16931 validation passes; the German portal rejects.`,
+        message: `XRechnung requires the element "VAT category rate" (BT-119) on every VAT breakdown group (BG-23), but ${subtotal.category ? `the group for category ${subtotal.category}` : `breakdown group ${index + 1}, which states no category,`} has none. Core EN 16931 excuses exactly one case from this — BR-48 allows a missing rate when the category is "O" (not subject to VAT) — and the German CIUS does not carry that exception forward. The practical consequence is that category O cannot be used in an XRechnung at all: BR-O-05 forbids a rate on the line, so no rate can reach the breakdown, and BR-DE-14 then rejects the document. Core EN 16931 validation passes; the German portal rejects.`,
         fix: 'Choose a different profile ("en16931" or "peppol-bis-3") for a genuinely out-of-scope transaction, or re-examine the categorisation: a supply that is inside the scope of VAT but taxed at nothing is category "Z" (zero rated) with vatRate 0, and that is what most transactions labelled "no VAT" actually are. Category "E" (exempt) with an exemption reason is the other common correct answer.',
         example: `"vatCategory": "Z", "vatRate": 0`,
         xpath: `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[${index + 1}]/cac:TaxCategory/cbc:Percent`,

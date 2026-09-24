@@ -146,9 +146,11 @@ export function toSarif(
       message: { text: f.message },
     };
     // An XPath is a location in the document's logical structure, not a byte
-    // offset, and SARIF has a slot for exactly that. Emitting it as a physical
-    // location with a fabricated line number would be a lie a UI would then
-    // draw an underline at.
+    // offset, and SARIF has a slot for exactly that. A line and column go in
+    // the physical location only when `validate` read them off the file: a
+    // finding from `validateInput` has none, and inventing one would be a lie
+    // a UI would then draw an underline at. Nor when the XML came out of a PDF,
+    // whose line 12 is not the attachment's line 12.
     const location: Record<string, unknown> = {};
     if (f.xpath) {
       location.logicalLocations = [
@@ -156,7 +158,11 @@ export function toSarif(
       ];
     }
     if (artifactLocation) {
-      location.physicalLocation = { artifactLocation };
+      const at = f.location;
+      location.physicalLocation =
+        at && at.attachment === undefined
+          ? { artifactLocation, region: { startLine: at.line, startColumn: at.column } }
+          : { artifactLocation };
     }
     if (Object.keys(location).length > 0) result.locations = [location];
 

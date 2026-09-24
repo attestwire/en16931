@@ -57,6 +57,13 @@ const STRING_KEYS = new Set([
   "meansCode", "meansName", "iban", "accountName", "bic", "remittanceInformation", "reason", "reasonCode",
   "category", "vatCategory", "exemptionReason", "exemptionReasonCode", "mimeCode", "filename", "externalUri",
   "reference", "content", "code", "text",
+  // Missing until 2026-09-23 (review): an object in any of these passed
+  // validation and then made the generator throw.
+  "deliverToName", "schemeVersion", "mandateReference", "creditorIdentifier", "debitedAccount",
+  "holderName", "primaryAccountNumber",
+  // declaredTotals.syntax ("ubl" | "cii"): set by the readers, but a caller
+  // can set it too, and it switches on the stated-breakdown checks.
+  "syntax",
 ]);
 /** Arrays whose entries must be objects. */
 const OBJECT_ARRAYS = new Set([
@@ -70,7 +77,14 @@ const SKIPPED_DECLARED = new Set(["defects", "overPrecise"]);
 
 const PROFILES = new Set(["en16931", "xrechnung-ubl", "xrechnung-cii", "facturx-en16931", "peppol-bis-3"]);
 
-const kindOf = (v: unknown) => (v === null ? "null" : Array.isArray(v) ? "an array" : typeof v === "string" ? `the text ${JSON.stringify(v).slice(0, 40)}` : `a ${typeof v}`);
+const kindOf = (v: unknown) =>
+  v === null
+    ? "null"
+    : Array.isArray(v)
+      ? "an array"
+      : typeof v === "string"
+        ? `the text ${JSON.stringify(v).slice(0, 40)}`
+        : `${/^[aeiou]/.test(typeof v) ? "an" : "a"} ${typeof v}`;
 
 /** The business group or term a path lies in, for `field`. */
 const ROOT_TERMS: Record<string, BusinessTerm> = {

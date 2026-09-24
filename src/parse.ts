@@ -352,6 +352,20 @@ function readPeriod(r: Reader, el: XmlElement): InvoicingPeriod {
   return period;
 }
 
+
+/**
+ * A VAT category code (BT-95, BT-102, BT-118, BT-151) as the UBL schematron
+ * reads it: every one of its tests is on `normalize-space(cbc:ID)`, so
+ * "<cbc:ID> S </cbc:ID>" is category S there. One helper for every place the
+ * reader takes a category, because trimming only the breakdown's codes (and
+ * not the lines') made a consistently padded document that KoSIT accepts fail
+ * BR-S-08 here (review, 2026-09-23). The CII schematron compares
+ * ram:CategoryCode literally, so parse-cii.ts does not trim.
+ */
+function categoryCode(r: Reader, taxCategory: XmlElement): VatCategory {
+  return (r.cbc(taxCategory, "ID") ?? "").replace(/\s+/g, " ").trim() as VatCategory;
+}
+
 function readDocumentAllowanceCharge(
   r: Reader,
   el: XmlElement,
@@ -359,7 +373,7 @@ function readDocumentAllowanceCharge(
   const taxCategory = r.cac(el, "TaxCategory");
   const entry: DocumentAllowanceCharge = {
     amount: r.num(el, "Amount") ?? 0,
-    vatCategory: (taxCategory ? (r.cbc(taxCategory, "ID") ?? "") : "") as VatCategory,
+    vatCategory: taxCategory ? categoryCode(r, taxCategory) : ("" as VatCategory),
   };
   set(entry, "baseAmount", r.num(el, "BaseAmount"));
   set(entry, "percentage", r.num(el, "MultiplierFactorNumeric"));
@@ -504,7 +518,7 @@ function readLine(
 
     const taxCategory = r.cac(item, "ClassifiedTaxCategory");
     if (taxCategory) {
-      line.vatCategory = (r.cbc(taxCategory, "ID") ?? "") as VatCategory;
+      line.vatCategory = categoryCode(r, taxCategory);
       set(line, "vatRate", r.num(taxCategory, "Percent"));
       const scheme = r.cac(taxCategory, "TaxScheme");
       if (scheme) r.cbc(scheme, "ID");
@@ -576,7 +590,15 @@ export function parseUbl(
   xml: string,
   options: ParseUblOptions = {},
 ): ParsedInvoice {
-  const root = parseXml(xml, options);
+  return parseUblTree(parseXml(xml, options));
+}
+
+/**
+ * The same reader over a tree that is already parsed. Internal: `validate`
+ * parses once and keeps the tree to locate findings in, rather than handing
+ * the text to the reader and parsing it a second time.
+ */
+export function parseUblTree(root: XmlElement): ParsedInvoice {
 
   if (root.namespace === CII_NS || root.local === "CrossIndustryInvoice") {
     throw new UnsupportedSyntaxError(
@@ -1021,10 +1043,12 @@ export function parseUbl(
       }
       const category = r.cac(subtotal, "TaxCategory");
       if (!category) {
-        if (Object.keys(stated).length > 0) declaredSubtotals.push(stated);
+        // Kept even when empty, so BR-45 to BR-48 can judge it (see the same
+        // note in parse-cii.ts).
+        declaredSubtotals.push(stated);
         continue;
       }
-      const code = (r.cbc(category, "ID") ?? "") as VatCategory;
+      const code = categoryCode(r, category);
       if (code !== ("" as VatCategory)) stated.category = code;
       set(stated, "rate", r.num(category, "Percent"));
       declaredSubtotals.push(stated);

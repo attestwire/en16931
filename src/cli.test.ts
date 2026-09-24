@@ -258,12 +258,12 @@ describe("main", () => {
 
   it("explains a Factur-X MINIMUM file instead of only listing what it lacks", async () => {
     const r = await run("--short", fixture("facturx/facturx-minimum-rechnung.pdf"));
-    expect(r.stdout).toMatch(/AW-PROFILE .*Factur-X MINIMUM document/);
+    expect(r.stdout).toMatch(/AW-PROFILE-SUBSET .*Factur-X MINIMUM document/);
   });
 
   it("warns when --profile names the other syntax", async () => {
     const r = await run("--profile", "xrechnung-cii", fixture("xrechnung-ubl-minimal.xml"));
-    expect(r.stdout).toMatch(/! warning AW-PROFILE[\s\S]*CII profile, but this document is UBL/);
+    expect(r.stdout).toMatch(/! warning AW-PROFILE-SYNTAX[\s\S]*CII profile, but this document is UBL/);
   });
 
   it("shows a location only when it is in the document's own syntax", async () => {
@@ -321,5 +321,31 @@ describe("main", () => {
     expect(bad.stderr).toMatch(/Unknown option --nope/);
     expect((await run("--help")).stdout).toMatch(/npx @attestwire\/en16931/);
     expect((await run("-v")).stdout).toBe("9.9.9\n");
+  });
+});
+
+// Mutation testing (2026-09-23): what the command line prints about a location.
+describe("locations in the output", () => {
+  it("prints the line for an element that is there, and the nearest element for one that is not", async () => {
+    const xml = readFileSync(fixture("xrechnung-ubl-minimal.xml"), "utf8")
+      .replace(/<cbc:BuyerReference>[^<]*<\/cbc:BuyerReference>/, "")
+      .replace("<cbc:DocumentCurrencyCode>EUR<", "<cbc:DocumentCurrencyCode>EURO<");
+    const file = join(scratch, "located.xml");
+    writeFileSync(file, xml);
+    const r = await run(file);
+    const currencyLine = xml.slice(0, xml.indexOf("<cbc:DocumentCurrencyCode>")).split("\n").length;
+    expect(r.stdout).toContain(`at:  line ${currencyLine}  /ubl:Invoice/cbc:DocumentCurrencyCode`);
+    expect(r.stdout).toContain("at:  /ubl:Invoice/cbc:BuyerReference  (nearest element in the file: <ubl:Invoice>, line 2)");
+  });
+
+  it("says a PDF finding's line is in the attachment", async () => {
+    const r = await run(fixture("facturx/facturx-minimum-rechnung.pdf"));
+    expect(r.stdout).toMatch(/line \d+ of factur-x\.xml/);
+  });
+
+  it("rewrites the profile warning in terms of the flag", async () => {
+    const r = await run(fixture("xrechnung-cii-minimal.xml"), "--profile", "peppol-bis-3");
+    expect(r.stdout).toContain("--profile peppol-bis-3 is a UBL profile, but this document is CII.");
+    expect(r.stdout).toContain("Leave --profile out");
   });
 });

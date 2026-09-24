@@ -1888,12 +1888,16 @@ export function runInputRules(inv: InvoiceInput): TeachingError[] {
     if (Array.isArray(result)) out.push(...result);
     else out.push(result);
   }
+  // The exception's own text is deliberately NOT in the message. It is the
+  // runtime's wording, not ours, and a service that returns findings to its
+  // callers (apps/api) promises never to echo an exception; a scan of that
+  // service's source cannot see a message built here (review, 2026-09-23).
   if (typeError && !out.some((f) => /^ATW-(INPUT-TYPE|NUMBER-|VAT-RATE-OUT|AMOUNT-OUT|DECLARED-TOTAL)/.test(f.rule))) {
     out.push({
       rule: "ATW-INPUT-TYPE",
       field: [],
       severity: "fatal",
-      message: `A field of the invoice has a value of the wrong type, so some rules could not run (${typeError.message}). The input model expects text as strings, amounts as numbers, and lists as arrays.`,
+      message: "A field of the invoice has a value of the wrong type, so some rules could not run. The input model expects text as strings, amounts as numbers, and lists as arrays.",
       fix: "Check the invoice object against the InvoiceInput type, for example by building it in TypeScript. A value parsed from JSON or a form is the usual cause: \"19\" where 19 is expected, or a number where text is.",
       docsUrl: LIMITS_DOCS,
     });

@@ -291,7 +291,7 @@ export const codelistRules: RuleFn[] = [
         fix: fromDocument
           ? "Correct the category code in the VAT breakdown to the one the lines in that group carry."
           : "Correct the offending line's vatCategory. The breakdown is always computed from the lines, so there is nothing to fix at document level.",
-        example: `"vatCategory": "S", "vatRate": 19`,
+        ...(fromDocument ? {} : { example: `"vatCategory": "S", "vatRate": 19` }),
         xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID",
         docsUrl: `${DOCS}/${rule}`,
       });

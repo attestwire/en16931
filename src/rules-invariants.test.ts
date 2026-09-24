@@ -85,6 +85,93 @@ declaredTaxableWrongPerCategory.push([
 ]);
 
 /**
+ * One pair of fixtures per non-S VAT category, for the `-01` and `-09`
+ * families on a document read from XML.
+ *
+ * Until these existed, fourteen members of the two families sat in
+ * ARITHMETIC_INVARIANTS with the reason "no fixture yet", while the 0.9.0
+ * CHANGELOG said the families were reachable from a document. That is the
+ * battery-versus-rule mistake of 2026-08-12 again: whether the battery
+ * exercises a rule says nothing about whether a caller can trip it, and the
+ * list put "you cannot trip this rule" on fourteen pages a caller can trip.
+ *
+ *  - `-01`: lines in the category, and a stated breakdown with only an S group.
+ *  - `-09`: a stated group of the category whose VAT is not its taxable amount
+ *    times its rate. For the zero-VAT categories that is any VAT at all; for
+ *    L and M (BR-AF-09, BR-AG-09) 1.00 on a 1500.00 base at 7%.
+ *
+ * `declaredTotals.syntax` is what marks the input as a parsed document, which
+ * is the only case these checks run on.
+ */
+const statedDocument = (subtotals: NonNullable<InvoiceInput["declaredTotals"]>["subtotals"]) => ({
+  syntax: "ubl" as const,
+  specificationIdentifier: "urn:cen.eu:en16931:2017",
+  subtotals,
+});
+
+/**
+ * What a category needs besides its breakdown, so each fixture below fires the
+ * rule it is named for and no other rule OF ITS OWN CATEGORY (review,
+ * 2026-09-23: without these the E pair also fired BR-E-10, the K pair
+ * BR-IC-12, and the O pair BR-O-02 and BR-O-05). Rules of other families still
+ * fire alongside where the shape makes them true: a missing group also moves
+ * the S group's figures (BR-S-08, BR-CO-14), and the O pair's out-of-scope
+ * parties bring BR-CO-26. The test below pins the category-family part only.
+ */
+const CATEGORY_EXTRAS: Partial<Record<VatCategory, Partial<InvoiceInput>>> = {
+  E: { vatExemptionReasons: { E: "Exempt under Article 132 of the VAT Directive" } },
+  K: {
+    buyer: { ...clean.buyer, vatId: "FR12345678901" },
+    deliverTo: { city: "Lyon", postalCode: "69001", countryCode: "FR" },
+    vatExemptionReasons: { K: "Intra-community supply" },
+  },
+  O: { ...outOfScopeParty, vatExemptionReasons: { O: "Not subject to VAT" } },
+};
+
+const documentBreakdownPerCategory: [string, InvoiceInput][] = (
+  [
+    ["Z", 0],
+    ["E", 0],
+    ["AE", 0],
+    ["K", 0],
+    ["G", 0],
+    ["O", undefined],
+    ["L", 7],
+    ["M", 7],
+  ] as const
+).flatMap(([category, rate]) => {
+  const lines = [cleanLine({ vatCategory: category, vatRate: rate })];
+  // What each category needs besides its breakdown, so the fixture fires the
+  // rule it is named for and not a neighbour: an exemption reason for the
+  // exempting categories (their -10), and for O the out-of-scope parties.
+  const extra = CATEGORY_EXTRAS[category] ?? {};
+  return [
+    [
+      `documentMissingGroup${category}`,
+      withInvoice({
+        profile: "en16931",
+        ...extra,
+        lines,
+        declaredTotals: statedDocument([
+          { category: "S", rate: 19, taxableAmount: 1500, taxAmount: 285 },
+        ]),
+      }),
+    ],
+    [
+      `documentGroupVatWrong${category}`,
+      withInvoice({
+        profile: "en16931",
+        ...extra,
+        lines,
+        declaredTotals: statedDocument([
+          { category, rate, taxableAmount: 1500, taxAmount: rate ? 1 : 5 },
+        ]),
+      }),
+    ],
+  ] as [string, InvoiceInput][];
+});
+
+/**
  * A battery broad enough to fire every rule that *can* fire on this input
  * model. Rules that are invariants of the library's own arithmetic — the
  * per-category -01 and -09 families, BR-12..BR-15, BR-45/46/48, BR-CO-18 and
@@ -882,6 +969,32 @@ const BATTERY: [string, InvoiceInput][] = [
   })],
   ["unknownProfile", withInvoice({ profile: "zz" as never })],
   ["documentNoBreakdown", withInvoice({ declaredTotals: { syntax: "ubl", specificationIdentifier: "urn:cen.eu:en16931:2017" } })],
+  ...documentBreakdownPerCategory,
+  // BR-DEC-19 / -20 / -23 are measured on the serialised value (rules-
+  // decimals.ts). A document that writes "1500.000" states three decimals
+  // whatever the number is, and the readers record it in `overPrecise`. These
+  // three sat in ARITHMETIC_INVARIANTS until 2026-09-23 for want of this
+  // fixture, while rules-decimals.test.ts already fired BR-DEC-23 from XML.
+  ["documentOverPreciseBreakdownAndLine", withInvoice({
+    declaredTotals: {
+      syntax: "ubl",
+      specificationIdentifier: "urn:cen.eu:en16931:2017",
+      subtotals: [{ category: "S", rate: 19, taxableAmount: 1500, taxAmount: 285 }],
+      overPrecise: [
+        { field: "BT-116", decimals: 3, text: "1500.000", xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxableAmount", group: 1 },
+        { field: "BT-117", decimals: 3, text: "285.000", xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxAmount", group: 1 },
+        { field: "BT-131", decimals: 3, text: "1500.000", xpath: "/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount", line: 1 },
+      ],
+    },
+  })],
+  // BR-45 / BR-46 / BR-47 / BR-48 on the breakdown a document STATES
+  // (rules-vat.ts, 0.10.0): a group with no figures and no category. A group
+  // with no taxable amount validated clean until then. This is also what
+  // reaches BR-47 now: its computed-path twin only fires when no input item
+  // is uncategorised (BR-CO-04 and BR-32/37 report those).
+  ["documentStatedGroupIncomplete", withInvoice({
+    declaredTotals: statedDocument([{}]),
+  })],
 ];
 
 /** Every finding the battery produces, tagged with the case that produced it. */
@@ -961,43 +1074,18 @@ const ARITHMETIC_INVARIANTS: Record<string, string> = {
   // absence a fact the model can hold, so the fixtures above reach them and
   // they are ordinary reachable rules now — the same move the `-08` family made
   // in 0.4.0, for the same reason.
-  "BR-45":
-    "Every computed breakdown group is built carrying a taxable amount (BT-116).",
-  "BR-46":
-    "Every computed breakdown group is built carrying a VAT amount (BT-117).",
-  "BR-48":
-    "Every computed breakdown group is built carrying a VAT rate (BT-119).",
-  "BR-DEC-19":
-    "BT-106 goes through the same two-decimal rounding helper as every other computed amount.",
-  "BR-DEC-20":
-    "BT-109 goes through the same two-decimal rounding helper as every other computed amount.",
-  "BR-DEC-23":
-    "BT-115 goes through the same two-decimal rounding helper as every other computed amount.",
-  ...Object.fromEntries(
-    Object.values(CATEGORY_RULE_INFIX).flatMap((infix) => [
-      // BR-S-01 is reachable from a document that states no S group (the
-      // documentNoBreakdown fixture); the other categories' -01 are reachable
-      // the same way but have no fixture, so they stay listed.
-      ...(infix === "S"
-        ? []
-        : [
-            [
-              `BR-${infix}-01`,
-              "The breakdown group for this category is created from the lines that carry it, so it exists whenever the category is used.",
-            ] as [string, string],
-          ]),
-      // The rated categories' -09 is also checked on a stated breakdown
-      // (rules.ts), which the battery reaches; the zero-rate ones stay listed.
-      ...(["S", "AF", "AG"].includes(infix)
-        ? []
-        : [
-            [
-              `BR-${infix}-09`,
-              "This group's VAT amount is computed from its own taxable amount and rate, by the one helper that does it.",
-            ] as [string, string],
-          ]),
-    ]),
-  ),
+  // BR-45, BR-46, BR-48, BR-DEC-19, BR-DEC-20 and BR-DEC-23 were the last six,
+  // until adversarial review on 2026-09-23 tripped all of them from a document:
+  // the three BR-DEC rules through a stated value written to three decimals
+  // (and the reasons here named the wrong terms, BT-106/109/115 for what are
+  // BT-116/117/131), and BR-45/46/48 through a stated group with a missing
+  // figure, which 0.10.0 checks. The list is empty. It stays, because the next
+  // rule that only guards this library's own arithmetic belongs here, with its
+  // reason, and a rule that is neither fired nor listed still fails the suite.
+  // The per-category -01 and -09 families sat here too, all eighteen, then
+  // fourteen after 0.9.0. None of them belongs: on a document read from XML
+  // the stated breakdown is checked, so every member is reachable, and
+  // documentBreakdownPerCategory above fires each one.
 };
 
 /**
@@ -1012,6 +1100,19 @@ const ARITHMETIC_INVARIANTS: Record<string, string> = {
 const NOT_IMPLEMENTED: string[] = [];
 
 describe("the rule set as a whole", () => {
+  it("fires each per-category document fixture's own rule, and no other rule of that category", () => {
+    for (const [name, invoice] of documentBreakdownPerCategory) {
+      const category = name.replace(/^document(MissingGroup|GroupVatWrong)/, "") as VatCategory;
+      const infix = CATEGORY_RULE_INFIX[category];
+      const target = `BR-${infix}-${name.startsWith("documentMissingGroup") ? "01" : "09"}`;
+      const result = validateInput(invoice);
+      const family = [...result.errors, ...result.warnings, ...result.information]
+        .map((e) => e.rule)
+        .filter((rule) => rule.startsWith(`BR-${infix}-`));
+      expect([...new Set(family)], name).toEqual([target]);
+    }
+  });
+
   it("never throws, whatever it is handed", () => {
     for (const [fixture, invoice] of BATTERY) {
       expect(() => validateInput(invoice), fixture).not.toThrow();
@@ -1063,12 +1164,30 @@ describe("the rule set as a whole", () => {
     expect(pinned).toMatchSnapshot();
   });
 
-  // The arithmetic invariants above cannot fire from caller input, which is
-  // why they are listed rather than exercised. Mutation testing on 2026-09-23
-  // showed the cost: each of them could be deleted, or downgraded to a
-  // warning, with the suite green. Here they are handed deliberately corrupted
-  // totals through the rule context, and each must fire, fatal.
-  it("fires every arithmetic invariant, fatal, on corrupted totals", () => {
+  // Rules that ALSO guard the library's own computed breakdown and totals.
+  // Mutation testing on 2026-09-23 showed each could be deleted, or downgraded
+  // to a warning, with the suite green. Here they are handed deliberately
+  // corrupted totals through the rule context, and each must fire, fatal.
+  //
+  // This used to iterate ARITHMETIC_INVARIANTS. That list is about
+  // reachability, and as rules left it for being reachable from a document
+  // they silently left this test too, until with the list empty it asserted
+  // nothing and all six last members could be downgraded unnoticed (review,
+  // 2026-09-23). Guarding the arithmetic is a second job these rules keep
+  // whether or not a caller can also reach them, so the list is its own.
+  const COMPUTED_ARITHMETIC_GUARDS = [
+    ...Object.values(CATEGORY_RULE_INFIX).flatMap((infix) => [`BR-${infix}-01`, `BR-${infix}-08`, `BR-${infix}-09`]),
+    "BR-CO-17",
+    "BR-CO-18",
+    "BR-45",
+    "BR-46",
+    "BR-47",
+    "BR-48",
+    "BR-DEC-19",
+    "BR-DEC-20",
+    "BR-DEC-23",
+  ];
+  it("fires every rule that guards the computed arithmetic, fatal, on corrupted totals", () => {
     const rateFor: Record<string, number | undefined> = { S: 19, L: 7, M: 10, O: undefined };
     const corruptions: [string, (t: InvoiceTotals) => InvoiceTotals][] = [
       ["no breakdown", (t) => ({ ...t, subtotals: [] })],
@@ -1077,6 +1196,10 @@ describe("the rule set as a whole", () => {
       ["group fields missing", (t) => ({
         ...t,
         subtotals: t.subtotals.map((g) => ({ ...g, taxableAmount: undefined, taxAmount: undefined, rate: undefined }) as never),
+      })],
+      ["group category missing", (t) => ({
+        ...t,
+        subtotals: t.subtotals.map((g) => ({ ...g, category: undefined }) as never),
       })],
       ["three-decimal breakdown", (t) => ({
         ...t,
@@ -1121,8 +1244,49 @@ describe("the rule set as a whole", () => {
         }
       }
     }
-    const notFatal = Object.keys(ARITHMETIC_INVARIANTS).filter((id) => !fired.get(id)?.has("fatal"));
-    expect(notFatal, "invariants that no corruption made fire as fatal").toEqual([]);
+    expect(COMPUTED_ARITHMETIC_GUARDS.length).toBeGreaterThan(0);
+    const notFatal = [...new Set([...COMPUTED_ARITHMETIC_GUARDS, ...Object.keys(ARITHMETIC_INVARIANTS)])]
+      .filter((id) => !fired.get(id)?.has("fatal"));
+    expect(notFatal, "arithmetic guards that no corruption made fire as fatal").toEqual([]);
+  });
+
+  // The test above proves each rule id fires somewhere. This one ties each
+  // corruption to the branch it must trip, because a rule id can survive with
+  // one of its branches dead: the -01 duplicate-group and extra-group checks,
+  // computed -08, BR-47 and BR-CO-17 all survived a downgrade to warning
+  // (review, 2026-09-23).
+  it("trips the specific branch each corruption targets", () => {
+    const fatalRules = (inv: InvoiceInput, corrupt: (t: InvoiceTotals) => InvoiceTotals) => {
+      const base = makeRuleContext(inv);
+      const ctx: RuleContext = { ...base, totals: { totals: corrupt(base.totals.totals!) } };
+      const fired = new Set<string>();
+      for (const rule of inputRules) {
+        let result;
+        try {
+          result = rule(inv, ctx);
+        } catch (error) {
+          if (error instanceof TypeError || error instanceof RangeError) continue;
+          throw error;
+        }
+        for (const f of [result].flat()) if (f && f.severity === "fatal") fired.add(f.rule);
+      }
+      return fired;
+    };
+    const standard = withInvoice({ lines: [cleanLine({ vatCategory: "S", vatRate: 19 })] });
+    const exempt = withInvoice({
+      lines: [cleanLine({ vatCategory: "E", vatRate: 0 })],
+      vatExemptionReasons: { E: "Exempt under Article 135" },
+    });
+    const cases: [string, InvoiceInput, (t: InvoiceTotals) => InvoiceTotals, string][] = [
+      ["a second group for a unique category", exempt, (t) => ({ ...t, subtotals: [...t.subtotals, { ...t.subtotals[0]! }] }), "BR-E-01"],
+      ["a group no line uses", standard, (t) => ({ ...t, subtotals: [...t.subtotals, { category: "Z", rate: 0, taxableAmount: 0, taxAmount: 0 }] }), "BR-Z-01"],
+      ["a taxable amount the lines do not add up to", standard, (t) => ({ ...t, subtotals: t.subtotals.map((g) => ({ ...g, taxableAmount: g.taxableAmount + 5 })) }), "BR-S-08"],
+      ["a VAT amount that is not taxable times rate", standard, (t) => ({ ...t, subtotals: t.subtotals.map((g) => ({ ...g, taxAmount: g.taxAmount + 5 })) }), "BR-CO-17"],
+      ["a group with no category", standard, (t) => ({ ...t, subtotals: t.subtotals.map((g) => ({ ...g, category: undefined }) as never) }), "BR-47"],
+    ];
+    for (const [what, inv, corrupt, rule] of cases) {
+      expect(fatalRules(inv, corrupt), `${what}: ${rule} did not fire as fatal`).toContain(rule);
+    }
   });
 
   it("fires every rule a caller can reach, and none that they cannot", () => {

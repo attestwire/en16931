@@ -596,7 +596,15 @@ export function parseCiiInvoice(
   xml: string,
   options: ParseCiiOptions = {},
 ): ParsedInvoice {
-  const root = parseXml(xml, options);
+  return parseCiiTree(parseXml(xml, options));
+}
+
+/**
+ * The same reader over a tree that is already parsed. Internal: `validate`
+ * parses once and keeps the tree to locate findings in, rather than handing
+ * the text to the reader and parsing it a second time.
+ */
+export function parseCiiTree(root: XmlElement): ParsedInvoice {
 
   if (root.namespace === UBL_INVOICE_NS || root.namespace === UBL_CREDIT_NOTE_NS) {
     throw new UnsupportedCiiSyntaxError(
@@ -915,6 +923,9 @@ export function parseCiiInvoice(
     let taxPointDate: string | undefined;
     let taxPointCode: string | undefined;
     for (const tax of r.grpAll(settlement, "ApplicableTradeTax")) {
+      // NOT trimmed, unlike UBL: the CII schematron compares ram:CategoryCode
+      // literally (`ram:CategoryCode = 'O'`), so " O " is not category O there
+      // and must not be here (review, 2026-09-23).
       const category = (r.ram(tax, "CategoryCode") ?? "") as VatCategory;
       r.ram(tax, "TypeCode");
       // BT-116, BT-117, BT-118 and BT-119 are kept as *declared* figures and
@@ -936,7 +947,11 @@ export function parseCiiInvoice(
       if (statedTaxable) {
         noteLexicalPrecision(overPrecise, "BT-116", statedTaxable.lexical, statedTaxable.xpath, { group });
       }
-      if (Object.keys(stated).length > 0) declaredSubtotals.push(stated);
+      // Kept even when nothing in it could be read. Every child of
+      // ram:ApplicableTradeTax is optional in the CII schema, so a group with
+      // only a TypeCode is schema-valid, and KoSIT rejects it under BR-45 to
+      // BR-48. Dropping it meant no rule ever saw it (review, 2026-09-23).
+      declaredSubtotals.push(stated);
       const reason = r.ram(tax, "ExemptionReason");
       if (reason !== undefined) exemptionReasons[category] = reason;
       const reasonCode = r.ram(tax, "ExemptionReasonCode");

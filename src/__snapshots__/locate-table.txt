@@ -1,0 +1,1980 @@
+## minimal
+/ubl:Invoice/cbc:CustomizationID
+  ubl =3
+  cii =8 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ProfileID
+  ubl =4
+  cii =5 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ID
+  ubl =5
+  cii =12 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:ID
+/ubl:Invoice/cbc:IssueDate
+  ubl =6
+  cii =15 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IssueDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:DueDate
+  ubl =7
+  cii =161 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DueDateDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:InvoiceTypeCode
+  ubl =8
+  cii =13 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode
+/ubl:Invoice/cbc:DocumentCurrencyCode
+  ubl =9
+  cii =132 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode
+/ubl:Invoice/cbc:BuyerReference
+  ubl =10
+  cii =73 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+/ubl:Invoice/cac:OrderReference/cbc:ID
+  ubl =12
+  cii =120 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID
+  ubl =16
+  cii =95 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =18
+  cii =75 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =21
+  cii =90 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =22
+  cii =91 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =23
+  cii =89 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =25
+  cii =92 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cbc:CompanyID
+  ubl ~15
+  cii ~74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[1]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme/cbc:ID
+  ubl ~15
+  cii ~74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cbc:CompanyID
+  ubl ~15
+  cii ~74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[2]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cac:TaxScheme/cbc:ID
+  ubl ~15
+  cii ~74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =41
+  cii =75 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =42
+  cii =77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Name
+  ubl =45
+  cii =80 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =46
+  cii =82 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =47
+  cii =85 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID
+  ubl =53
+  cii =113 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =55
+  cii =105 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =58
+  cii =108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =59
+  cii =109 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =60
+  cii =107 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =62
+  cii =110 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =66
+  cii =116 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =68
+  cii ~115 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =72
+  cii =105 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:Delivery/cbc:ActualDeliveryDate
+  ubl =77
+  cii =126 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/udt:DateTimeString
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentMeansCode
+  ubl =80
+  cii =134 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentID
+  ubl =81
+  cii =131 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PaymentReference
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID
+  ubl =83
+  cii =137 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:Name
+  ubl =84
+  cii =138 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:AccountName
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID
+  ubl =86
+  cii =141 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeeSpecifiedCreditorFinancialInstitution/ram:BICID
+/ubl:Invoice/cac:PaymentTerms/cbc:Note
+  ubl =91
+  cii =159 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description
+/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount
+  ubl =94
+  cii =167 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxableAmount
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxAmount
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxableAmount
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxAmount
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:ID
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:Percent
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~93
+  cii ~130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount
+  ubl =119
+  cii =165 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount
+  ubl =120
+  cii =166 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxBasisTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount
+  ubl =121
+  cii =168 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount
+  ubl =122
+  cii =169 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:DuePayableAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:ID
+  ubl =125
+  cii =21 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:InvoicedQuantity
+  ubl =126
+  cii =33 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount
+  ubl =127
+  cii =42 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Description
+  ubl =129
+  cii =25 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Name
+  ubl =130
+  cii =24 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =132
+  cii =38 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =133
+  cii =39 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =135
+  cii ~36 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount
+  ubl =140
+  cii =29 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:ID
+  ubl =144
+  cii =48 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:InvoicedQuantity
+  ubl =145
+  cii =59 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:LineExtensionAmount
+  ubl =146
+  cii =68 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cbc:Name
+  ubl =148
+  cii =51 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =150
+  cii =64 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =151
+  cii =65 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =153
+  cii ~62 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:PriceAmount
+  ubl =158
+  cii =55 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+## reverse-charge
+/ubl:Invoice/cbc:CustomizationID
+  ubl =3
+  cii =8 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ProfileID
+  ubl =4
+  cii =5 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ID
+  ubl =5
+  cii =12 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:ID
+/ubl:Invoice/cbc:IssueDate
+  ubl =6
+  cii =15 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IssueDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:DueDate
+  ubl =7
+  cii =158 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DueDateDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:InvoiceTypeCode
+  ubl =8
+  cii =13 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode
+/ubl:Invoice/cbc:Note
+  ubl =9
+  cii =17 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IncludedNote
+/ubl:Invoice/cbc:DocumentCurrencyCode
+  ubl =10
+  cii =135 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode
+/ubl:Invoice/cbc:BuyerReference
+  ubl =11
+  cii =75 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID
+  ubl =14
+  cii =97 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =16
+  cii =77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =19
+  cii =92 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =20
+  cii =93 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =21
+  cii =91 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =23
+  cii =94 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =27
+  cii =100 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =29
+  cii ~99 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =33
+  cii =77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =34
+  cii =79 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Name
+  ubl =37
+  cii =82 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =38
+  cii =84 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =39
+  cii =87 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID
+  ubl =45
+  cii =112 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =47
+  cii =104 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =50
+  cii =107 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =51
+  cii =108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =52
+  cii =106 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =54
+  cii =109 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =58
+  cii =115 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =60
+  cii ~114 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =64
+  cii =104 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:Delivery/cbc:ActualDeliveryDate
+  ubl =69
+  cii =130 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/udt:DateTimeString
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:StreetName
+  ubl =72
+  cii =123 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:CityName
+  ubl =73
+  cii =124 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:PostalZone
+  ubl =74
+  cii =122 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cac:Country/cbc:IdentificationCode
+  ubl =76
+  cii =125 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentMeansCode
+  ubl =82
+  cii =137 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID
+  ubl =84
+  cii =140 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:Name
+  ubl =85
+  cii =141 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:AccountName
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID
+  ubl =87
+  cii =144 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeeSpecifiedCreditorFinancialInstitution/ram:BICID
+/ubl:Invoice/cac:PaymentTerms/cbc:Note
+  ubl =92
+  cii =156 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description
+/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount
+  ubl =95
+  cii =164 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxableAmount
+  ubl =97
+  cii =151 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount
+  ubl =98
+  cii =148 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID
+  ubl =100
+  cii =152 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:Percent
+  ubl =101
+  cii =153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:TaxExemptionReason
+  ubl =102
+  cii =150 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:ExemptionReason
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =104
+  cii ~147 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount
+  ubl =110
+  cii =162 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount
+  ubl =111
+  cii =163 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxBasisTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount
+  ubl =112
+  cii =165 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount
+  ubl =113
+  cii =166 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:DuePayableAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:ID
+  ubl =116
+  cii =24 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:InvoicedQuantity
+  ubl =117
+  cii =35 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount
+  ubl =118
+  cii =44 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Name
+  ubl =120
+  cii =27 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =122
+  cii =40 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =123
+  cii =41 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =125
+  cii ~38 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount
+  ubl =130
+  cii =31 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:ID
+  ubl =134
+  cii =50 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:InvoicedQuantity
+  ubl =135
+  cii =61 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:LineExtensionAmount
+  ubl =136
+  cii =70 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cbc:Name
+  ubl =138
+  cii =53 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =140
+  cii =66 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =141
+  cii =67 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =143
+  cii ~64 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:PriceAmount
+  ubl =148
+  cii =57 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+## discount
+/ubl:Invoice/cbc:CustomizationID
+  ubl =3
+  cii =8 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ProfileID
+  ubl =4
+  cii =5 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ID
+  ubl =5
+  cii =12 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:ID
+/ubl:Invoice/cbc:IssueDate
+  ubl =6
+  cii =15 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IssueDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:DueDate
+  ubl =7
+  cii =297 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DueDateDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:InvoiceTypeCode
+  ubl =8
+  cii =13 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode
+/ubl:Invoice/cbc:Note
+  ubl =9
+  cii =17 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IncludedNote
+/ubl:Invoice/cbc:DocumentCurrencyCode
+  ubl =10
+  cii =230 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode
+/ubl:Invoice/cbc:AccountingCost
+  ubl =11
+  cii =318 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ReceivableSpecifiedTradeAccountingAccount/ram:ID
+/ubl:Invoice/cbc:BuyerReference
+  ubl =12
+  cii =148 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+/ubl:Invoice/cac:InvoicePeriod/cbc:StartDate
+  ubl =14
+  cii =258 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoicePeriod/cbc:EndDate
+  ubl =15
+  cii =261 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:OrderReference/cbc:ID
+  ubl =18
+  cii =211 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID
+  ubl =22
+  cii =312 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:IssueDate
+  ubl =23
+  cii =314 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:FormattedIssueDateTime/qdt:DateTimeString
+/ubl:Invoice/cac:ContractDocumentReference/cbc:ID
+  ubl =27
+  cii =214 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:ContractReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference/cbc:ID
+  ubl =30
+  cii =217 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference/cbc:DocumentDescription
+  ubl =31
+  cii ~216 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument
+/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference/cbc:URI
+  ubl =34
+  cii =218 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument/ram:URIID
+/ubl:Invoice/cac:ProjectReference/cbc:ID
+  ubl =39
+  cii =223 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SpecifiedProcuringProject/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID
+  ubl =43
+  cii =172 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID
+  ubl =45
+  cii =150 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:GlobalID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =48
+  cii =151 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =51
+  cii =167 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =52
+  cii =168 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =53
+  cii =166 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =55
+  cii =169 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cbc:CompanyID
+  ubl ~42
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[1]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme/cbc:ID
+  ubl ~42
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cbc:CompanyID
+  ubl ~42
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[2]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cac:TaxScheme/cbc:ID
+  ubl ~42
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =71
+  cii =151 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =72
+  cii =154 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyLegalForm
+  ubl =73
+  cii =152 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Description
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Name
+  ubl =76
+  cii =157 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =77
+  cii =159 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =78
+  cii =162 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID
+  ubl =84
+  cii =204 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification/cbc:ID
+  ubl =86
+  cii =182 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:GlobalID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =89
+  cii =183 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =92
+  cii =198 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:AdditionalStreetName
+  ubl =93
+  cii =199 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineTwo
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =94
+  cii =200 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =95
+  cii =197 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =97
+  cii =201 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =101
+  cii =207 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =103
+  cii ~206 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =107
+  cii =183 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =108
+  cii =185 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:Name
+  ubl =111
+  cii =188 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =112
+  cii =190 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =113
+  cii =193 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentMeansCode
+  ubl =118
+  cii =232 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentID
+  ubl =119
+  cii =229 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PaymentReference
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID
+  ubl =121
+  cii =235 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:Name
+  ubl =122
+  cii =236 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:AccountName
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID
+  ubl =124
+  cii =239 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeeSpecifiedCreditorFinancialInstitution/ram:BICID
+/ubl:Invoice/cac:PaymentTerms/cbc:Note
+  ubl =129
+  cii =293 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:ChargeIndicator
+  ubl =134
+  cii =266 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:AllowanceChargeReasonCode
+  ubl =135
+  cii =271 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ReasonCode
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:AllowanceChargeReason
+  ubl =136
+  cii =272 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:Reason
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:MultiplierFactorNumeric
+  ubl =137
+  cii =268 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CalculationPercent
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:Amount
+  ubl =138
+  cii =270 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:BaseAmount
+  ubl =139
+  cii =269 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:BasisAmount
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cbc:ID
+  ubl =141
+  cii =275 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cbc:Percent
+  ubl =142
+  cii =276 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =144
+  cii ~273 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:ChargeIndicator
+  ubl =149
+  cii =281 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:AllowanceChargeReasonCode
+  ubl =150
+  cii =284 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ReasonCode
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:AllowanceChargeReason
+  ubl =151
+  cii =285 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:Reason
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:Amount
+  ubl =152
+  cii =283 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ActualAmount
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cbc:ID
+  ubl =154
+  cii =288 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cbc:Percent
+  ubl =155
+  cii =289 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =157
+  cii ~286 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax
+/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount
+  ubl =162
+  cii =305 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxableAmount
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxAmount
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxableAmount
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxAmount
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:ID
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:Percent
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~161
+  cii ~228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount
+  ubl =187
+  cii =301 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount
+  ubl =188
+  cii =304 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxBasisTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount
+  ubl =189
+  cii =307 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount
+  ubl =190
+  cii =303 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:AllowanceTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount
+  ubl =191
+  cii =302 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:ChargeTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PrepaidAmount
+  ubl =192
+  cii =308 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TotalPrepaidAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableRoundingAmount
+  ubl =193
+  cii =306 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:RoundingAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount
+  ubl =194
+  cii =309 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:DuePayableAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:ID
+  ubl =197
+  cii =25 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:InvoicedQuantity
+  ubl =198
+  cii =40 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount
+  ubl =199
+  cii =57 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:AccountingCost
+  ubl =200
+  cii =60 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ReceivableSpecifiedTradeAccountingAccount/ram:ID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:InvoicePeriod/cbc:StartDate
+  ubl =202
+  cii =50 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[1]/cac:InvoicePeriod/cbc:EndDate
+  ubl =203
+  cii =53 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Description
+  ubl =206
+  cii =29 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Name
+  ubl =207
+  cii =28 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode
+  ubl =209
+  cii =31 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:DesignatedProductClassification/ram:ClassCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =212
+  cii =45 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =213
+  cii =46 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =215
+  cii ~43 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount
+  ubl =220
+  cii =36 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:ID
+  ubl =224
+  cii =66 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:InvoicedQuantity
+  ubl =225
+  cii =90 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:LineExtensionAmount
+  ubl =226
+  cii =99 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cbc:Name
+  ubl =228
+  cii =71 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:SellersItemIdentification/cbc:ID
+  ubl =230
+  cii =70 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:SellerAssignedID
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:StandardItemIdentification/cbc:ID
+  ubl =233
+  cii =69 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:GlobalID
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:OriginCountry/cbc:IdentificationCode
+  ubl =236
+  cii =81 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:OriginTradeCountry/ram:ID
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =239
+  cii =95 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =240
+  cii =96 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =242
+  cii ~93 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[1]/cbc:Name
+  ubl =246
+  cii =73 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic/ram:Description
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[1]/cbc:Value
+  ubl =247
+  cii =74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic/ram:Value
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[2]/cbc:Name
+  ubl =250
+  cii =77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic[2]/ram:Description
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[2]/cbc:Value
+  ubl =251
+  cii =78 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic[2]/ram:Value
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:PriceAmount
+  ubl =255
+  cii =86 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cbc:ID
+  ubl =259
+  cii =105 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[3]/cbc:InvoicedQuantity
+  ubl =260
+  cii =116 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[3]/cbc:LineExtensionAmount
+  ubl =261
+  cii =143 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cac:InvoicePeriod/cbc:StartDate
+  ubl =263
+  cii =126 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[3]/cac:InvoicePeriod/cbc:EndDate
+  ubl =264
+  cii =129 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:ChargeIndicator
+  ubl =267
+  cii =134 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:AllowanceChargeReasonCode
+  ubl =268
+  cii =139 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ReasonCode
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:AllowanceChargeReason
+  ubl =269
+  cii =140 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:Reason
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:MultiplierFactorNumeric
+  ubl =270
+  cii =136 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CalculationPercent
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:Amount
+  ubl =271
+  cii =138 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:BaseAmount
+  ubl =272
+  cii =137 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:BasisAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cbc:Name
+  ubl =275
+  cii =108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =277
+  cii =121 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =278
+  cii =122 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =280
+  cii ~119 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Price/cbc:PriceAmount
+  ubl =285
+  cii =112 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+## credit-note
+/ubl:Invoice/cbc:CustomizationID
+  ubl =3
+  cii =8 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ProfileID
+  ubl =4
+  cii =5 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ID
+  ubl =5
+  cii =12 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:ID
+/ubl:Invoice/cbc:IssueDate
+  ubl =6
+  cii =15 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IssueDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:InvoiceTypeCode
+  ubl =7
+  cii =13 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode
+/ubl:Invoice/cbc:Note
+  ubl =8
+  cii =17 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IncludedNote
+/ubl:Invoice/cbc:DocumentCurrencyCode
+  ubl =9
+  cii =135 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode
+/ubl:Invoice/cbc:BuyerReference
+  ubl =10
+  cii =76 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+/ubl:Invoice/cac:OrderReference/cbc:ID
+  ubl =12
+  cii =123 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID
+  ubl =16
+  cii =175 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:IssueDate
+  ubl =17
+  cii =177 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:FormattedIssueDateTime/qdt:DateTimeString
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID
+  ubl =22
+  cii =98 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =24
+  cii =78 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =27
+  cii =93 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =28
+  cii =94 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =29
+  cii =92 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =31
+  cii =95 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cbc:CompanyID
+  ubl ~21
+  cii ~77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[1]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme/cbc:ID
+  ubl ~21
+  cii ~77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cbc:CompanyID
+  ubl ~21
+  cii ~77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[2]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cac:TaxScheme/cbc:ID
+  ubl ~21
+  cii ~77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =47
+  cii =78 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =48
+  cii =80 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Name
+  ubl =51
+  cii =83 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =52
+  cii =85 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =53
+  cii =88 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID
+  ubl =59
+  cii =116 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =61
+  cii =108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =64
+  cii =111 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =65
+  cii =112 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =66
+  cii =110 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =68
+  cii =113 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =72
+  cii =119 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =74
+  cii ~118 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =78
+  cii =108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:Delivery/cbc:ActualDeliveryDate
+  ubl =83
+  cii =129 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/udt:DateTimeString
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentMeansCode
+  ubl =86
+  cii =137 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentDueDate
+  ubl =87
+  cii =164 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DueDateDateTime/udt:DateTimeString
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentID
+  ubl =88
+  cii =134 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PaymentReference
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID
+  ubl =90
+  cii =140 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:Name
+  ubl =91
+  cii =141 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:AccountName
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID
+  ubl =93
+  cii =144 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeeSpecifiedCreditorFinancialInstitution/ram:BICID
+/ubl:Invoice/cac:PaymentTerms/cbc:Note
+  ubl =98
+  cii =162 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description
+/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount
+  ubl =101
+  cii =170 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxableAmount
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxAmount
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxableAmount
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxAmount
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:ID
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:Percent
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~100
+  cii ~133 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount
+  ubl =126
+  cii =168 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount
+  ubl =127
+  cii =169 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxBasisTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount
+  ubl =128
+  cii =171 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount
+  ubl =129
+  cii =172 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:DuePayableAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:ID
+  ubl =132
+  cii =24 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:InvoicedQuantity
+  ubl =133
+  cii =36 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount
+  ubl =134
+  cii =45 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Description
+  ubl =136
+  cii =28 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Name
+  ubl =137
+  cii =27 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =139
+  cii =41 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =140
+  cii =42 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =142
+  cii ~39 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount
+  ubl =147
+  cii =32 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:ID
+  ubl =151
+  cii =51 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:InvoicedQuantity
+  ubl =152
+  cii =62 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:LineExtensionAmount
+  ubl =153
+  cii =71 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cbc:Name
+  ubl =155
+  cii =54 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =157
+  cii =67 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =158
+  cii =68 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =160
+  cii ~65 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:PriceAmount
+  ubl =165
+  cii =58 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+## credit-note-discount
+/ubl:Invoice/cbc:CustomizationID
+  ubl =3
+  cii =8 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ProfileID
+  ubl =4
+  cii =5 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ID
+  ubl =5
+  cii =12 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:ID
+/ubl:Invoice/cbc:IssueDate
+  ubl =6
+  cii =15 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IssueDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:InvoiceTypeCode
+  ubl =7
+  cii =13 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode
+/ubl:Invoice/cbc:Note
+  ubl =8
+  cii =17 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IncludedNote
+/ubl:Invoice/cbc:DocumentCurrencyCode
+  ubl =9
+  cii =226 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode
+/ubl:Invoice/cbc:AccountingCost
+  ubl =10
+  cii =310 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ReceivableSpecifiedTradeAccountingAccount/ram:ID
+/ubl:Invoice/cbc:BuyerReference
+  ubl =11
+  cii =148 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+/ubl:Invoice/cac:InvoicePeriod/cbc:StartDate
+  ubl =13
+  cii =254 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoicePeriod/cbc:EndDate
+  ubl =14
+  cii =257 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:OrderReference/cbc:ID
+  ubl =17
+  cii =211 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID
+  ubl =21
+  cii =304 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:BillingReference/cac:InvoiceDocumentReference/cbc:IssueDate
+  ubl =22
+  cii =306 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:FormattedIssueDateTime/qdt:DateTimeString
+/ubl:Invoice/cac:ContractDocumentReference/cbc:ID
+  ubl =26
+  cii =214 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:ContractReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference/cbc:ID
+  ubl =29
+  cii =217 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference/cbc:DocumentDescription
+  ubl =30
+  cii ~216 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument
+/ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/cac:ExternalReference/cbc:URI
+  ubl =33
+  cii =218 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID
+  ubl =39
+  cii =172 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID
+  ubl =41
+  cii =150 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:GlobalID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =44
+  cii =151 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =47
+  cii =167 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =48
+  cii =168 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =49
+  cii =166 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =51
+  cii =169 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cbc:CompanyID
+  ubl ~38
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[1]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme/cbc:ID
+  ubl ~38
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cbc:CompanyID
+  ubl ~38
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[2]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cac:TaxScheme/cbc:ID
+  ubl ~38
+  cii ~149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =67
+  cii =151 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =68
+  cii =154 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyLegalForm
+  ubl =69
+  cii =152 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Description
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Name
+  ubl =72
+  cii =157 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =73
+  cii =159 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =74
+  cii =162 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID
+  ubl =80
+  cii =204 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification/cbc:ID
+  ubl =82
+  cii =182 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:GlobalID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =85
+  cii =183 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =88
+  cii =198 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:AdditionalStreetName
+  ubl =89
+  cii =199 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineTwo
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =90
+  cii =200 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =91
+  cii =197 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =93
+  cii =201 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =97
+  cii =207 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =99
+  cii ~206 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =103
+  cii =183 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =104
+  cii =185 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:Name
+  ubl =107
+  cii =188 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =108
+  cii =190 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =109
+  cii =193 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentMeansCode
+  ubl =114
+  cii =228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentDueDate
+  ubl =115
+  cii =291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DueDateDateTime/udt:DateTimeString
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentID
+  ubl =116
+  cii =225 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PaymentReference
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:ID
+  ubl =118
+  cii =231 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cbc:Name
+  ubl =119
+  cii =232 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeePartyCreditorFinancialAccount/ram:AccountName
+/ubl:Invoice/cac:PaymentMeans/cac:PayeeFinancialAccount/cac:FinancialInstitutionBranch/cbc:ID
+  ubl =121
+  cii =235 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayeeSpecifiedCreditorFinancialInstitution/ram:BICID
+/ubl:Invoice/cac:PaymentTerms/cbc:Note
+  ubl =126
+  cii =289 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:ChargeIndicator
+  ubl =129
+  cii =262 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:AllowanceChargeReasonCode
+  ubl =130
+  cii =267 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ReasonCode
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:AllowanceChargeReason
+  ubl =131
+  cii =268 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:Reason
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:MultiplierFactorNumeric
+  ubl =132
+  cii =264 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CalculationPercent
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:Amount
+  ubl =133
+  cii =266 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:BaseAmount
+  ubl =134
+  cii =265 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:BasisAmount
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cbc:ID
+  ubl =136
+  cii =271 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cbc:Percent
+  ubl =137
+  cii =272 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =139
+  cii ~269 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:ChargeIndicator
+  ubl =144
+  cii =277 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:AllowanceChargeReasonCode
+  ubl =145
+  cii =280 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ReasonCode
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:AllowanceChargeReason
+  ubl =146
+  cii =281 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:Reason
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:Amount
+  ubl =147
+  cii =279 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ActualAmount
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cbc:ID
+  ubl =149
+  cii =284 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cbc:Percent
+  ubl =150
+  cii =285 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =152
+  cii ~282 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax
+/ubl:Invoice/cac:TaxTotal/cbc:TaxAmount
+  ubl =157
+  cii =299 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxableAmount
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cbc:TaxAmount
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxableAmount
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cbc:TaxAmount
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:ID
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:Percent
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~156
+  cii ~224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount
+  ubl =182
+  cii =295 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount
+  ubl =183
+  cii =298 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxBasisTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount
+  ubl =184
+  cii =300 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount
+  ubl =185
+  cii =297 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:AllowanceTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount
+  ubl =186
+  cii =296 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:ChargeTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount
+  ubl =187
+  cii =301 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:DuePayableAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:ID
+  ubl =190
+  cii =25 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:InvoicedQuantity
+  ubl =191
+  cii =40 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount
+  ubl =192
+  cii =57 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:AccountingCost
+  ubl =193
+  cii =60 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ReceivableSpecifiedTradeAccountingAccount/ram:ID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:InvoicePeriod/cbc:StartDate
+  ubl =195
+  cii =50 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[1]/cac:InvoicePeriod/cbc:EndDate
+  ubl =196
+  cii =53 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Description
+  ubl =199
+  cii =29 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Name
+  ubl =200
+  cii =28 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode
+  ubl =202
+  cii =31 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:DesignatedProductClassification/ram:ClassCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =205
+  cii =45 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =206
+  cii =46 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =208
+  cii ~43 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount
+  ubl =213
+  cii =36 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:ID
+  ubl =217
+  cii =66 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:InvoicedQuantity
+  ubl =218
+  cii =90 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:LineExtensionAmount
+  ubl =219
+  cii =99 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cbc:Name
+  ubl =221
+  cii =71 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:SellersItemIdentification/cbc:ID
+  ubl =223
+  cii =70 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:SellerAssignedID
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:StandardItemIdentification/cbc:ID
+  ubl =226
+  cii =69 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:GlobalID
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:OriginCountry/cbc:IdentificationCode
+  ubl =229
+  cii =81 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:OriginTradeCountry/ram:ID
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =232
+  cii =95 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =233
+  cii =96 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =235
+  cii ~93 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[1]/cbc:Name
+  ubl =239
+  cii =73 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic/ram:Description
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[1]/cbc:Value
+  ubl =240
+  cii =74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic/ram:Value
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[2]/cbc:Name
+  ubl =243
+  cii =77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic[2]/ram:Description
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:AdditionalItemProperty[2]/cbc:Value
+  ubl =244
+  cii =78 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic[2]/ram:Value
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:PriceAmount
+  ubl =248
+  cii =86 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cbc:ID
+  ubl =252
+  cii =105 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[3]/cbc:InvoicedQuantity
+  ubl =253
+  cii =116 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[3]/cbc:LineExtensionAmount
+  ubl =254
+  cii =143 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cac:InvoicePeriod/cbc:StartDate
+  ubl =256
+  cii =126 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[3]/cac:InvoicePeriod/cbc:EndDate
+  ubl =257
+  cii =129 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:ChargeIndicator
+  ubl =260
+  cii =134 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:AllowanceChargeReasonCode
+  ubl =261
+  cii =139 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ReasonCode
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:AllowanceChargeReason
+  ubl =262
+  cii =140 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:Reason
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:MultiplierFactorNumeric
+  ubl =263
+  cii =136 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CalculationPercent
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:Amount
+  ubl =264
+  cii =138 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cac:AllowanceCharge/cbc:BaseAmount
+  ubl =265
+  cii =137 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:BasisAmount
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cbc:Name
+  ubl =268
+  cii =108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =270
+  cii =121 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =271
+  cii =122 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =273
+  cii ~119 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[3]/cac:Price/cbc:PriceAmount
+  ubl =278
+  cii =112 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[3]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+## extended
+/ubl:Invoice/cbc:CustomizationID
+  ubl =3
+  cii =8 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:GuidelineSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ProfileID
+  ubl =4
+  cii =5 /rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext/ram:BusinessProcessSpecifiedDocumentContextParameter/ram:ID
+/ubl:Invoice/cbc:ID
+  ubl =5
+  cii =12 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:ID
+/ubl:Invoice/cbc:IssueDate
+  ubl =6
+  cii =15 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IssueDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:DueDate
+  ubl =7
+  cii =358 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DueDateDateTime/udt:DateTimeString
+/ubl:Invoice/cbc:InvoiceTypeCode
+  ubl =8
+  cii =13 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode
+/ubl:Invoice/cbc:Note
+  ubl =9
+  cii =17 /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:IncludedNote
+/ubl:Invoice/cbc:TaxPointDate
+  ubl =10
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax/ram:TaxPointDate/udt:DateString
+/ubl:Invoice/cbc:DocumentCurrencyCode
+  ubl =11
+  cii =295 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:InvoiceCurrencyCode
+/ubl:Invoice/cbc:TaxCurrencyCode
+  ubl =12
+  cii =294 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:TaxCurrencyCode
+/ubl:Invoice/cbc:AccountingCost
+  ubl =13
+  cii =375 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ReceivableSpecifiedTradeAccountingAccount/ram:ID
+/ubl:Invoice/cbc:BuyerReference
+  ubl =14
+  cii =154 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerReference
+/ubl:Invoice/cac:OrderReference/cbc:ID
+  ubl =16
+  cii =235 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerOrderReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:OrderReference/cbc:SalesOrderID
+  ubl =17
+  cii =232 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerOrderReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:DespatchDocumentReference/cbc:ID
+  ubl =20
+  cii =285 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:DespatchAdviceReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:ReceiptDocumentReference/cbc:ID
+  ubl =23
+  cii =288 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ReceivingAdviceReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:OriginatorDocumentReference/cbc:ID
+  ubl =26
+  cii ~2 /rsm:CrossIndustryInvoice
+/ubl:Invoice/cac:ContractDocumentReference/cbc:ID
+  ubl =29
+  cii =238 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:ContractReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference[1]/cbc:ID
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument[1]/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference[1]/cbc:DocumentTypeCode
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement
+/ubl:Invoice/cac:AdditionalDocumentReference[2]/cbc:ID
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument[2]/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference[2]/cbc:DocumentDescription
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement
+/ubl:Invoice/cac:AdditionalDocumentReference[2]/cac:Attachment/cac:ExternalReference/cbc:URI
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument[2]/ram:URIID
+/ubl:Invoice/cac:AdditionalDocumentReference[3]/cbc:ID
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument[3]/ram:IssuerAssignedID
+/ubl:Invoice/cac:AdditionalDocumentReference[3]/cbc:DocumentDescription
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement
+/ubl:Invoice/cac:AdditionalDocumentReference[3]/cac:Attachment/cbc:EmbeddedDocumentBinaryObject
+  ubl ~2
+  cii ~153 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:AdditionalReferencedDocument[3]/ram:AttachmentBinaryObject
+/ubl:Invoice/cac:ProjectReference/cbc:ID
+  ubl =52
+  cii =262 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SpecifiedProcuringProject/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cbc:EndpointID
+  ubl =56
+  cii =182 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification[1]/cbc:ID
+  ubl ~55
+  cii =156 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:GlobalID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification[2]/cbc:ID
+  ubl ~55
+  cii ~155 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:ID[2]
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =64
+  cii =157 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =67
+  cii =174 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:AdditionalStreetName
+  ubl =68
+  cii =175 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineTwo
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =69
+  cii =177 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =70
+  cii =173 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cbc:CountrySubentity
+  ubl =71
+  cii =179 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountrySubDivisionName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:AddressLine/cbc:Line
+  ubl =73
+  cii =176 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:LineThree
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =76
+  cii =178 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cbc:CompanyID
+  ubl ~55
+  cii ~155 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[1]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[1]/cac:TaxScheme/cbc:ID
+  ubl ~55
+  cii ~155 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cbc:CompanyID
+  ubl ~55
+  cii ~155 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedTaxRegistration[2]/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[2]/cac:TaxScheme/cbc:ID
+  ubl ~55
+  cii ~155 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =92
+  cii =157 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =93
+  cii =160 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyLegalForm
+  ubl =94
+  cii =158 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:Description
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Name
+  ubl =97
+  cii =164 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =98
+  cii =166 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =99
+  cii =169 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cbc:EndpointID
+  ubl =105
+  cii =213 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:URIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification/cbc:ID
+  ubl =107
+  cii =192 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:GlobalID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name
+  ubl =110
+  cii =193 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:StreetName
+  ubl =113
+  cii =208 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:CityName
+  ubl =114
+  cii =209 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cbc:PostalZone
+  ubl =115
+  cii =207 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =117
+  cii =210 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =121
+  cii =216 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =123
+  cii ~215 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName
+  ubl =127
+  cii =193 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:Name
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =128
+  cii =195 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:Name
+  ubl =131
+  cii =198 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:PersonName
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:Telephone
+  ubl =132
+  cii =200 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:TelephoneUniversalCommunication/ram:CompleteNumber
+/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:Contact/cbc:ElectronicMail
+  ubl =133
+  cii =203 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:BuyerTradeParty/ram:DefinedTradeContact/ram:EmailURIUniversalCommunication/ram:URIID
+/ubl:Invoice/cac:PayeeParty/cac:PartyIdentification/cbc:ID
+  ubl =139
+  cii =297 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PayeeTradeParty/ram:GlobalID
+/ubl:Invoice/cac:PayeeParty/cac:PartyName/cbc:Name
+  ubl =142
+  cii =298 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PayeeTradeParty/ram:Name
+/ubl:Invoice/cac:PayeeParty/cac:PartyLegalEntity/cbc:CompanyID
+  ubl =145
+  cii =300 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PayeeTradeParty/ram:SpecifiedLegalOrganization/ram:ID
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PartyName/cbc:Name
+  ubl =150
+  cii =220 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:Name
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PostalAddress/cbc:StreetName
+  ubl =153
+  cii =223 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PostalAddress/cbc:CityName
+  ubl =154
+  cii =224 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PostalAddress/cbc:PostalZone
+  ubl =155
+  cii =222 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PostalAddress/cac:Country/cbc:IdentificationCode
+  ubl =157
+  cii =225 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID
+  ubl =161
+  cii =228 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:SpecifiedTaxRegistration/ram:ID
+/ubl:Invoice/cac:TaxRepresentativeParty/cac:PartyTaxScheme/cac:TaxScheme/cbc:ID
+  ubl =163
+  cii ~227 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeAgreement/ram:SellerTaxRepresentativeTradeParty/ram:SpecifiedTaxRegistration
+/ubl:Invoice/cac:Delivery/cbc:ActualDeliveryDate
+  ubl =168
+  cii =281 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ActualDeliverySupplyChainEvent/ram:OccurrenceDateTime/udt:DateTimeString
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cbc:ID
+  ubl =170
+  cii =268 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:GlobalID
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:StreetName
+  ubl =172
+  cii =272 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:LineOne
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:AdditionalStreetName
+  ubl =173
+  cii =273 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:LineTwo
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:CityName
+  ubl =174
+  cii =274 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CityName
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:PostalZone
+  ubl =175
+  cii =271 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:PostcodeCode
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cbc:CountrySubentity
+  ubl =176
+  cii =276 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CountrySubDivisionName
+/ubl:Invoice/cac:Delivery/cac:DeliveryLocation/cac:Address/cac:Country/cbc:IdentificationCode
+  ubl =178
+  cii =275 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:PostalTradeAddress/ram:CountryID
+/ubl:Invoice/cac:Delivery/cac:DeliveryParty/cac:PartyName/cbc:Name
+  ubl =184
+  cii =269 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeDelivery/ram:ShipToTradeParty/ram:Name
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentMeansCode
+  ubl =189
+  cii =304 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:TypeCode
+/ubl:Invoice/cac:PaymentMeans/cbc:PaymentID
+  ubl =190
+  cii =293 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:PaymentReference
+/ubl:Invoice/cac:PaymentMeans/cac:PaymentMandate/cbc:ID
+  ubl =192
+  cii =360 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID
+/ubl:Invoice/cac:PaymentMeans/cac:PaymentMandate/cac:PayerFinancialAccount/cbc:ID
+  ubl =194
+  cii =307 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementPaymentMeans/ram:PayerPartyDebtorFinancialAccount/ram:IBANID
+/ubl:Invoice/cac:PaymentTerms/cbc:Note
+  ubl =199
+  cii =356 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradePaymentTerms/ram:Description
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:ChargeIndicator
+  ubl =202
+  cii =329 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:AllowanceChargeReasonCode
+  ubl =203
+  cii =334 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ReasonCode
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:AllowanceChargeReason
+  ubl =204
+  cii =335 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:Reason
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:MultiplierFactorNumeric
+  ubl =205
+  cii =331 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CalculationPercent
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:Amount
+  ubl =206
+  cii =333 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:AllowanceCharge[1]/cbc:BaseAmount
+  ubl =207
+  cii =332 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:BasisAmount
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cbc:ID
+  ubl =209
+  cii =338 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cbc:Percent
+  ubl =210
+  cii =339 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:AllowanceCharge[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =212
+  cii ~336 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CategoryTradeTax
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:ChargeIndicator
+  ubl =217
+  cii =344 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:AllowanceChargeReasonCode
+  ubl =218
+  cii =347 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ReasonCode
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:AllowanceChargeReason
+  ubl =219
+  cii =348 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:Reason
+/ubl:Invoice/cac:AllowanceCharge[2]/cbc:Amount
+  ubl =220
+  cii =346 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ActualAmount
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cbc:ID
+  ubl =222
+  cii =351 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cbc:Percent
+  ubl =223
+  cii =352 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:AllowanceCharge[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl =225
+  cii ~349 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:CategoryTradeTax
+/ubl:Invoice/cac:TaxTotal[1]/cbc:TaxAmount
+  ubl =230
+  cii =367 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxableAmount
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cbc:TaxAmount
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:ID
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cbc:Percent
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[1]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[1]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[2]/cbc:TaxableAmount
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:BasisAmount
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[2]/cbc:TaxAmount
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CalculatedAmount
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:ID
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:CategoryCode
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[2]/cac:TaxCategory/cbc:Percent
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement  -> /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:ApplicableTradeTax[2]/ram:RateApplicablePercent
+/ubl:Invoice/cac:TaxTotal[1]/cac:TaxSubtotal[2]/cac:TaxCategory/cac:TaxScheme/cbc:ID
+  ubl ~229
+  cii ~291 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement
+/ubl:Invoice/cac:TaxTotal[2]/cbc:TaxAmount
+  ubl =255
+  cii =368 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxTotalAmount[2]
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:LineExtensionAmount
+  ubl =258
+  cii =363 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount
+  ubl =259
+  cii =366 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TaxBasisTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount
+  ubl =260
+  cii =370 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:GrandTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:AllowanceTotalAmount
+  ubl =261
+  cii =365 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:AllowanceTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:ChargeTotalAmount
+  ubl =262
+  cii =364 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:ChargeTotalAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PrepaidAmount
+  ubl =263
+  cii =371 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:TotalPrepaidAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableRoundingAmount
+  ubl =264
+  cii =369 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:RoundingAmount
+/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount
+  ubl =265
+  cii =372 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:ApplicableHeaderTradeSettlement/ram:SpecifiedTradeSettlementHeaderMonetarySummation/ram:DuePayableAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:ID
+  ubl =268
+  cii =25 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:Note
+  ubl =269
+  cii =27 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:AssociatedDocumentLineDocument/ram:IncludedNote/ram:Content
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:InvoicedQuantity
+  ubl =270
+  cii =71 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:LineExtensionAmount
+  ubl =271
+  cii =106 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cbc:AccountingCost
+  ubl =272
+  cii =114 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ReceivableSpecifiedTradeAccountingAccount/ram:ID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:InvoicePeriod/cbc:StartDate
+  ubl =274
+  cii =81 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[1]/cac:InvoicePeriod/cbc:EndDate
+  ubl =275
+  cii =84 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[1]/cac:OrderLineReference/cbc:LineID
+  ubl =278
+  cii =53 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:BuyerOrderReferencedDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:DocumentReference/cbc:ID
+  ubl =281
+  cii =109 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:AdditionalReferencedDocument/ram:IssuerAssignedID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:DocumentReference/cbc:DocumentTypeCode
+  ubl =282
+  cii ~108 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:AdditionalReferencedDocument
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[1]/cbc:ChargeIndicator
+  ubl =285
+  cii =89 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[1]/cbc:AllowanceChargeReasonCode
+  ubl =286
+  cii =94 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ReasonCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[1]/cbc:AllowanceChargeReason
+  ubl =287
+  cii =95 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:Reason
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[1]/cbc:MultiplierFactorNumeric
+  ubl =288
+  cii =91 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:CalculationPercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[1]/cbc:Amount
+  ubl =289
+  cii =93 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[1]/cbc:BaseAmount
+  ubl =290
+  cii =92 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge/ram:BasisAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[2]/cbc:ChargeIndicator
+  ubl =293
+  cii =99 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ChargeIndicator/udt:Indicator
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[2]/cbc:AllowanceChargeReasonCode
+  ubl =294
+  cii =102 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ReasonCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[2]/cbc:AllowanceChargeReason
+  ubl =295
+  cii =103 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:Reason
+/ubl:Invoice/cac:InvoiceLine[1]/cac:AllowanceCharge[2]/cbc:Amount
+  ubl =296
+  cii =101 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeAllowanceCharge[2]/ram:ActualAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Description
+  ubl =299
+  cii =35 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cbc:Name
+  ubl =300
+  cii =34 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:BuyersItemIdentification/cbc:ID
+  ubl =302
+  cii =33 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:BuyerAssignedID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:SellersItemIdentification/cbc:ID
+  ubl =305
+  cii =32 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:SellerAssignedID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:StandardItemIdentification/cbc:ID
+  ubl =308
+  cii =31 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:GlobalID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:OriginCountry/cbc:IdentificationCode
+  ubl =311
+  cii =48 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:OriginTradeCountry/ram:ID
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:CommodityClassification/cbc:ItemClassificationCode
+  ubl =314
+  cii =45 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:DesignatedProductClassification/ram:ClassCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =317
+  cii =76 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =318
+  cii =77 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =320
+  cii ~74 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:AdditionalItemProperty[1]/cbc:Name
+  ubl =324
+  cii =37 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:AdditionalItemProperty[1]/cbc:Value
+  ubl =325
+  cii =38 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic/ram:Value
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:AdditionalItemProperty[2]/cbc:Name
+  ubl =328
+  cii =41 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic[2]/ram:Description
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:AdditionalItemProperty[2]/cbc:Value
+  ubl =329
+  cii =42 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedTradeProduct/ram:ApplicableProductCharacteristic[2]/ram:Value
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:PriceAmount
+  ubl =333
+  cii =66 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cbc:BaseQuantity
+  ubl =334
+  cii =67 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:BasisQuantity
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:ChargeIndicator
+  ubl =336
+  cii ~58 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:Amount
+  ubl =337
+  cii =62 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge/ram:ActualAmount
+/ubl:Invoice/cac:InvoiceLine[1]/cac:Price/cac:AllowanceCharge/cbc:BaseAmount
+  ubl =338
+  cii =56 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem/ram:SpecifiedLineTradeAgreement/ram:GrossPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:ID
+  ubl =343
+  cii =120 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:AssociatedDocumentLineDocument/ram:LineID
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:InvoicedQuantity
+  ubl =344
+  cii =132 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeDelivery/ram:BilledQuantity
+/ubl:Invoice/cac:InvoiceLine[2]/cbc:LineExtensionAmount
+  ubl =345
+  cii =149 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:SpecifiedTradeSettlementLineMonetarySummation/ram:LineTotalAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:InvoicePeriod/cbc:StartDate
+  ubl =347
+  cii =142 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:StartDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[2]/cac:InvoicePeriod/cbc:EndDate
+  ubl =348
+  cii =145 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:BillingSpecifiedPeriod/ram:EndDateTime/udt:DateTimeString
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cbc:Name
+  ubl =351
+  cii =123 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedTradeProduct/ram:Name
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:ID
+  ubl =353
+  cii =137 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:CategoryCode
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent
+  ubl =354
+  cii =138 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax/ram:RateApplicablePercent
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Item/cac:ClassifiedTaxCategory/cac:TaxScheme/cbc:ID
+  ubl =356
+  cii ~135 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeSettlement/ram:ApplicableTradeTax
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:PriceAmount
+  ubl =361
+  cii =127 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:ChargeAmount
+/ubl:Invoice/cac:InvoiceLine[2]/cac:Price/cbc:BaseQuantity
+  ubl =362
+  cii =128 /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/ram:IncludedSupplyChainTradeLineItem[2]/ram:SpecifiedLineTradeAgreement/ram:NetPriceProductTradePrice/ram:BasisQuantity

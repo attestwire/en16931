@@ -30,12 +30,42 @@ export interface TeachingError {
   message: string;
   /** Concrete, actionable fix ("set buyerReference to the Leitweg-ID your client gave you"). */
   fix: string;
-  /** XPath into the offending XML, when validating an existing document. */
+  /**
+   * XPath to the offending element. From `validateInput` it is where the
+   * element sits in the UBL this library would generate. From `validate` it is
+   * the element's path in the caller's own file when it was found there, and
+   * otherwise where it belongs in that file's syntax.
+   */
   xpath?: string;
   /** Stable docs URL — one page per rule. */
   docsUrl: string;
   /** Minimal XML/JSON example of a passing value. */
   example?: string;
+  /** Line and column in the caller's file. Only `validate` sets it. */
+  location?: SourceLocation;
+}
+
+/**
+ * Where a finding lands in the document that was validated.
+ *
+ * `exact` is true when this is the element the finding is about. When that
+ * element is missing, or the file has several the rule could mean and nothing
+ * says which, it is false and the location is the nearest ancestor that is
+ * there: where the element goes, or the group to look in.
+ */
+export interface SourceLocation {
+  /** 1-based line of the element's start tag. */
+  line: number;
+  /** 1-based column of the start tag's `<`, in UTF-16 code units. */
+  column: number;
+  /** The element's path in the file, with the file's own prefixes. */
+  path: string;
+  exact: boolean;
+  /**
+   * Set when the XML came out of a Factur-X / ZUGFeRD PDF: the attachment's
+   * name. The line and column are then in that attachment, not in the PDF.
+   */
+  attachment?: string;
 }
 
 export interface ValidationResult {

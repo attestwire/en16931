@@ -265,10 +265,13 @@ describe("README rule counts", () => {
 
   it("reachable + arithmetic invariants = the distinct total", () => {
     const total = /(\d{3}) distinct rule ids/.exec(readme);
-    const invariants = /the other (\d{2}) constrain the library's own computed arithmetic/.exec(readme);
+    // "the other N constrain…", or "none constrain only…" once the list is
+    // empty (0.10.0), which is the same claim with N = 0.
+    const invariants = /(?:the other (\d+)|(none)) constrain(?: only)? the library's own computed arithmetic/.exec(readme);
     expect(total, "the README no longer states a distinct rule-id total").not.toBeNull();
     expect(invariants, "the README no longer states an arithmetic-invariant count").not.toBeNull();
-    expect(stated[0]! + Number((invariants as RegExpExecArray)[1])).toBe(
+    const invariantCount = (invariants as RegExpExecArray)[2] ? 0 : Number((invariants as RegExpExecArray)[1]);
+    expect(stated[0]! + invariantCount).toBe(
       Number((total as RegExpExecArray)[1]),
     );
   });

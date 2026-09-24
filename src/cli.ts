@@ -20,14 +20,7 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import {
-  CII_NAMESPACES,
-  extractFacturX,
-  parseCiiInvoice,
-  parseUblInvoice,
-  parseXml,
-  validateInput,
-} from "./index.js";
+import { notXml, validate } from "./validate.js";
 import type { Profile, TeachingError } from "./types.js";
 
 /** The version is injected by bin.ts from package.json, so it is stated once. */
@@ -264,12 +257,6 @@ type Finding = Omit<TeachingError, "rule" | "field" | "docsUrl"> & {
   docsUrl?: string;
 };
 
-/** Does this error come from the engine's own readers (ParseError, PdfParseError)? */
-function isParseFailure(err: unknown): err is Error & { code: string } {
-  const code = (err as { code?: unknown } | null)?.code;
-  return /^(xml_|unsupported_|pdf_|facturx_)/.test(String(code ?? ""));
-}
-
 function unreadable(file: string, rule: string, message: string, fix: string): FileResult {
   return {
     file,
@@ -284,89 +271,6 @@ function unreadable(file: string, rule: string, message: string, fix: string): F
 /** Limits for --large: well past any real invoice, still bounded. */
 const LARGE_XML = { maxCharacters: 512_000_000, maxElements: 20_000_000 };
 const LARGE_PDF = { maxStreamBytes: 512 * 1024 * 1024, maxTotalInflatedBytes: 1024 * 1024 * 1024, maxAttachmentBytes: 512 * 1024 * 1024 };
-const SIZE_CODES = new Set([
-  "xml_too_large",
-  "xml_too_many_elements",
-  "pdf_stream_too_large",
-  "pdf_total_inflated_too_large",
-  "pdf_attachment_too_large",
-]);
-
-/**
- * What a file that is not an invoice actually is, from its first bytes, so
- * the answer is "this is a ZIP archive" rather than an XML parser's complaint
- * about character 0. Null when it looks like it could be XML.
- */
-function notXml(bytes: Uint8Array): { what: string; fix: string } | null {
-  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 512));
-  if (bytes.length === 0) return { what: "an empty file", fix: "Check the export wrote the invoice." };
-  if (head.startsWith("PK\x03\x04")) {
-    return { what: "a ZIP archive", fix: "Unpack it and pass the XML or PDF files inside (or the folder)." };
-  }
-  const text = head.replace(/^﻿|^\xEF\xBB\xBF/, "").trimStart();
-  if (text.startsWith("{") || text.startsWith("[")) {
-    return {
-      what: "JSON, not XML",
-      fix: "This tool reads UBL or CII XML. If the JSON is an invoice object for this library, call validateInput() on it from code.",
-    };
-  }
-  if (/^(<!--[\s\S]*?-->\s*)*<(!doctype\s+html|html[\s>])/i.test(text)) {
-    return { what: "an HTML page", fix: "It may be a download or login page saved in place of the invoice. Download the XML again." };
-  }
-  if (head.includes("\0") && !(bytes[0] === 0xff && bytes[1] === 0xfe) && !(bytes[0] === 0xfe && bytes[1] === 0xff)) {
-    return { what: "a binary file, not XML", fix: "Pass the invoice's .xml file, or a Factur-X / ZUGFeRD .pdf." };
-  }
-  return null;
-}
-
-/**
- * Bytes to text, honouring the byte-order mark and the XML declaration.
- *
- * The engine takes a string and does not read the declaration, so a
- * windows-1252 invoice decoded as UTF-8 would reach the rules with every "ü"
- * replaced, and pass. Decoding is strict: bytes that are not valid in the
- * declared encoding are a finding, not a replacement character.
- */
-function decodeXml(bytes: Uint8Array): string | { problem: string } {
-  let label = "utf-8";
-  let start = 0;
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) start = 3;
-  else if (bytes[0] === 0xff && bytes[1] === 0xfe) [label, start] = ["utf-16le", 2];
-  else if (bytes[0] === 0xfe && bytes[1] === 0xff) [label, start] = ["utf-16be", 2];
-  else {
-    // The declaration is ASCII in every encoding this can apply to.
-    const head = String.fromCharCode(...bytes.subarray(0, 200));
-    const declared = /^<\?xml[^>]*\bencoding\s*=\s*["']([A-Za-z0-9._-]+)["']/.exec(head)?.[1];
-    if (declared) label = declared.toLowerCase();
-  }
-  let decoder: TextDecoder;
-  try {
-    decoder = new TextDecoder(label, { fatal: true });
-  } catch {
-    return { problem: `it declares encoding "${label}", which this runtime cannot decode` };
-  }
-  try {
-    return decoder.decode(bytes.subarray(start));
-  } catch {
-    return { problem: `it contains bytes that are not valid ${label}` };
-  }
-}
-
-/** Profiles that exist in only one syntax. en16931 is either. */
-const PROFILE_SYNTAX: Partial<Record<Profile, "ubl" | "cii">> = {
-  "xrechnung-ubl": "ubl",
-  "peppol-bis-3": "ubl",
-  "xrechnung-cii": "cii",
-  "facturx-en16931": "cii",
-};
-
-/** Factur-X / ZUGFeRD profiles below EN 16931: they are not full invoices. */
-function subInvoiceProfile(customizationId: string | undefined): string | null {
-  const id = (customizationId ?? "").toLowerCase();
-  if (/factur-x\.eu:1p0:minimum|zugferd.*:minimum/.test(id)) return "MINIMUM";
-  if (/factur-x\.eu:1p0:basicwl|zugferd.*:basicwl/.test(id)) return "BASIC WL";
-  return null;
-}
 
 async function validateFile(file: string, profile: Profile | null = null, large = false): Promise<FileResult> {
   let bytes: Uint8Array;
@@ -386,116 +290,43 @@ async function validateFile(file: string, profile: Profile | null = null, large 
     );
   }
 
-  const tooBig = (err: Error) => ({
-    ...unreadable(file, "AW-SIZE", `${file} is larger than the default limits: ${err.message.split(". ")[0]}.`, "Run again with --large if a document this size is expected."),
-  });
-
-  // A PDF is recognised by its first bytes, not its name: a Factur-X saved as
-  // .xml by a mail client is still a Factur-X.
+  // Only a file has a name, so only here can a name contradict the contents.
   const isPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
-  let xml: string;
-  let container: string | null = null;
-  if (isPdf || /\.pdf$/i.test(file)) {
-    if (!isPdf) {
-      const kind = notXml(bytes);
-      return unreadable(
-        file,
-        "AW-PDF",
-        `${file} is named .pdf but is ${kind ? kind.what : "not a PDF"}.`,
-        kind?.fix ?? "Check the file was downloaded completely.",
-      );
-    }
-    try {
-      const extracted = extractFacturX(new Uint8Array(bytes), large ? LARGE_PDF : {});
-      xml = extracted.xml;
-      container = extracted.attachmentName ?? "embedded XML";
-    } catch (err) {
-      if (!isParseFailure(err)) throw err;
-      if (SIZE_CODES.has(err.code)) return tooBig(err);
-      return unreadable(
-        file,
-        "AW-PDF",
-        err.code === "facturx_no_xml_attachment"
-          ? `${file} is a PDF with no invoice XML inside, so it is not a Factur-X / ZUGFeRD e-invoice.`
-          : `${file} could not be read as a Factur-X / ZUGFeRD PDF: ${err.message}`,
-        err.code === "facturx_no_xml_attachment"
-          ? "A plain PDF is not an e-invoice. Export a Factur-X / ZUGFeRD PDF, or the XRechnung XML, from your invoicing tool."
-          : "Check the file is a PDF/A-3 with an EN 16931 CII attachment, or validate the XML payload directly.",
-      );
-    }
-  } else {
+  if (!isPdf && /\.pdf$/i.test(file)) {
     const kind = notXml(bytes);
-    if (kind) return unreadable(file, "AW-PARSE", `${file} is ${kind.what}.`, kind.fix);
-    const decoded = decodeXml(bytes);
-    if (typeof decoded !== "string") {
-      return unreadable(
-        file,
-        "AW-PARSE",
-        `${file} could not be decoded: ${decoded.problem}`,
-        "Save the file as UTF-8, or declare the encoding it is actually in.",
-      );
+    return unreadable(
+      file,
+      "AW-PDF",
+      `${file} is named .pdf but is ${kind ? kind.what : "not a PDF"}.`,
+      kind?.fix ?? "Check the file was downloaded completely.",
+    );
+  }
+
+  const result = validate(bytes, {
+    ...(profile ? { profile } : {}),
+    ...(large ? { limits: LARGE_XML, pdfLimits: LARGE_PDF } : {}),
+  });
+  // The library's advice is written for code; on the command line the limits
+  // and the profile are flags.
+  const findings: Finding[] = [...result.errors, ...result.warnings, ...result.information].map((f) => {
+    if (f.rule === "AW-SIZE") return { ...f, fix: "Run again with --large if a document this size is expected." };
+    if (f.rule === "AW-PROFILE-SYNTAX" && profile && result.syntax) {
+      const other = result.syntax === "ubl" ? "CII" : "UBL";
+      const own = result.syntax.toUpperCase();
+      return {
+        ...f,
+        message: `--profile ${profile} is a ${other} profile, but this document is ${own}.`,
+        fix: `Leave --profile out to use the profile the document declares, or pick a ${own} profile.`,
+      };
     }
-    xml = decoded;
-  }
-
-  let syntax: "ubl" | "cii";
-  let parsed;
-  const limits = large ? LARGE_XML : {};
-  try {
-    const root = parseXml(xml, limits);
-    syntax = root.namespace === CII_NAMESPACES.rsm && root.local === "CrossIndustryInvoice" ? "cii" : "ubl";
-    parsed = syntax === "cii" ? parseCiiInvoice(xml, limits) : parseUblInvoice(xml, limits);
-  } catch (err) {
-    if (!isParseFailure(err)) throw err;
-    if (SIZE_CODES.has(err.code)) return { ...tooBig(err), container };
-    return {
-      ...unreadable(
-        file,
-        "AW-PARSE",
-        `${file} is not an invoice this validator can read: ${err.message}`,
-        "Supply a UBL 2.1 Invoice or CreditNote, or a UN/CEFACT CrossIndustryInvoice (XRechnung, Peppol, Factur-X).",
-      ),
-      container,
-    };
-  }
-
-  const invoice = profile ? { ...parsed.invoice, profile } : parsed.invoice;
-  const result = validateInput(invoice);
-
-  // The rules state their locations as UBL paths. On a CII document those
-  // paths point at nothing, so they are dropped rather than shown wrong.
-  const located = (f: Finding): Finding =>
-    f.xpath && syntax === "cii" && f.xpath.startsWith("/ubl:") ? { ...f, xpath: undefined } : f;
-
-  const findings: Finding[] = [...result.errors, ...result.warnings, ...result.information].map(located);
-
-  const sub = subInvoiceProfile(parsed.customizationId);
-  if (sub) {
-    findings.unshift({
-      rule: "AW-PROFILE",
-      field: "BT-24",
-      severity: "fatal",
-      message: `This is a Factur-X ${sub} document. ${sub} carries too little to be an EN 16931 invoice, which is why the rules below fail; it is a booking aid, not a valid e-invoice in Germany or France.`,
-      fix: "Export at the EN 16931 (COMFORT) or EXTENDED profile instead.",
-    });
-  }
-  const expected = profile ? PROFILE_SYNTAX[profile] : undefined;
-  if (expected && expected !== syntax) {
-    findings.unshift({
-      rule: "AW-PROFILE",
-      field: "BT-24",
-      severity: "warning",
-      message: `--profile ${profile} is a ${expected.toUpperCase()} profile, but this document is ${syntax.toUpperCase()}.`,
-      fix: `Leave --profile out to use the profile the document declares, or pick a ${syntax.toUpperCase()} profile.`,
-    });
-  }
-
+    return f;
+  });
   return {
     file,
-    syntax,
+    syntax: result.syntax,
     profile: result.profile,
-    container,
-    unmapped: parsed.unmapped.map((u) => ({ path: u.path, reason: u.reason })),
+    container: result.container,
+    unmapped: result.unmapped.map((u) => ({ path: u.path, reason: u.reason })),
     findings,
   };
 }
@@ -608,6 +439,19 @@ function firstSentence(message: string): string {
   return sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence;
 }
 
+/**
+ * "line 14  /ubl:Invoice/cbc:ID" when the element is in the file. When it is
+ * not, the path says where it belongs and the line says where to look.
+ */
+function locationText(f: Finding): string | undefined {
+  const at = f.location;
+  if (!at) return f.xpath;
+  const inside = at.attachment ? ` of ${at.attachment}` : "";
+  if (at.exact) return `line ${at.line}${inside}  ${f.xpath ?? at.path}`;
+  const near = `nearest element in the file: <${at.path.split("/").pop()!.replace(/\[\d+\]$/, "")}>, line ${at.line}${inside}`;
+  return f.xpath ? `${f.xpath}  (${near})` : `(${near})`;
+}
+
 function formatText(
   results: readonly FileResult[],
   opts: { quiet: boolean; short: boolean; color: boolean; failOn: FailOn },
@@ -641,7 +485,8 @@ function formatText(
       lines.push(`  ${mark[f.severity as keyof typeof mark] ?? f.severity} ${c.bold(f.rule)} ${c.dim(`(${fields})`)}`);
       lines.push(`    ${f.message}`);
       if (f.fix) lines.push(`    ${c.dim("fix:")} ${f.fix}`);
-      if (f.xpath) lines.push(`    ${c.dim("at:")}  ${f.xpath}`);
+      const where = locationText(f);
+      if (where) lines.push(`    ${c.dim("at:")}  ${where}`);
       if (f.docsUrl) lines.push(`    ${c.dim(f.docsUrl)}`);
     }
     if (r.unmapped.length > 0 && !opts.quiet && !opts.short) {

@@ -286,11 +286,15 @@ describe("breakdown integrity (BR-45..BR-48, BR-CO-17, BR-CO-18)", () => {
     }
   });
 
-  it("BR-47 fires when a line carries no category, so the group has no code", () => {
+  // It used to fire BR-47 as well, on the computed group the line produced.
+  // KoSIT does not: it reports the line (BR-CO-04) and stops, and on a read
+  // document the extra BR-47 also duplicated the stated group's (review,
+  // 2026-09-23). The computed BR-47 is now an arithmetic guard only.
+  it("reports a line with no category once, as BR-CO-04, not again as BR-47", () => {
     const inv = withLine({ vatCategory: undefined as never });
     const ids = allIds(inv);
     expect(ids).toContain("BR-CO-04");
-    expect(ids).toContain("BR-47");
+    expect(ids).not.toContain("BR-47");
   });
 
   it("BR-48 accepts a missing rate only for category O", () => {

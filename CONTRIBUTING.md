@@ -11,6 +11,11 @@ monorepo. Development happens upstream; the export is published here at release
 tags. So `main` is the canonical published source at each release, the exact
 code that ships to npm as `@attestwire/en16931`. It is not a working branch.
 
+npm publishes from this repository, not from the monorepo: pushing a `v*` tag
+here runs [`publish.yml`](.github/workflows/publish.yml), which builds, tests
+and publishes the tagged commit with an npm provenance attestation. So you can
+check that a version on npm was built from the source you are reading here.
+
 The practical consequence: **there are no direct merges into this repository.**
 Your pull request will not get a merge commit here, and its branch will not
 appear in the history. That is not a rejection.

@@ -27,6 +27,10 @@ const BUDGET = {
   lines1000Ms: 750, // [26-66] parse + validate one 1,000-line invoice
   cliOneFileMs: 1500, // [50-76] `node dist/bin.js one.xml`, Node startup included
   scaling10x: 15, // [9.4-9.7; 21-32 with a planted O(n^2)] time(10,000 lines) / time(1,000)
+  // validate() with a finding on EVERY line, as CII, so each finding is also
+  // translated and located. Before child lookups were indexed, locating was
+  // quadratic in exactly this case: 216 us a finding at 4,000 lines, 19 at 100.
+  locateScaling10x: 15, // [9.7-10.5; 56 with the old unindexed scan] time(10,000 broken lines) / time(1,000)
 };
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -78,6 +82,18 @@ const timeLines = (n, runs) => {
 const lines1000Ms = timeLines(1000, 9);
 const scaling10x = timeLines(10_000, 5) / timeLines(1000, 9);
 
+const brokenCii = (n) =>
+  engine
+    .generateCii({ ...base, profile: "xrechnung-cii", lines: Array.from({ length: n }, (_, i) => ({ ...base.lines[0], id: String(i + 1) })) })
+    .replace(/<ram:CategoryCode>S<\/ram:CategoryCode>/g, "<ram:CategoryCode>Q</ram:CategoryCode>");
+const timeLocate = (n, runs) => {
+  const xml = brokenCii(n);
+  const once = () => engine.validate(xml, { limits: LARGE });
+  if (once().errors.length < n) throw new Error(`expected a finding per line at ${n} lines`);
+  return median(once, runs);
+};
+const locateScaling10x = timeLocate(10_000, 3) / timeLocate(1000, 7);
+
 const bin = here("../dist/bin.js");
 const one = fixtureDir + "xrechnung-ubl-minimal.xml";
 const cliOneFileMs = median(() => {
@@ -85,7 +101,7 @@ const cliOneFileMs = median(() => {
   if (r.status !== 0) throw new Error(`CLI failed on a valid fixture:\n${r.stdout}${r.stderr}`);
 }, 7);
 
-const measured = { importMs, perDocumentMs, lines1000Ms, cliOneFileMs, scaling10x };
+const measured = { importMs, perDocumentMs, lines1000Ms, cliOneFileMs, scaling10x, locateScaling10x };
 let failed = 0;
 console.log(`speed budget on Node ${process.versions.node}`);
 for (const [name, limit] of Object.entries(BUDGET)) {
