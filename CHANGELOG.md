@@ -5,6 +5,42 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] — 2026-09-25
+
+**`PEPPOL-COMMON-R048` is no longer reported. Peppol retired it in BIS Billing
+3.0.14, in November 2022, and this library had reported it since 0.2.0.**
+
+**Upgrading:** nothing to change. A Peppol invoice whose electronic address
+uses scheme 9906 loses one warning and keeps its fatal `PEPPOL-EN16931-CL008`,
+so `valid` is unchanged for every input. Code that matches on the id
+`PEPPOL-COMMON-R048` will not see it again.
+
+### Removed
+
+- **`PEPPOL-COMMON-R048`, the Italian VAT number check on endpoint scheme
+  9906.** Peppol BIS 3.0.14 removed schemes 9906 and 9907 from the participant
+  identifier scheme list and commented R048 out of `PEPPOL-EN16931-UBL.sch`.
+  It is still commented out in v3.0.20, the release this build is pinned to,
+  and in the 3.0.21 schematron on docs.peppol.eu. So the reference validator
+  never raises it, and this build did, as a warning on any 9906 endpoint with
+  a bad check digit: a false positive against current Peppol. That document
+  was already refused by `PEPPOL-EN16931-CL008`, because 9906 is not a scheme
+  the network routes on, and that finding stays. An Italian VAT number belongs
+  under scheme 0211, where `PEPPOL-COMMON-R047` runs the same check.
+  `PEPPOL-COMMON-R046` (scheme 9907) stays too: 9907 left the list in the same
+  release, but its assertion is still active. Counts: 289 regulation rules and
+  305 rule ids, all reachable from caller input.
+
+### Fixed
+
+- **`scripts/build-peppol.mjs` read commented-out Peppol rules as live.** Its
+  inventory check scanned the raw schematron, so R048's id inside an XML
+  comment counted as present and the rule family was written against a rule
+  Peppol had already retired. The script now removes comments before it reads
+  rule ids or code lists, and it fails in three cases: a live id this build
+  has not triaged, an id this build implements that the schematron no longer
+  runs, and a retired id that comes back.
+
 ## [0.12.0] — 2026-09-25
 
 **A Factur-X or ZUGFeRD PDF whose attached XML is not UTF-8, and a file
@@ -2141,6 +2177,7 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.12.1]: https://github.com/attestwire/en16931/releases/tag/v0.12.1
 [0.12.0]: https://github.com/attestwire/en16931/releases/tag/v0.12.0
 [0.11.0]: https://github.com/attestwire/en16931/releases/tag/v0.11.0
 [0.10.0]: https://github.com/attestwire/en16931/releases/tag/v0.10.0

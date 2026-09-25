@@ -24,10 +24,15 @@
  *   - that the five Peppol code-list rules this package deliberately does
  *     *not* re-implement (CL001, CL002, CL003, CL006, CL007) still carry
  *     byte-identical literals to the CEN lists already generated, and
- *   - that the set of `PEPPOL-EN16931-R*` and `PEPPOL-COMMON-R*` ids has not
- *     grown since the rule family was written.
+ *   - that the set of live `PEPPOL-EN16931-R*` and `PEPPOL-COMMON-R*` ids is
+ *     the set the rule family was written against, in both directions: no id
+ *     added upstream, none of ours retired upstream, none we retired revived.
  * If any of those changes, the build stops rather than shipping a rule set
  * that quietly disagrees with the network it claims to target.
+ *
+ * "Live" means outside an XML comment. OpenPEPPOL retires an assertion by
+ * commenting it out and leaving it in the file, so every check here reads the
+ * schematron with its comments removed.
  */
 
 import { readFile, writeFile } from "node:fs/promises";
@@ -60,10 +65,24 @@ const KNOWN_R_IDS = [
   "PEPPOL-EN16931-R130",
   "PEPPOL-COMMON-R040", "PEPPOL-COMMON-R041", "PEPPOL-COMMON-R042",
   "PEPPOL-COMMON-R043", "PEPPOL-COMMON-R044", "PEPPOL-COMMON-R045",
-  "PEPPOL-COMMON-R046", "PEPPOL-COMMON-R047", "PEPPOL-COMMON-R048",
+  "PEPPOL-COMMON-R046", "PEPPOL-COMMON-R047",
   "PEPPOL-COMMON-R049", "PEPPOL-COMMON-R050", "PEPPOL-COMMON-R052",
   "PEPPOL-COMMON-R053",
 ];
+
+/**
+ * Rule ids OpenPEPPOL has commented out of the schematron, with the release
+ * that did it. The rule family must not emit them: a finding the reference
+ * validator no longer raises is a false positive, whatever the rule once
+ * checked.
+ *
+ * R048 was retired upstream in 3.0.14 and here only in 0.12.1, because the
+ * inventory check used to read the raw file and counted the commented-out id
+ * as live.
+ */
+const RETIRED_R_IDS = {
+  "PEPPOL-COMMON-R048": "3.0.14, when scheme 9906 left the participant scheme list",
+};
 
 /**
  * The Peppol code-list rules whose literal must equal a list this package
@@ -172,19 +191,34 @@ function formatCodes(codes) {
 async function main() {
   const response = await fetch(SCH_URL);
   if (!response.ok) fail(`GET ${SCH_URL} → ${response.status}`);
-  const sch = await response.text();
+  const sch = (await response.text()).replace(/<!--[\s\S]*?-->/g, "");
 
-  // 1. The rule inventory must not have grown behind the rule family's back.
+  // 1. The rule inventory must not have moved behind the rule family's back.
   const present = [
     ...new Set(
       [...sch.matchAll(/id="(PEPPOL-(?:EN16931-R|COMMON-R)\d+)"/g)].map((m) => m[1]),
     ),
   ].sort();
-  const unknown = present.filter((id) => !KNOWN_R_IDS.includes(id));
+  const unknown = present.filter((id) => !KNOWN_R_IDS.includes(id) && !(id in RETIRED_R_IDS));
   if (unknown.length > 0) {
     fail(
       `the Peppol schematron carries rule ids this build has never triaged: ${unknown.join(", ")}. ` +
         `Implement or defer each one in src/rules-peppol.ts, then add it to KNOWN_R_IDS.`,
+    );
+  }
+  const revived = present.filter((id) => id in RETIRED_R_IDS);
+  if (revived.length > 0) {
+    fail(
+      `the Peppol schematron runs ${revived.join(", ")} again, which this build retired. ` +
+        `Restore it in src/rules-peppol.ts, then move it from RETIRED_R_IDS to KNOWN_R_IDS.`,
+    );
+  }
+  const retired = KNOWN_R_IDS.filter((id) => !present.includes(id));
+  if (retired.length > 0) {
+    fail(
+      `the Peppol schematron no longer runs ${retired.join(", ")}: removed or commented out. ` +
+        `Stop emitting it in src/rules-peppol.ts, then move it from KNOWN_R_IDS to RETIRED_R_IDS ` +
+        `with the release that retired it.`,
     );
   }
 

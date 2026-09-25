@@ -246,7 +246,7 @@ interface SchemedIdentifier {
   label: string;
   field: BusinessTerm;
   xpath: string;
-  /** True for `cbc:EndpointID`; R046 and R048 apply only there. */
+  /** True for `cbc:EndpointID`; CL008 and R046 apply only there. */
   isEndpoint: boolean;
 }
 
@@ -463,12 +463,23 @@ interface SchemeCheck {
 /**
  * `PEPPOL-COMMON-R040`..`R053`, in schematron order.
  *
- * Thirteen rules, one table, because the difference between them is a scheme
+ * Twelve rules, one table, because the difference between them is a scheme
  * code and an arithmetic — everything else about the finding is the same. The
  * severities are the schematron's, not a judgement: the four Italian schemes
  * and the two secondary Danish ones are `warning`, the rest `fatal`, and that
  * split is worth respecting rather than levelling, since an access point
  * enforces exactly this list at exactly these levels.
+ *
+ * `PEPPOL-COMMON-R048` is missing on purpose. It checked an Italian VAT number
+ * under endpoint scheme 9906, and Peppol BIS 3.0.14 (November 2022) removed
+ * 9906 and 9907 from the participant scheme list and commented R048 out of
+ * `PEPPOL-EN16931-UBL.sch`. It is still commented out at the pinned v3.0.20. A
+ * 9906 endpoint is now refused by `PEPPOL-EN16931-CL008` alone, and the same
+ * value belongs under 0211, where R047 checks it. This table kept R048 through
+ * 0.12.0, a warning the reference validator no longer raised, because the
+ * inventory check in scripts/build-peppol.mjs counted ids inside XML comments
+ * as live. It counts live assertions only now. R046 (scheme 9907) stays: its
+ * assertion is still active, although 9907 left the list in the same release.
  */
 const SCHEME_CHECKS: SchemeCheck[] = [
   {
@@ -553,17 +564,6 @@ const SCHEME_CHECKS: SchemeCheck[] = [
     shape: '"IT" followed by eleven digits whose last digit is a Luhn-style check digit',
     why: "The Partita IVA check digit is computed by doubling every second digit and summing the results digit by digit, which catches the transposition that a plain length check does not. Note that a value not beginning with IT passes this rule untested — Peppol only checks what it can recognise.",
     example: `"identifier": { "schemeId": "0211", "value": "IT01234567897" }`,
-  },
-  {
-    rule: "PEPPOL-COMMON-R048",
-    schemes: ["9906"],
-    endpointOnly: true,
-    severity: "warning",
-    register: "Italian VAT number (Peppol endpoint scheme 9906)",
-    ok: italianVatCode,
-    shape: '"IT" followed by eleven digits whose last digit is a check digit',
-    why: "Scheme 9906 is the endpoint-only spelling of the Partita IVA, addressed as a routing identifier rather than quoted as a tax number. Same value, same check.",
-    example: `"electronicAddress": { "schemeId": "9906", "value": "IT01234567897" }`,
   },
   {
     rule: "PEPPOL-COMMON-R049",

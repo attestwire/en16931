@@ -226,7 +226,6 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
     ["PEPPOL-COMMON-R045", "0210", "01234567890", "0123456789", false],
     ["PEPPOL-COMMON-R046", "9907", "01234567890", "0123456789", false],
     ["PEPPOL-COMMON-R047", "0211", "IT01234567897", "IT01234567890", false],
-    ["PEPPOL-COMMON-R048", "9906", "IT01234567897", "IT01234567890", false],
     ["PEPPOL-COMMON-R049", "0007", "2021005489", "2021005488", true],
     ["PEPPOL-COMMON-R050", "0151", "51824753556", "51824753557", true],
     ["PEPPOL-COMMON-R052", "0096", "1234567890", "123456789", false],
@@ -278,12 +277,22 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
     expect(ids).toContain("PEPPOL-COMMON-R049");
   });
 
-  it("applies the endpoint-only schemes to endpoints only", () => {
-    // 9906 and 9907 are routing schemes; a party identifier in them is out of
-    // context in the schematron and must stay out of context here.
-    expect(allIds(peppol(withPartyIdentifier("9906", "IT01234567890")))).not.toContain(
-      "PEPPOL-COMMON-R048",
+  it("applies the endpoint-only scheme to endpoints only", () => {
+    // 9907 is a routing scheme; a party identifier in it is out of context in
+    // the schematron and must stay out of context here.
+    expect(allIds(peppol(withPartyIdentifier("9907", "123")))).not.toContain(
+      "PEPPOL-COMMON-R046",
     );
+  });
+
+  it("does not emit PEPPOL-COMMON-R048, which Peppol retired in BIS 3.0.14", () => {
+    // 3.0.14 removed scheme 9906 from the participant scheme list and commented
+    // R048 out of the schematron; it is still commented out at v3.0.20. So a
+    // 9906 endpoint with a bad check digit draws CL008 and nothing else, as it
+    // does from the reference validator.
+    const input = peppol(withElectronicAddress("9906", "IT01234567890"));
+    expect(allIds(input)).not.toContain("PEPPOL-COMMON-R048");
+    expect(errorIds(input)).toContain("PEPPOL-EN16931-CL008");
   });
 
   it("leaves a non-IT Partita IVA untested, as the schematron does", () => {

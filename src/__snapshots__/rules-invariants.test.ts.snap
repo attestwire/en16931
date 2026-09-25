@@ -274,7 +274,6 @@ exports[`the rule set as a whole > keeps every rule at its reviewed severity 1`]
   "PEPPOL-COMMON-R045": "warning",
   "PEPPOL-COMMON-R046": "warning",
   "PEPPOL-COMMON-R047": "warning",
-  "PEPPOL-COMMON-R048": "warning",
   "PEPPOL-COMMON-R049": "fatal",
   "PEPPOL-COMMON-R050": "fatal",
   "PEPPOL-COMMON-R052": "warning",

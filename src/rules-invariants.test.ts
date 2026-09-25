@@ -1573,9 +1573,13 @@ describe("rule coverage", () => {
       "PEPPOL-EN16931-P0101", "PEPPOL-EN16931-R002",
       "PEPPOL-COMMON-R040", "PEPPOL-COMMON-R041", "PEPPOL-COMMON-R042",
       "PEPPOL-COMMON-R043", "PEPPOL-COMMON-R044", "PEPPOL-COMMON-R045",
-      "PEPPOL-COMMON-R046", "PEPPOL-COMMON-R047", "PEPPOL-COMMON-R048",
+      "PEPPOL-COMMON-R046", "PEPPOL-COMMON-R047",
       "PEPPOL-COMMON-R049", "PEPPOL-COMMON-R050", "PEPPOL-COMMON-R052",
       "PEPPOL-COMMON-R053",
+      // PEPPOL-COMMON-R048 stood here until 2026-09-25. Peppol commented it out
+      // of the schematron in BIS 3.0.14 and this build stopped emitting it, so
+      // listing it would assert a rule the reference validator no longer runs.
+      // The battery keeps its 9906 endpoint, which now reaches CL008 only.
       // the regional Spanish categories
       "BR-AF-02", "BR-AF-03", "BR-AF-05", "BR-AF-06", "BR-AF-10",
       "BR-AG-02", "BR-AG-04", "BR-AG-05", "BR-AG-07", "BR-AG-10",
