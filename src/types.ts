@@ -69,7 +69,9 @@ export interface SourceLocation {
 }
 
 export interface ValidationResult {
+  /** False when any finding is fatal. Warnings and information never change it. */
   valid: boolean;
+  /** The profile the invoice was judged against: the input's own `profile`. */
   profile: Profile;
   errors: TeachingError[];
   warnings: TeachingError[];
@@ -98,10 +100,14 @@ export type Profile =
  * version still validates, and still generates the same document.
  */
 export interface InvoiceInput {
+  /** Which rule set applies, and which document the generators write: `"xrechnung-ubl"` or `"xrechnung-cii"` (German public sector), `"peppol-bis-3"`, `"facturx-en16931"` (the CII payload of a Factur-X PDF), or `"en16931"` (the core standard alone). */
   profile: Profile;
-  invoiceNumber: string; // BT-1
-  issueDate: string; // BT-2, ISO 8601 date
-  currency: string; // BT-5, ISO 4217
+  /** BT-1. The invoice number, unique in your sequence. Example: `"2026-000142"`. */
+  invoiceNumber: string;
+  /** BT-2. The issue date as an ISO 8601 calendar date, `"YYYY-MM-DD"`, with no time part. Example: `"2026-08-09"`. */
+  issueDate: string;
+  /** BT-5. ISO 4217 currency code, upper case. Example: `"EUR"`. `CURRENCY_CODES` lists the accepted values. */
+  currency: string;
   /**
    * BT-3, UNTDID 1001 document type code. Defaults to "380" (commercial
    * invoice). BR-DE-17 restricts XRechnung to 326/380/381/384/389/875/876/877.
@@ -194,18 +200,22 @@ export interface InvoiceInput {
    * level — the flag the regulator uses for advice it then accepts.
    */
   precedingInvoices?: PrecedingInvoiceReference[];
+  /** BG-4. The seller: name, postal address, and a VAT identifier (BT-31) or tax registration (BT-32). */
   seller: Party;
+  /** BG-7. The buyer: name and postal address, plus a VAT identifier where the VAT category requires one (reverse charge, intra-community supply). */
   buyer: Party;
   /** BG-10 payee, when payment goes somewhere other than the seller. */
   payee?: Payee;
   /** BG-11 seller tax representative, for a seller registered through a fiscal representative. */
   taxRepresentative?: TaxRepresentative;
+  /** BG-25. The invoice lines; at least one (BR-16). The VAT breakdown and every total are computed from them. */
   lines: InvoiceLine[];
   /** BG-20 document level allowances (discounts applying to the whole invoice). */
   allowances?: DocumentAllowanceCharge[];
   /** BG-21 document level charges (freight, packing, surcharges). */
   charges?: DocumentAllowanceCharge[];
-  paymentTerms?: string; // BT-20
+  /** BT-20. Payment terms as free text. Example: `"30 days net"`. */
+  paymentTerms?: string;
   /** BG-16 payment instructions. Required for XRechnung by BR-DE-1. */
   payment?: PaymentInstructions;
   /** BG-24 additional supporting documents. */
@@ -259,15 +269,20 @@ export interface InvoiceInput {
 
 /** A postal address (BG-5 seller, BG-8 buyer, BG-12 tax representative). */
 export interface PostalAddress {
-  line1?: string; // BT-35 / BT-50 / BT-64
-  line2?: string; // BT-36 / BT-51 / BT-65
+  /** BT-35 (seller) / BT-50 (buyer) / BT-64 (tax representative). Address line 1, usually the street and number. */
+  line1?: string;
+  /** BT-36 / BT-51 / BT-65. Address line 2. */
+  line2?: string;
   /** BT-162 / BT-163 / BT-164 third address line. */
   line3?: string;
-  city: string; // BT-37 / BT-52 / BT-66
-  postalCode: string; // BT-38 / BT-53 / BT-67
+  /** BT-37 (seller) / BT-52 (buyer) / BT-66 (tax representative). City name. */
+  city: string;
+  /** BT-38 / BT-53 / BT-67. Postal code. */
+  postalCode: string;
   /** BT-39 / BT-54 / BT-68 country subdivision (Bundesland, région, …). */
   countrySubdivision?: string;
-  countryCode: string; // BT-40 / BT-55 / BT-69, ISO 3166-1 alpha-2
+  /** BT-40 / BT-55 / BT-69. ISO 3166-1 alpha-2 country code, upper case. Example: `"DE"`. `COUNTRY_CODES` lists the accepted values. */
+  countryCode: string;
 }
 
 export interface DeliverToAddress {
@@ -641,8 +656,10 @@ export interface DirectDebit {
 }
 
 export interface Party {
-  name: string; // BT-27 / BT-44
-  vatId?: string; // BT-31 / BT-48
+  /** BT-27 (seller) / BT-44 (buyer). The party's name. */
+  name: string;
+  /** BT-31 (seller) / BT-48 (buyer). VAT identifier, with its country prefix. Example: `"DE123456789"`. */
+  vatId?: string;
   /** BT-32 seller tax registration identifier (e.g. German Steuernummer). */
   taxRegistrationId?: string;
   /** BT-30 / BT-47 legal registration identifier (e.g. HRB number). */
@@ -668,27 +685,36 @@ export interface Party {
   contact?: {
     /** BT-41 / BT-56 contact point name. */
     name?: string;
-    email?: string; // BT-43 / BT-58
-    phone?: string; // BT-42 / BT-57
+    /** BT-43 (seller) / BT-58 (buyer). Contact email address. */
+    email?: string;
+    /** BT-42 (seller) / BT-57 (buyer). Contact telephone number. */
+    phone?: string;
   };
 }
 
 export interface InvoiceLine {
-  id: string; // BT-126
-  description: string; // BT-153/154
+  /** BT-126. The line's identifier, unique within the invoice. Example: `"1"`. */
+  id: string;
+  /** BT-153. The item name. A longer text goes in `longDescription` (BT-154). */
+  description: string;
   /** BT-154 item description, when it should differ from the item name (BT-153). */
   longDescription?: string;
-  quantity: number; // BT-129
-  unitCode: string; // BT-130, UN/ECE rec 20
-  unitPrice: number; // BT-146
+  /** BT-129. The invoiced quantity, in `unitCode` units. Example: `10`. */
+  quantity: number;
+  /** BT-130. UN/ECE Recommendation 20 unit code. Examples: `"C62"` (one), `"HUR"` (hour), `"DAY"`. `UNIT_CODES` lists the accepted values. */
+  unitCode: string;
+  /** BT-146. Net price per unit (per `baseQuantity` units, when set), before VAT. Example: `150`. */
+  unitPrice: number;
   /** BT-148 item gross price, before the BT-147 price discount. */
   grossUnitPrice?: number;
   /** BT-147 item price discount — the difference between BT-148 and BT-146. */
   priceDiscount?: number;
   /** BT-149 item price base quantity. Defaults to 1. */
   baseQuantity?: number;
-  vatCategory: VatCategory; // BT-151
-  vatRate?: number; // BT-152, percent
+  /** BT-151. VAT category code: `"S"` standard or reduced rate, `"Z"` zero rated, `"E"` exempt, `"AE"` reverse charge, `"K"` intra-community supply, `"G"` export, `"O"` not subject to VAT, `"L"` IGIC, `"M"` IPSI. */
+  vatCategory: VatCategory;
+  /** BT-152. The VAT rate as a percentage, not a fraction: `19` for 19%. Omit it for category O; for Z, E, AE, K and G it is 0, or omitted. */
+  vatRate?: number;
   /** BT-127 line note. */
   note?: string;
   /** BT-128 line object identifier, with its BT-128-1 UNTDID 1153 scheme. */
@@ -769,11 +795,14 @@ export type VatCategory =
 
 /** One VAT breakdown group (BG-23) as computed from the lines. */
 export interface TaxSubtotal {
-  category: VatCategory; // BT-118
+  /** BT-118. The VAT category code of this group. */
+  category: VatCategory;
   /** BT-119. Absent for category O, which must not carry a rate (BR-O-05). */
   rate?: number;
-  taxableAmount: number; // BT-116
-  taxAmount: number; // BT-117
+  /** BT-116. The taxable amount of this group. */
+  taxableAmount: number;
+  /** BT-117. VAT amount of this group. */
+  taxAmount: number;
   /** BT-120 exemption reason text, for the categories that require one. */
   exemptionReason?: string;
   /** BT-121 exemption reason code (CEF VATEX list). */
@@ -784,18 +813,24 @@ export interface TaxSubtotal {
 export interface InvoiceTotals {
   /** Per-line net amounts (BT-131) in line order, each rounded to 2 decimals. */
   lineNetAmounts: number[];
-  lineExtensionAmount: number; // BT-106
+  /** BT-106. Sum of the line net amounts. */
+  lineExtensionAmount: number;
   /** BT-107 sum of document level allowance amounts. Zero when there are none. */
   allowanceTotalAmount: number;
   /** BT-108 sum of document level charge amounts. Zero when there are none. */
   chargeTotalAmount: number;
-  taxExclusiveAmount: number; // BT-109
-  taxAmount: number; // BT-110
-  taxInclusiveAmount: number; // BT-112
+  /** BT-109. Invoice total without VAT. */
+  taxExclusiveAmount: number;
+  /** BT-110. Total VAT amount of the invoice. */
+  taxAmount: number;
+  /** BT-112. Invoice total with VAT. */
+  taxInclusiveAmount: number;
   /** BT-113 paid amount, echoed from the input (0 when absent). */
   paidAmount: number;
   /** BT-114 rounding amount, echoed from the input (0 when absent). */
   roundingAmount: number;
-  payableAmount: number; // BT-115
-  subtotals: TaxSubtotal[]; // BG-23
+  /** BT-115. Amount due for payment. */
+  payableAmount: number;
+  /** BG-23. The VAT breakdown: one group per VAT category and rate. */
+  subtotals: TaxSubtotal[];
 }

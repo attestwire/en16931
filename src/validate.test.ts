@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { toSarif } from "./export.js";
+import { extractFacturX } from "./facturx-pdf.js";
 import { extendedXRechnungCii } from "./fixtures.js";
 import { generateXRechnungUBL } from "./generate.js";
 import { parseCiiInvoice } from "./parse-cii.js";
@@ -127,6 +128,21 @@ describe("validate", () => {
     const r = validate("<not-an-invoice/>");
     expect(r.error?.code).toBe("unsupported_syntax");
     expect(validate(fixture("xrechnung-ubl-minimal.xml")).error).toBeUndefined();
+  });
+
+  it("returns BT-24 and BT-23 as the readers do, from XML and from a PDF", () => {
+    for (const name of ["xrechnung-ubl-minimal.xml", "xrechnung-cii-minimal.xml"]) {
+      const parsed = name.includes("-cii-") ? parseCiiInvoice(text(name)) : parseUbl(text(name));
+      const r = validate(fixture(name));
+      expect(parsed.profileId, name).toBeTruthy();
+      expect(r.profileId, name).toBe(parsed.profileId);
+      expect(r.customizationId, name).toBe(parsed.customizationId);
+    }
+    // The FeRD samples state no BT-23, so the PDF path is pinned against the
+    // reader rather than against a value.
+    const file = fixture("facturx/facturx-en16931-einfach.pdf");
+    expect(validate(file).profileId).toBe(parseCiiInvoice(extractFacturX(file).xml).profileId);
+    expect(validate(bytes("<not-an-invoice/>")).profileId).toBeUndefined();
   });
 
   it("honours the declared encoding rather than assuming UTF-8", () => {
@@ -341,4 +357,31 @@ describe("SARIF from validate", () => {
     };
     for (const result of log.runs[0]!.results) expect(result.locations[0]!.physicalLocation.region).toBeUndefined();
   });
+});
+
+describe("a document that states its VAT rates as fractions", () => {
+  // The same slip as `vatRate: 0.19` on JSON input, read from a file: the
+  // warning lands on the line's own rate element, in either syntax.
+  const asFraction = (name: string, element: string) =>
+    new TextEncoder().encode(
+      fixture(name).toString("utf8").replace(new RegExp(`<${element}>19\\.00</${element}>`, "g"), `<${element}>0.19</${element}>`),
+    );
+
+  for (const [name, element, tag] of [
+    ["xrechnung-ubl-discount.xml", "cbc:Percent", "cbc:Percent"],
+    ["xrechnung-cii-discount.xml", "ram:RateApplicablePercent", "ram:RateApplicablePercent"],
+  ] as const) {
+    it(`warns on the line's rate element in ${name}`, () => {
+      const result = validate(asFraction(name, element));
+      const finding = result.warnings.find((f) => f.rule === "ATW-VAT-RATE-FRACTION");
+      expect(finding?.location?.exact).toBe(true);
+      expect(finding?.location?.path).toMatch(new RegExp(`${tag}$`));
+      expect(finding?.message).toContain("as a percentage, 0.19 is 19%");
+      // A file's sender cannot set the model's field paths.
+      expect(finding?.fix).toMatch(/^If you meant 19%, set the rate to 19/);
+      // The stated group fails BR-CO-17, and its advice now names the unit.
+      const stated = result.errors.find((f) => f.rule === "BR-CO-17" && f.fix.startsWith("VAT rates are percentages and no EU VAT rate is below 1%: if 0.19 is a rate kept as a fraction"));
+      expect(stated).toBeDefined();
+    });
+  }
 });

@@ -1,4 +1,4 @@
-import { computeTotals } from "./totals.js";
+import { VAT_RATE_DECIMALS, computeTotals, roundTo } from "./totals.js";
 import type {
   DocumentAllowanceCharge,
   InvoiceInput,
@@ -109,6 +109,39 @@ export const CATEGORY_RULE_INFIX: Record<VatCategory, string> = {
  * services the Canarian regime relieves without moving them out of the tax.
  */
 export const RATED_CATEGORIES: readonly VatCategory[] = ["S", "L", "M"];
+
+/**
+ * True for a rate that is almost certainly a fraction passed where a
+ * percentage belongs: category S or L, and strictly between 0 and 1 once
+ * written at BT-152's two decimals.
+ *
+ * Every rate term in EN 16931 (BT-96, BT-103, BT-119, BT-152) is a percentage,
+ * so a system that keeps 19% as 0.19 and passes it through states 0.19%. No
+ * rule of the regulation forbids that — BR-S-05 asks only for more than zero —
+ * and no EU VAT rate or IGIC band is below 1%. M is left out on purpose: IPSI
+ * rates are set by Ceuta's and Melilla's own ordinances and go down to 0.5%.
+ * Judged as written, so 0.004 is BR-S-05's zero and not this.
+ */
+export const looksLikeFractionRate = (category: unknown, rate: unknown): rate is number => {
+  if (category !== "S" && category !== "L") return false;
+  if (typeof rate !== "number" || !Number.isFinite(rate)) return false;
+  const written = roundTo(rate, VAT_RATE_DECIMALS);
+  return written > 0 && written < 1;
+};
+
+/** The percentage a fraction stands for: 0.19 → 19, without 19.000000000000004. */
+export const percentFromFraction = (rate: number): number =>
+  roundTo(rate * 100, VAT_RATE_DECIMALS);
+
+/** The tax a rated category's rate is for: IGIC for L, VAT otherwise. */
+export const taxNameOf = (category: unknown): "IGIC" | "VAT" => (category === "L" ? "IGIC" : "VAT");
+
+/**
+ * Why a rate between 0 and 1 reads as a fraction, in the one wording every
+ * finding that says so uses (ATW-VAT-RATE-FRACTION and both BR-CO-17s).
+ */
+export const fractionReason = (category: unknown): string =>
+  `${taxNameOf(category)} rates are percentages and no ${category === "L" ? "IGIC band" : "EU VAT rate"} is below 1%`;
 
 /**
  * The invoice lines, always as a real array.

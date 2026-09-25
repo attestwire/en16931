@@ -6,7 +6,10 @@ import {
   allowanceChargesOf,
   CATEGORY_RULE_INFIX,
   linesOf,
+  fractionReason,
+  looksLikeFractionRate,
   makeRuleContext,
+  percentFromFraction,
   totalsOutcomeOf,
   withinAbsoluteTolerance,
   withinSignedTolerance,
@@ -409,7 +412,10 @@ const baseInputRules: RuleFn[] = [
         field: "BT-2",
         severity: "fatal",
         message: `The issue date (BT-2) must be a plain ISO 8601 calendar date, but "${inv.issueDate}" is not in YYYY-MM-DD form. UBL types this element as xs:date, so a timestamp, a locale format such as 09.08.2026, or a trailing "Z" all fail schema validation before any business rule runs.`,
-        fix: "Convert the value to YYYY-MM-DD before assigning it — e.g. new Date(x).toISOString().slice(0, 10).",
+        // Until 2026-09-24 this suggested new Date(x).toISOString().slice(0, 10),
+        // which converts to UTC first: a Date built at midnight in Berlin comes
+        // out as the day before. The calendar-date finding already warned of it.
+        fix: "Write the date as YYYY-MM-DD before assigning it. From a JavaScript Date, build it from the date's own calendar fields (getFullYear(), getMonth() + 1 and getDate(), each zero-padded) rather than with toISOString(), which converts to UTC first and can move the date back a day.",
         example: `"issueDate": "2026-08-09"`,
         xpath: "/ubl:Invoice/cbc:IssueDate",
         docsUrl: `${DOCS}/BR-03`,
@@ -1475,7 +1481,11 @@ const baseInputRules: RuleFn[] = [
               field: "BT-117",
               severity: "fatal",
               message: `BR-CO-17 requires the VAT category tax amount (BT-117) to equal BT-116 × (BT-119 / 100). This group states ${round2(stated.taxAmount).toFixed(2)} against a stated taxable amount of ${round2(stated.taxableAmount).toFixed(2)} at ${stated.rate}%, which is ${signed.toFixed(2)} ${inv.currency}. The rule's tolerance is a whole unit of currency, exclusive, so this is outside it.`,
-              fix: `Compute BT-117 from the group's own BT-116 and BT-119, rounded half-up to two decimals. A rate carrying more decimals than BT-119 is written to is the usual cause: normalise the rate first, then compute the amount from the normalised rate, so the two come from one number.`,
+              fix: `${
+                looksLikeFractionRate(stated.category, stated.rate)
+                  ? `${fractionReason(stated.category)}: if ${stated.rate} is a rate kept as a fraction, the percentage is ${percentFromFraction(stated.rate)}, so correct the rate (BT-119 here, and BT-152 on any line that carries it too) rather than the amount. Otherwise, compute`
+                  : "Compute"
+              } BT-117 from the group's own BT-116 and BT-119, rounded half-up to two decimals. A rate carrying more decimals than BT-119 is written to is the usual cause: normalise the rate first, then compute the amount from the normalised rate, so the two come from one number.`,
               example: `"vatRate": ${stated.rate}`,
               xpath: "/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal/cbc:TaxAmount",
               docsUrl: `${DOCS}/BR-CO-17`,
@@ -1856,7 +1866,51 @@ const baseInputRules: RuleFn[] = [
  */
 export const inputRules: RuleFn[] = [...baseInputRules, ...extendedRules];
 
+/**
+ * One finding for input that is not an invoice object at all, or null when it is one.
+ *
+ * `validateInput` is the entry point for payloads that never met a type
+ * checker, and the ones that are not an object failed worst: `undefined`, which
+ * is what an Express route without a body parser passes, took the run down with
+ * a TypeError from inside a rule, and the XML text of a file came back as nine
+ * findings about fields a string was never going to have. Each is now one
+ * finding that says what arrived and which function wanted it.
+ */
+function notAnInvoiceObject(inv: unknown): TeachingError | null {
+  const bytes = ArrayBuffer.isView(inv) || inv instanceof ArrayBuffer;
+  if (inv !== null && typeof inv === "object" && !Array.isArray(inv) && !bytes) return null;
+  const document = bytes || (typeof inv === "string" && /^\s*(?:<|%PDF)/.test(inv));
+  const what =
+    inv === undefined || inv === null
+      ? String(inv)
+      : Array.isArray(inv)
+        ? "an array"
+        : bytes
+          ? "the bytes of a file"
+          : typeof inv === "string"
+            ? document
+              ? "text that starts like an XML or PDF document"
+              : "text"
+            : `${/^[aeiou]/.test(typeof inv) ? "an" : "a"} ${typeof inv}`;
+  return {
+    rule: "ATW-INPUT-TYPE",
+    field: [],
+    severity: "fatal",
+    message: `validateInput() checks an invoice object (InvoiceInput), but it was given ${what}.${
+      document ? " A UBL or CII file, or a Factur-X PDF, is checked with validate() instead." : ""
+    }`,
+    fix: document
+      ? "Call validate(document). It reads UBL, CII and Factur-X / ZUGFeRD PDF, runs the same rules, and gives each finding its line in the file."
+      : inv === undefined
+        ? "Pass the invoice object. In an Express route the usual cause is a missing body parser: add app.use(express.json()) so that req.body is the parsed invoice."
+        : "Pass the invoice as a plain object with the InvoiceInput fields. If it arrived as JSON text, parse it first.",
+    docsUrl: LIMITS_DOCS,
+  };
+}
+
 export function runInputRules(inv: InvoiceInput): TeachingError[] {
+  const notAnObject = notAnInvoiceObject(inv);
+  if (notAnObject) return [notAnObject];
   // One pass, one set of totals. See `RuleContext` in rule-kit.ts for why this
   // is built here — at the top of a single run, thrown away at the bottom of it
   // — rather than keyed on `inv` in a WeakMap that would outlive the caller's

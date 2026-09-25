@@ -41,12 +41,14 @@ nothing system-wide:
 
 | Artefact | Version | Source |
 | --- | --- | --- |
-| KoSIT validator (standalone jar) | 1.6.2 | [itplr-kosit/validator](https://github.com/itplr-kosit/validator/releases) |
-| XRechnung validator configuration | 3.0.2 / 2026-01-31 | [itplr-kosit/validator-configuration-xrechnung](https://github.com/itplr-kosit/validator-configuration-xrechnung/releases) |
+| KoSIT validator (standalone jar) | 1.6.3 | [itplr-kosit/validator](https://github.com/itplr-kosit/validator/releases) |
+| XRechnung validator configuration | 3.0.2 / 2026-08-31 | [itplr-kosit/validator-configuration-xrechnung](https://github.com/itplr-kosit/validator-configuration-xrechnung/releases) |
 
 That configuration bundles the UN/CEFACT D16B (SCRDM CII uncoupled) XML Schema,
-the EN 16931 CII schematron (`en16931-cii-1.3.15`) and the XRechnung 3.0.2 CII
-schematron (`xrechnung-3.0.2-schematron-2.5.0`).
+the EN 16931 CII schematron (`en16931-cii-1.3.16`) and the XRechnung 3.0.2 CII
+schematron (`xrechnung-3.0.2-schematron-2.6.0`). The previous pin, the
+2026-01-31 build, carried `en16931-cii-1.3.15` and schematron 2.5.0; the runs
+recorded below the current one were made against that build.
 
 Reports are written to `<workdir>/out/*-report.xml`.
 
@@ -58,6 +60,213 @@ a rule-set change alone cannot alter the emitted document, but a new fixture is
 a document nobody has validated.
 
 ## Last recorded result
+
+Run on **2026-09-24** with validator 1.6.3 and XRechnung configuration 3.0.2
+(2026-08-31; the validator prints it as *"Validator Configuration XRechnung
+3.0.2 by Coordination Office for IT Standards (KoSIT) from 2026-09-02"*),
+against all eleven committed fixtures, with engine **0.10.0**. The fixtures
+were regenerated first with `npm run build && node scripts/emit-fixtures.mjs`
+and are byte-identical to what is committed (and to what the 2026-09-07 run
+below judged): the 0.9.0 and 0.10.0 releases changed validation, not
+generation. Command:
+`JAVA_TOOL_OPTIONS=-Xmx1g ./scripts/kosit-check.sh`, JDK Temurin 26.0.2.
+
+| Fixture | Syntax | Scenario matched | XSD | Schematron EN 16931 (`val-sch.1`) | Schematron XRechnung CIUS (`val-sch.2`) | Acceptance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `xrechnung-ubl-credit-note.xml` | UBL 2.1 | EN16931 XRechnung (UBL CreditNote) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-credit-note-discount.xml` | UBL 2.1 | EN16931 XRechnung (UBL CreditNote) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-credit-note.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-credit-note-discount.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-discount.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-minimal.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-reverse-charge.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-discount.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-extended.xml` | CII D16B | EN16931 XRechnung (CII) | pass | **`valid="false"`, 1 warning** (`CII-SR-475`, adjusted to information) | pass | ACCEPTABLE |
+| `xrechnung-cii-minimal.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-reverse-charge.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+
+The console summary, verbatim:
+
+```
+Acceptable:  11  Rejected:  0
+```
+
+`Acceptable: 11  Rejected: 0`.
+`grep -c "failed-assert\|successful-report\|rep:message" out/*.xml` returns `0`
+for ten reports and `1` for `xrechnung-cii-extended-report.xml`. The downloads
+hash as recorded for 2026-09-07 below (`799e64be…` for the jar, `2530cd10…`
+for the configuration zip).
+
+### What the report XML says about `CII-SR-475`, exactly
+
+From `out/xrechnung-cii-extended-report.xml`, element by element (namespaces
+shortened):
+
+```
+<rep:validationStepResult id="val-sch.1" valid="false">       (Schematron rules for EN16931 (CII))
+  <rep:message id="val-sch.1.1" level="warning" code="CII-SR-475"
+    xpathLocation="/CrossIndustryInvoice[1]/SupplyChainTradeTransaction[1]/ApplicableHeaderTradeAgreement[1]">
+    [CII-SR-475] - Only one AdditionalReferencedDocument Name BT-123 is allowed with TypeCode 916.
+<rep:validationStepResult id="val-sch.2" valid="true">        (Schematron rules for CIUS XRechnung (CII))
+rep:assessment → rep:accept
+```
+
+and in the report's embedded HTML:
+
+- summary line: *"Das geprüfte Dokument enthält 0 Fehler / 1 Warnungen. Es
+  ist nicht konform zu den formalen Vorgaben."*
+- step overview: `Schematron rules for EN16931 (CII) (val-sch.1)` — Fehler 0,
+  **Warnungen 1**, Informationen 0.
+- detail table: `val-sch.1.1 | CII-SR-475 | Adj. Grad: information`.
+- *"Bewertung: Es wird empfohlen das Dokument anzunehmen und weiter zu
+  verarbeiten."*
+
+So, literally: the message is a **warning** at the `rep:message` level, the
+EN 16931 step is `valid="false"`, the **adjusted** grade is information (from
+`<customLevel level="information">CII-SR-475</customLevel>` in
+`scenarios.xml`), and the recommendation is **accept**. `BR-TMP-4`, the
+replacement check in XRechnung CII schematron 2.6.0, is in `val-sch.2`, which
+is `valid="true"`. No message at error level in any of the eleven reports.
+
+**Correction to the 2026-09-07 record below.** It quotes the message as
+`level="information"` and says "`rep:message` carries `level="information"`".
+That is not what the report XML contains, on 2026-09-07's jar and
+configuration or today's (same hashes): `rep:message` carries
+`level="warning"`; *information* is the adjusted grade shown in the HTML
+detail table. The 2026-09-07 text is left as written, with this note, so the
+difference stays visible. Public wording since 2026-09-24: "One of them draws
+a warning from a European rule that KoSIT itself has marked as broken and
+replaced; it passes the replacement. None draws an error." Never "no warning",
+never "information-level message" on its own.
+
+The twelve declared-totals probes were not re-run today; their last run is
+2026-09-07, below, against the same validator and configuration.
+
+### Previously recorded result (eleven fixtures, 2026-09-07, engine 0.7.3)
+
+Run on **2026-09-07** with validator 1.6.3 and XRechnung configuration 3.0.2
+(2026-08-31), against all eleven committed fixtures, regenerated first with
+`node scripts/emit-fixtures.mjs` and byte-identical to what is committed. The
+generator has not changed since the previous record; what changed is the
+regulator's side — the weekly upstream check flagged both pins as behind, and
+the new configuration carries a newer CEN schematron (1.3.16 for 1.3.15) and a
+newer XRechnung schematron (2.6.0 for 2.5.0), so the same eleven documents
+were put to a stricter judge:
+
+| Fixture | Syntax | Scenario matched | XSD | Schematron EN 16931 | Schematron XRechnung CIUS | Acceptance |
+| --- | --- | --- | --- | --- | --- | --- |
+| `xrechnung-ubl-credit-note.xml` | UBL 2.1 | **EN16931 XRechnung (UBL CreditNote)** | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-credit-note-discount.xml` | UBL 2.1 | **EN16931 XRechnung (UBL CreditNote)** | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-credit-note.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-credit-note-discount.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-discount.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-minimal.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-ubl-reverse-charge.xml` | UBL 2.1 | EN16931 XRechnung (UBL Invoice) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-discount.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-extended.xml` | CII D16B | EN16931 XRechnung (CII) | pass | **1 information** (`CII-SR-475`) | pass | ACCEPTABLE |
+| `xrechnung-cii-minimal.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+| `xrechnung-cii-reverse-charge.xml` | CII D16B | EN16931 XRechnung (CII) | pass | pass | pass | ACCEPTABLE |
+
+`Acceptable: 11  Rejected: 0`.
+`grep -c "failed-assert\|successful-report\|rep:message" out/*.xml` returns `0`
+for ten reports and `1` for `xrechnung-cii-extended-report.xml`. So this run is
+**not** "no finding at any severity", and the pages that quote it must not say
+so: it is eleven acceptable documents and one information-level message, which
+is recorded here in full because a reader who opens the report will find it.
+
+The downloads, for anyone reproducing the run:
+
+```
+799e64befca97d4080e03608c80b85dd5a5ecc5f4ae4f35d1116ec2855b9a7c9  validator-1.6.3-standalone.jar
+2530cd107c414511c5d0462ec10f886910395abfca820db82e83d70bf01221a8  xrechnung-3.0.2-validator-configuration-2026-08-31.zip
+```
+
+### The one message, 2026-09-07: `CII-SR-475` on `xrechnung-cii-extended.xml`
+
+Verbatim from the report:
+
+```
+[CII-SR-475] - Only one AdditionalReferencedDocument Name BT-123 is allowed with TypeCode 916.
+level="information"  (CEN flag: warning)
+xpathLocation: /rsm:CrossIndustryInvoice[1]/rsm:SupplyChainTradeTransaction[1]/ram:ApplicableHeaderTradeAgreement[1]
+```
+
+What the rule tests, from `EN16931-CII-validation.xsl` in the 1.3.16 bundle:
+
+```
+count(ram:AdditionalReferencedDocument[normalize-space(ram:TypeCode) = '916']/ram:Name) <= 1
+```
+
+with `ram:ApplicableHeaderTradeAgreement` as its context. That is the defect:
+the assertion is written against the *header*, so it counts BT-123 across every
+supporting document (BG-24) in the invoice, when the cardinality it means to
+enforce — one description per supporting document — is per `ram:AdditionalReferencedDocument`.
+The extended fixture carries two supporting documents with type code 916, a
+timesheet and a price list, each with exactly one `ram:Name`. Two documents,
+two names, and the rule fires. The rule did not exist in `en16931-cii-1.3.15`,
+which is why the 2026-08-13 run below has nothing to say about it.
+
+KoSIT knows. `scenarios.xml` in the 2026-08-31 configuration carries, verbatim:
+
+```
+<!-- overwrites CEN severity level "warning" because CII-SR-475 has a wrong rule context (see https://github.com/ConnectingEurope/eInvoicing-EN16931/issues/508); replaced by BR-TMP-4 -->
+<customLevel level="information">CII-SR-475</customLevel>
+```
+
+and the same for `CII-SR-476` (the `ram:AttachmentBinaryObject` twin, replaced
+by `BR-TMP-5`). The replacement lives in the XRechnung CII schematron 2.6.0,
+with the context the CEN rule should have had:
+
+```
+BR-TMP-4  context: ram:AdditionalReferencedDocument[TypeCode 916]   test: count(ram:Name) <= 1
+```
+
+The document **passes** `BR-TMP-4` — the XRechnung step of the same report is
+clean — which is the regulator's own per-document check saying the two
+descriptions are one each. So the verdict is ACCEPTABLE, the recommendation in
+the report is *"Es wird empfohlen das Dokument anzunehmen und weiter zu
+verarbeiten"*, and the one message is a known-wrong CEN assertion that KoSIT
+has demoted to the level it reserves for notes, pending CEN's fix.
+
+Two things worth recording so nobody re-derives them:
+
+- **Nothing was changed to make this go away.** The fixture could be trimmed to
+  a single supporting document and the message would vanish, and the page would
+  read "zero findings" again. That would hide the exact case the fixture exists
+  to exercise — BG-24 repeating — behind a rule its own author has marked as
+  mis-scoped. The generator is unchanged; the fixture is unchanged; the record
+  says what the validator said.
+- **The HTML report contradicts itself, and the table is the part to trust.**
+  Its summary line reads *"0 Fehler / 1 Warnungen … nicht konform"*, counting
+  the message at CEN's original `warning` flag; the detail table two lines
+  down shows `Adj. Grad: information` and the recommendation is to accept.
+  `rep:message` carries `level="information"`, `rep:accept` is set, and
+  `Acceptable: 11` is the console verdict. A reader who stops at the summary
+  line will think the document was refused. It was not.
+
+### The twelve declared-totals probes, re-run 2026-09-07
+
+The twelve probes from the 2026-08-14 section — deliberately-broken copies of
+`xrechnung-ubl-minimal.xml` and `xrechnung-cii-minimal.xml`, none committed —
+were rebuilt the same way and put to validator 1.6.3 with the 2026-08-31
+configuration. `Acceptable: 0  Rejected: 12`. Every KoSIT citation is the one
+the 2026-08-14 table records, and this build's answer to each is unchanged:
+
+| Probe | KoSIT step | KoSIT cites | This build |
+| --- | --- | --- | --- |
+| `ubl-missing-bt106`, `cii-missing-bt106` | Schematron | `[BR-12]`, `[BR-CO-10]`, `[BR-CO-13]` | `BR-12` |
+| `cii-missing-bt115` | Schematron | `[BR-15]`, `[BR-CO-16]` | `BR-15` |
+| `ubl-missing-bt115` | XSD | `cvc-complex-type.2.4.b` | `BR-15` |
+| `ubl-missing-block` | XSD | `cvc-complex-type.2.4.a` | `BR-12`, `BR-13`, `BR-14`, `BR-15` |
+| `cii-missing-block` | Schematron | `[BR-CO-15]` **only** | `BR-12`, `BR-13`, `BR-14`, `BR-15` |
+| `{ubl,cii}-empty-bt109`, `{ubl,cii}-comma-bt115`, `{ubl,cii}-notanumber-bt115` | XSD | `cvc-datatype-valid.1.2.1` (+ `cvc-complex-type.2.2`) | `ATW-DECLARED-TOTAL-NOT-A-NUMBER` |
+
+The eight credit-note probes of 2026-08-13 were not re-run; the credit-note
+scenario and both credit-note schematron bindings are unchanged between the two
+configurations, and the four committed credit-note fixtures above are the
+documents that exercise them.
+
+### Previously recorded result (eleven fixtures, 2026-08-13)
 
 Run on **2026-08-13** with validator 1.6.2 and XRechnung configuration 3.0.2
 (2026-01-31), against all eleven committed fixtures — the seven that existed

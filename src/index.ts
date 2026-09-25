@@ -139,15 +139,20 @@ export {
 export * from "./codelists/index.js";
 
 import { runInputRules } from "./rules.js";
-import type { InvoiceInput, ValidationResult } from "./types.js";
+import type { InvoiceInput, Profile, ValidationResult } from "./types.js";
 
 /**
- * Validate the JSON input model against EN 16931 / CIUS business rules.
+ * Validate an invoice object (the `InvoiceInput` model) against EN 16931 / CIUS
+ * business rules. To check an existing file — UBL, CII, or a Factur-X /
+ * ZUGFeRD PDF — use `validate()`, which reads it and runs these same rules,
+ * with each finding's line in the file.
  *
- * Returns every finding, not just the first: a teaching error is only useful if
- * you can see the whole set of things wrong with the document at once.
- * Schematron-parity validation of *existing* XML lands next; this entry point's
- * shape is stable — the same TeachingError payload appears everywhere.
+ * Returns every finding, not just the first, each as a `TeachingError`: a
+ * teaching error is only useful if you can see the whole set of things wrong
+ * with the document at once. It does
+ * not throw for anything about the input: a value that is not an invoice object
+ * at all (`undefined`, XML text, a file's bytes) is one fatal `ATW-INPUT-TYPE`
+ * finding that says which function wanted it.
  *
  * Findings are split three ways, matching the three flags KoSIT's schematron
  * uses. `information` is deliberately *not* folded into `warnings`: a caller
@@ -158,7 +163,9 @@ export function validateInput(inv: InvoiceInput): ValidationResult {
   const findings = runInputRules(inv);
   return {
     valid: findings.every((e) => e.severity !== "fatal"),
-    profile: inv.profile,
+    // Read defensively: a JavaScript caller can pass anything, and the
+    // finding for a non-object is more use than a TypeError here.
+    profile: (inv as Partial<InvoiceInput> | null | undefined)?.profile as Profile,
     errors: findings.filter((e) => e.severity === "fatal"),
     warnings: findings.filter((e) => e.severity === "warning"),
     information: findings.filter((e) => e.severity === "information"),

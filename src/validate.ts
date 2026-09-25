@@ -66,8 +66,37 @@ export interface DocumentValidation {
   unmapped: UnmappedElement[];
   /** BT-24 exactly as the document states it. */
   customizationId?: string;
+  /**
+   * BT-23 exactly as the document states it. Like BT-24 it is not part of the
+   * input model, so a caller who reads a file here, and not with `parseUbl`,
+   * would otherwise have no way to see it.
+   */
+  profileId?: string;
   /** Why the document could not be read: the reader's exception, with its `code`. */
   error?: Error & { code: string };
+}
+
+/**
+ * The message for a programming error: something that is not a document at all.
+ *
+ * The two mistakes worth naming are the other entry point's input (an invoice
+ * object, which `validateInput` checks) and a browser `File` or `Blob`, whose
+ * bytes have to be read before this synchronous function can see them.
+ */
+function notADocument(value: unknown): string {
+  const accepted = "validate() takes the document as a string, a Uint8Array or an ArrayBuffer.";
+  if (typeof Blob !== "undefined" && value instanceof Blob) {
+    return `${accepted} This is a File or Blob: pass new Uint8Array(await file.arrayBuffer()).`;
+  }
+  // Bytes in another view (a DataView, a Uint16Array) are still a file's
+  // bytes, not an invoice object: say how to view them as a Uint8Array.
+  if (ArrayBuffer.isView(value)) {
+    return `${accepted} This is a ${value.constructor?.name ?? "typed array"}: pass new Uint8Array(view.buffer, view.byteOffset, view.byteLength).`;
+  }
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return `${accepted} This is an object: to check an invoice object (InvoiceInput), call validateInput(invoice).`;
+  }
+  return accepted;
 }
 
 /**
@@ -102,7 +131,7 @@ export function validate(
     let bytes: Uint8Array;
     if (document instanceof Uint8Array) bytes = document;
     else if (document instanceof ArrayBuffer) bytes = new Uint8Array(document);
-    else throw new TypeError("validate() takes the document as a string, a Uint8Array or an ArrayBuffer.");
+    else throw new TypeError(notADocument(document));
 
     // A PDF is recognised by its first bytes, not its name: a Factur-X saved as
     // .xml by a mail client is still a Factur-X.
@@ -201,6 +230,7 @@ export function validate(
     invoice,
     unmapped: parsed.unmapped,
     customizationId: parsed.customizationId,
+    profileId: parsed.profileId,
   };
 }
 

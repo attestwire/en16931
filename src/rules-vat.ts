@@ -10,13 +10,19 @@ import {
   CATEGORY_NAMES,
   CATEGORY_RULE_INFIX,
   DOCS,
+  LIMITS_DOCS,
   RATED_CATEGORIES,
   VAT_TOLERANCE,
+  allowanceChargePath,
   allowanceChargesOf,
   blank,
   documentAllowanceCharges,
   err,
+  fractionReason,
   linesOf,
+  looksLikeFractionRate,
+  percentFromFraction,
+  taxNameOf,
   totalsOutcomeOf,
   usesCategory,
   usesCategoryAnywhere,
@@ -24,7 +30,14 @@ import {
   withinSignedTolerance,
 } from "./rule-kit.js";
 import type { RuleContext, RuleFn } from "./rule-kit.js";
-import type { InvoiceInput, InvoiceTotals, TaxSubtotal, TeachingError, VatCategory } from "./types.js";
+import type {
+  BusinessTerm,
+  InvoiceInput,
+  InvoiceTotals,
+  TaxSubtotal,
+  TeachingError,
+  VatCategory,
+} from "./types.js";
 
 /**
  * The per-category VAT breakdown families: BR-S-*, BR-Z-*, BR-E-*, BR-AE-*,
@@ -492,6 +505,97 @@ export const vatRules: RuleFn[] = [
     return out;
   },
 
+  // --- ATW-VAT-RATE-FRACTION: a rate passed as a fraction, not a percent ----
+  //
+  // A system that keeps 19% as 0.19 and passes it through states 0.19%. Until
+  // this rule that invoice validated clean and was generated with a hundredth
+  // of its VAT (0.29 on a 150.00 line instead of 28.50), and on a larger group
+  // BR-CO-17 fired instead, for a reason — its integer rounding of BT-119 —
+  // that pointed away from the mistake. `looksLikeFractionRate` has the bound
+  // and the reason M is left out.
+  //
+  // A warning, not an error: the regulation allows the value, KoSIT accepts
+  // it, and the generators write it faithfully. What is wrong is almost
+  // certainly the caller's unit, and only the caller can confirm that. One
+  // finding per category and rate, naming every place it appears, because the
+  // slip is one missing conversion in the caller's code, not one per line.
+  (inv, ctx) => {
+    interface Place {
+      path: string;
+      term: BusinessTerm;
+      xpath: string;
+      net: () => number;
+    }
+    const groups = new Map<string, { category: VatCategory; rate: number; places: Place[] }>();
+    const note = (category: VatCategory | undefined, rate: unknown, place: Place): void => {
+      if (!looksLikeFractionRate(category, rate)) return;
+      // Keyed by the rate as written, which is how the breakdown groups it:
+      // 0.19 and 0.1900001 are one group there, so one finding here.
+      const key = `${category}|${roundTo(rate, VAT_RATE_DECIMALS)}`;
+      const group = groups.get(key) ?? { category: category as VatCategory, rate, places: [] };
+      group.places.push(place);
+      groups.set(key, group);
+    };
+    for (const [index, line] of linesOf(inv).entries()) {
+      note(line?.vatCategory, line?.vatRate, {
+        path: `lines[${index}]`,
+        term: "BT-152",
+        xpath: `/ubl:Invoice/cac:InvoiceLine[${index + 1}]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent`,
+        net: () => lineNetAmount(line),
+      });
+    }
+    for (const tagged of allowanceChargesOf(inv, ctx)) {
+      note(tagged.entry.vatCategory, tagged.entry.vatRate, {
+        path: allowanceChargePath(tagged),
+        term: tagged.isCharge ? "BT-103" : "BT-96",
+        xpath: `${tagged.xpath}/cac:TaxCategory/cbc:Percent`,
+        net: () => (tagged.isCharge ? 1 : -1) * Number(tagged.entry.amount),
+      });
+    }
+    if (groups.size === 0) return null;
+
+    const currency = typeof inv.currency === "string" && !blank(inv.currency) ? ` ${inv.currency}` : "";
+    // A document that was read names its rates by element, not by the model's
+    // field paths, which its sender has no way to set.
+    const read = Boolean(inv.declaredTotals?.syntax);
+    const out: TeachingError[] = [];
+    for (const { category, rate, places } of groups.values()) {
+      const written = roundTo(rate, VAT_RATE_DECIMALS);
+      const meant = percentFromFraction(rate);
+      const tax = taxNameOf(category);
+      const paths = places.map((p) => p.path);
+      const subject =
+        places.length === 1
+          ? `${paths[0]} has`
+          : `${places.length} entries (${paths.slice(0, 5).join(", ")}${places.length > 5 ? ", …" : ""}) have`;
+      // What the slip costs, in the caller's own figures. Skipped when the
+      // amounts cannot be totalled: BR-22 / BR-24 / BR-26 report those.
+      let cost = "";
+      try {
+        // Magnitudes: an allowance nets negative, and "charges -0.02 of VAT"
+        // reads as nonsense whichever way round it is.
+        const base = Math.abs(places.reduce((sum, p) => round2(sum + p.net()), 0));
+        if (base !== 0) {
+          cost = ` On ${base.toFixed(2)}${currency} that is ${round2((base * written) / 100).toFixed(2)} of ${tax}; at ${meant}% it would be ${round2((base * meant) / 100).toFixed(2)}.`;
+        }
+      } catch {
+        // an amount that is missing or not finite
+      }
+      const terms = [...new Set(places.map((p) => p.term))];
+      out.push({
+        rule: "ATW-VAT-RATE-FRACTION",
+        field: terms.length === 1 ? terms[0]! : terms,
+        severity: "warning",
+        message: `${subject} ${tax === "IGIC" ? "an" : "a"} ${tax} rate of ${rate} in category ${describe(category)}, which the invoice states as ${written}%. ${fractionReason(category)}, so this is usually a rate kept as a fraction and passed through unconverted: as a percentage, ${rate} is ${meant}%.${cost}`,
+        fix: `If you meant ${meant}%, set ${read ? "the rate" : places.length === 1 ? `${paths[0]}.vatRate` : "vatRate"} to ${meant}: multiply a rate your system stores as a fraction by 100 before it reaches the invoice${places.length > 1 ? ", which corrects every entry above at once" : ""}. If ${written}% really is the rate, leave it; this is a warning, and the regulation allows the value.`,
+        example: `"vatCategory": "${category}", "vatRate": ${meant}`,
+        xpath: places[0]!.xpath,
+        docsUrl: LIMITS_DOCS,
+      });
+    }
+    return out;
+  },
+
   // --- BR-45 / BR-46 / BR-47 / BR-48: every breakdown group is complete ----
   (inv, ctx) => {
     const totals = totalsOf(inv, ctx);
@@ -647,18 +751,31 @@ export const vatRules: RuleFn[] = [
         }
       }
       const expected = round2((subtotal.taxableAmount * (rate ?? 0)) / 100);
+      const subHalf = rate !== undefined && rate !== 0 && Math.round(rate) === 0;
+      // In S or L a rate this small is usually a fraction (ATW-VAT-RATE-FRACTION),
+      // and "nothing in your data is wrong" sent that caller the wrong way.
+      // Lead with the unit; the schematron's rounding defect is still the
+      // answer when the rate is meant.
+      const fraction = subHalf && looksLikeFractionRate(subtotal.category, rate);
+      const meant = fraction ? percentFromFraction(rate) : undefined;
+      const tax = taxNameOf(subtotal.category);
       out.push(
         err({
           rule: "BR-CO-17",
           field: "BT-117",
           severity: "fatal",
           message: `In the VAT breakdown group for category ${subtotal.category}${rate === undefined ? "" : ` at ${rate}%`}, the VAT category tax amount (BT-117) is ${subtotal.taxAmount.toFixed(2)} ${inv.currency}. BR-CO-17 requires BT-117 = BT-116 x (BT-119 / 100), rounded to two decimals — here ${subtotal.taxableAmount.toFixed(2)} x ${rate ?? 0}% = ${expected.toFixed(2)}.${
-            rate !== undefined && rate !== 0 && Math.round(rate) === 0
-              ? ` The arithmetic is right; the *rule* is what rejects it. BR-CO-17's first branch is written as round(BT-119) = 0, using XPath's round-to-nearest-integer — so any rate below 0.5% rounds to zero and the rule then demands that the tax amount round to zero as well. At ${rate}% on a taxable amount of ${subtotal.taxableAmount.toFixed(2)} it does not. This is a known defect in the reference schematron, not in your invoice: a genuine sub-1% rate on a base large enough to yield half a unit of currency cannot satisfy BR-CO-17 at all.`
+            subHalf
+              ? ` The arithmetic is right; the *rule* is what rejects it. BR-CO-17's first branch is written as round(BT-119) = 0, using XPath's round-to-nearest-integer — so any rate below 0.5% rounds to zero and the rule then demands that the tax amount round to zero as well. At ${rate}% on a taxable amount of ${subtotal.taxableAmount.toFixed(2)} it does not. ${
+                  fraction
+                    ? `That rounding is a known defect in the reference schematron, but it is rarely what went wrong: ${fractionReason(subtotal.category)}, so a rate this small is usually a fraction passed through unconverted — as a percentage, ${rate} is ${meant}%, at which this group's ${tax} would be ${round2((subtotal.taxableAmount * meant!) / 100).toFixed(2)}.`
+                    : "This is a known defect in the reference schematron, not in your invoice: a genuine sub-1% rate on a base large enough to yield half a unit of currency cannot satisfy BR-CO-17 at all."
+                }`
               : " Where the rate rounds to zero, the tax amount must round to zero too. Note the direction of the arithmetic: VAT is computed on the *group* taxable amount, not summed from per-line VAT amounts, which is why EN 16931 rounds once per group rather than once per line."
           }`,
-          fix:
-            rate !== undefined && rate !== 0 && Math.round(rate) === 0
+          fix: fraction
+            ? `If you meant ${meant}%, set the rate to ${meant}: rates are percentages, so multiply a rate your system stores as a fraction by 100 before it reaches the invoice. ATW-VAT-RATE-FRACTION names every line, allowance and charge that carries it. If ${rate}% really is the rate, nothing in your data is wrong and the library cannot compute its way out of this: any BT-119 below 0.5% trips BR-CO-17's integer rounding, and the receiving validator will raise it too — take it up with the recipient, or split the supply so the group taxable amount stays small enough that the tax amount rounds to zero.`
+            : subHalf
               ? `Nothing in your data is wrong, and the library cannot compute its way out of this: any BT-119 below 0.5% trips BR-CO-17's integer rounding. If the rate is a rounding of a real one, state the real one (0.5 or above passes). If ${rate}% is genuinely the rate, the receiving validator will raise BR-CO-17 too — take it up with the recipient, or split the supply so the group taxable amount stays small enough that the tax amount rounds to zero.`
               : "This amount is computed by the library from the VAT rate you supplied, so unless the rate is one you meant to change, a mismatch here indicates a defect in the library's arithmetic. Please report it with the invoice payload.",
           xpath: `/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal[${index + 1}]/cbc:TaxAmount`,

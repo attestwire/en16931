@@ -24,8 +24,8 @@
 
 # --- pinned artefact versions ------------------------------------------------
 # One place. Bump here and every caller moves together.
-KOSIT_VALIDATOR_VERSION="${KOSIT_VALIDATOR_VERSION:-1.6.2}"
-KOSIT_CONFIG_VERSION="${KOSIT_CONFIG_VERSION:-2026-01-31}"
+KOSIT_VALIDATOR_VERSION="${KOSIT_VALIDATOR_VERSION:-1.6.3}"
+KOSIT_CONFIG_VERSION="${KOSIT_CONFIG_VERSION:-2026-08-31}"
 KOSIT_CONFIG_XR_VERSION="${KOSIT_CONFIG_XR_VERSION:-3.0.2}"
 
 PEPPOL_TAG="${PEPPOL_TAG:-v3.0.20}"          # OpenPEPPOL/peppol-bis-invoice-3

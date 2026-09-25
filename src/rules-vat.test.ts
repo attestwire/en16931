@@ -381,3 +381,115 @@ describe("BR-AE-02: the seller half, on every profile (finding 13)", () => {
     expect(errorIds(reverseCharge("en16931", {}))).not.toContain("BR-AE-02");
   });
 });
+
+describe("ATW-VAT-RATE-FRACTION: a rate passed as a fraction, not a percent", () => {
+  // A system that keeps 19% as 0.19 states 0.19%. BR-S-05 asks only for more
+  // than zero, so until this rule a small invoice validated clean with a
+  // hundredth of its VAT, and a larger one failed BR-CO-17 with advice that
+  // said nothing was wrong with the data.
+  const fraction = (inv: InvoiceInput) => findings(inv).filter((e) => e.rule === "ATW-VAT-RATE-FRACTION");
+
+  it("warns on the invoice that used to pass silently, and leaves it valid", () => {
+    const inv = withLine({ vatRate: 0.19, quantity: 1, unitPrice: 150 });
+    expect(errorIds(inv)).toEqual([]);
+    expect(warningIds(inv)).toEqual(["ATW-VAT-RATE-FRACTION"]);
+    const [finding] = fraction(inv);
+    expect(finding).toMatchObject({
+      severity: "warning",
+      field: "BT-152",
+      example: '"vatCategory": "S", "vatRate": 19',
+      xpath: "/ubl:Invoice/cac:InvoiceLine[1]/cac:Item/cac:ClassifiedTaxCategory/cbc:Percent",
+    });
+    // The cost, in the caller's own figures: 0.29 charged where 28.50 was meant.
+    expect(finding!.message).toContain("0.29 of VAT; at 19% it would be 28.50");
+    expect(finding!.fix).toMatch(/^If you meant 19%, set lines\[0\]\.vatRate to 19/);
+  });
+
+  it("reports one finding per rate, naming every line, allowance and charge that carries it", () => {
+    const inv = withInvoice({
+      lines: [
+        cleanLine({ id: "1", vatRate: 0.19 }),
+        cleanLine({ id: "2", vatRate: 0.19 }),
+        cleanLine({ id: "3", vatRate: 0.07 }),
+      ],
+      allowances: [{ amount: 10, vatCategory: "S", vatRate: 0.19, reason: "Discount" }],
+      charges: [{ amount: 20, vatCategory: "S", vatRate: 0.19, reason: "Freight" }],
+    });
+    const found = fraction(inv);
+    expect(found).toHaveLength(2);
+    const [at19, at7] = found;
+    expect(at19!.message).toMatch(/^4 entries \(lines\[0\], lines\[1\], allowances\[0\], charges\[0\]\) have/);
+    expect(at19!.field).toEqual(["BT-152", "BT-96", "BT-103"]);
+    expect(at19!.fix).toContain("which corrects every entry above at once");
+    expect(at7!.message).toMatch(/^lines\[2\] has a VAT rate of 0\.07 .* as a percentage, 0\.07 is 7%/);
+  });
+
+  it("covers IGIC (L), and leaves IPSI (M) alone, whose rates go down to 0.5%", () => {
+    const igic = inCategory("L", { lines: [cleanLine({ vatCategory: "L", vatRate: 0.07 })] });
+    expect(fraction(igic)).toHaveLength(1);
+    expect(fraction(igic)[0]!.message).toContain("an IGIC rate of 0.07");
+    const ipsi = inCategory("M", { lines: [cleanLine({ vatCategory: "M", vatRate: 0.5 })] });
+    expect(fraction(ipsi)).toEqual([]);
+  });
+
+  it("stays silent at 1% and above, at zero, and on a rate BR-S-05 already reports as 0.00", () => {
+    for (const vatRate of [1, 7, 19, 0.999]) {
+      expect(fraction(withLine({ vatRate }))).toEqual([]);
+    }
+    expect(fraction(inCategory("Z"))).toEqual([]);
+    const writtenAsZero = withLine({ vatRate: 0.004 });
+    expect(errorIds(writtenAsZero)).toContain("BR-S-05");
+    expect(fraction(writtenAsZero)).toEqual([]);
+  });
+
+  it("states the rate as the invoice would write it, and the percentage from the caller's own figure", () => {
+    const [finding] = fraction(withLine({ vatRate: 0.075 }));
+    expect(finding!.message).toContain("a VAT rate of 0.075 in category S (Standard rated), which the invoice states as 0.08%");
+    expect(finding!.message).toContain("as a percentage, 0.075 is 7.5%");
+  });
+
+  it("states what the slip costs as a magnitude, even for an allowance alone", () => {
+    const inv = withInvoice({
+      allowances: [{ amount: 10, vatCategory: "S", vatRate: 0.19, reason: "Discount" }],
+    });
+    const [finding] = fraction(inv);
+    expect(finding!.message).toContain("On 10.00 EUR that is 0.02 of VAT; at 19% it would be 1.90.");
+    expect(finding!.message).not.toMatch(/-\d/);
+  });
+
+  it("reports one finding for rates that are written the same", () => {
+    const inv = withInvoice({
+      lines: [cleanLine({ id: "1", vatRate: 0.19 }), cleanLine({ id: "2", vatRate: 0.1900001 })],
+    });
+    expect(fraction(inv)).toHaveLength(1);
+    expect(fraction(inv)[0]!.message).toMatch(/^2 entries \(lines\[0\], lines\[1\]\) have/);
+  });
+
+  it("does not throw when an entry's amount cannot be totalled", () => {
+    const inv = withInvoice({
+      allowances: [{ amount: Number.NaN, vatCategory: "S", vatRate: 0.19, reason: "Discount" }],
+    });
+    const [finding] = fraction(inv);
+    expect(finding!.message).not.toContain("the invoice charges");
+  });
+});
+
+describe("BR-CO-17 on a sub-0.5% rate leads with the unit when the rate is probably a fraction", () => {
+  const co17 = (inv: InvoiceInput) => findingFor(inv, "BR-CO-17");
+
+  it("tells a standard-rated caller what 0.19 is as a percentage, before the schematron's rounding", () => {
+    const finding = co17(withLine({ vatRate: 0.19 }))!;
+    expect(finding.fix).toMatch(/^If you meant 19%, set the rate to 19/);
+    expect(finding.fix).not.toMatch(/^Nothing in your data is wrong/);
+    // The rounding defect is still explained, for a rate that is meant.
+    expect(finding.fix).toContain("any BT-119 below 0.5% trips BR-CO-17's integer rounding");
+    expect(finding.message).toContain("as a percentage, 0.19 is 19%, at which this group's VAT would be 285.00");
+  });
+
+  it("keeps the schematron explanation for IPSI, where a sub-1% rate is real", () => {
+    const ipsi = inCategory("M", {
+      lines: [cleanLine({ vatCategory: "M", vatRate: 0.4, quantity: 1, unitPrice: 100000 })],
+    });
+    expect(co17(ipsi)!.fix).toMatch(/^Nothing in your data is wrong/);
+  });
+});

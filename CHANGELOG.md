@@ -5,6 +5,85 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-09-24
+
+**A VAT rate passed as a fraction (0.19 for 19%) is now a warning instead of a
+clean pass, input that is not an invoice object gets one finding instead of a
+TypeError, and every input field is documented where an editor shows it.**
+
+**KoSIT, the German government's validator, still accepts all eleven sample
+invoices under its newest validator and XRechnung configuration.**
+
+**Upgrading:** a category S or L rate between 0 and 1 now draws a warning, so a
+build that fails on warnings (`--fail-on warning`) fails on it. `validateInput`
+no longer throws for input that is not an object; code that caught that
+`TypeError` now gets `valid: false` with one `ATW-INPUT-TYPE` finding.
+
+### Added
+
+- **`ATW-VAT-RATE-FRACTION`: a category S or L rate between 0 and 1.** Every
+  rate term is a percentage, so a system that keeps 19% as 0.19 and passes
+  it through states 0.19%. No rule of the regulation forbids that (BR-S-05
+  asks only for more than zero), so a 150.00 line at `vatRate: 0.19` returned
+  `valid: true` with no finding, and the generators wrote 0.29 of VAT where
+  28.50 was meant. It is now one warning per category and rate, naming every
+  line, allowance and charge that carries it and the VAT it costs in the
+  caller's own figures, with the XML location when the rate was read from a
+  file. A warning, not an error: KoSIT accepts the value, so `valid` does not
+  change. IPSI (`M`) is not checked, because its rates go down to 0.5%.
+- **`validate()` returns `profileId` (BT-23) beside `customizationId`
+  (BT-24),** exactly as the document states it, as `parseUbl` and
+  `parseCiiInvoice` already did. Neither is part of the input model, so a
+  caller who read a file with `validate` had no way to see BT-23. The hosted
+  API now reads uploaded files through `validate`, and needs it for the
+  `profileId` it has always returned.
+
+### Fixed
+
+- **`validateInput` given something that is not an invoice object** —
+  `undefined` (an Express route with no body parser), `null`, an array, text,
+  or a file's bytes — threw a `TypeError` from inside a rule, or, for the XML
+  text of a file, returned nine findings about fields a string was never going
+  to have. It now returns one fatal `ATW-INPUT-TYPE` finding saying what
+  arrived, and for a document it names `validate()`.
+- **BR-03's fix no longer suggests `new Date(x).toISOString().slice(0, 10)`**,
+  which converts to UTC first and so moves a date built at local midnight east
+  of Greenwich back a day. It now says to build the date from its own calendar
+  fields.
+
+### Changed
+
+- **BR-CO-17 on a sub-0.5% rate no longer tells a standard-rated caller that
+  nothing in their data is wrong.** For S and L it now says what the rate is
+  as a percentage and what the group's VAT would be at that percentage,
+  before it explains the reference schematron's integer rounding for a rate
+  that is meant. BR-CO-17 on the breakdown a document states leads the same
+  way.
+- **`validate()` handed an invoice object or a browser `File`** throws the same
+  `TypeError` as before, with a message that names `validateInput`, or says to
+  read the file's bytes first.
+- **The input model's field notes are doc comments**, so an editor shows them
+  on hover. 29 fields, among them `issueDate`, `currency`, `unitCode` and
+  `vatRate` (a percentage, not a fraction), were documented only in `//`
+  comments that the published types drop, and `profile`, `seller`, `buyer` and
+  `lines` had no note at all.
+- **Documentation.** The generators' doc comments and the README say that they
+  do not validate, and the README's generate recipe checks first. The README
+  checks files with `validate` wherever it used to parse and then call
+  `validateInput`, and no longer documents an `options.large` that `validate`
+  does not have (the option is `options.limits`).
+- **Re-verified against KoSIT validator 1.6.3 and XRechnung configuration
+  3.0.2 (build 2026-08-31).** All eleven sample invoices are accepted, and none
+  draws an error. Recorded 2026-09-24 against 0.10.0: `Acceptable: 11
+  Rejected: 0`. One draws a warning from a European rule that KoSIT itself has
+  marked as broken and replaced: `CII-SR-475` on `xrechnung-cii-extended.xml`,
+  new in the CEN CII schematron 1.3.16. The report carries it at
+  `level="warning"` in the EN 16931 step; KoSIT's configuration adjusts it to
+  information and checks `BR-TMP-4` (XRechnung CII schematron 2.6.0) instead,
+  which passes. `scripts/lib/validator-setup.sh` pins the new versions for the
+  check scripts and the benchmark; `scripts/kosit-check.md` records the report
+  element by element.
+
 ## [0.10.0] — 2026-09-23
 
 **Check a file in one call and see the line each finding is about; every rule
@@ -2019,6 +2098,7 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.11.0]: https://github.com/attestwire/en16931/releases/tag/v0.11.0
 [0.10.0]: https://github.com/attestwire/en16931/releases/tag/v0.10.0
 [0.1.0]: https://github.com/attestwire/en16931/releases/tag/v0.1.0
 [0.1.1]: https://github.com/attestwire/en16931/releases/tag/v0.1.1

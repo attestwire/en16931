@@ -443,6 +443,19 @@ function taxTotalNode(totals: InvoiceTotals, currency: string): XmlNode {
  * BR-CO arithmetic rejection cannot originate here. Use `validateInput` first if
  * you want to know whether your own accounting figures agree with ours
  * (BR-CO-10 through BR-CO-16).
+ *
+ * **It does not validate.** An invoice with fatal findings — no buyer
+ * reference, a missing VAT identifier — still comes out as well-formed XML
+ * that a receiver will reject. Check first and generate only what passes:
+ *
+ * ```ts
+ * const result = validateInput(invoice);
+ * if (!result.valid) throw new Error(result.errors.map((e) => e.rule).join(", "));
+ * const xml = generateXRechnungUBL(invoice);
+ * ```
+ *
+ * The check is separate so that a caller who only generates does not ship the
+ * whole rule set: this function alone bundles to a few kilobytes.
  */
 export function generateXRechnungUBL(
   inv: InvoiceInput,

@@ -155,8 +155,9 @@ scratch directory at run time; none is present in `src/`, `dist/` or `fixtures/`
 
 | Tool / artefact | Version pinned in the scripts | Fetched by |
 | --- | --- | --- |
-| KoSIT validator (`itplr-kosit/validator`) | `1.6.2` | `scripts/lib/validator-setup.sh` |
-| KoSIT XRechnung validator configuration | `3.0.2` / `2026-01-31` | `scripts/lib/validator-setup.sh`, `scripts/dgfip-check.sh` |
+| KoSIT validator (`itplr-kosit/validator`) | `1.6.3` | `scripts/lib/validator-setup.sh` |
+| KoSIT XRechnung validator configuration | `3.0.2` / `2026-08-31` | `scripts/lib/validator-setup.sh` |
+| KoSIT XRechnung validator configuration (D16B XSD modules only) | `3.0.2` / `2026-01-31` | `scripts/dgfip-check.sh` |
 | OpenPEPPOL `peppol-bis-invoice-3` (reference schematron) | tag `v3.0.20` | `scripts/lib/validator-setup.sh` |
 | OASIS UBL 2.1 OS schemas (`UBL-2.1.zip`) | 2.1 OS | `scripts/lib/validator-setup.sh` |
 | Saxon-HE | `12.5` (Maven Central) | `scripts/lib/validator-setup.sh` |

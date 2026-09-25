@@ -954,6 +954,8 @@ const BATTERY: [string, InvoiceInput][] = [
   // from the 2026-09-23 fuzz run), and a wrongly typed field (ATW-INPUT-TYPE).
   ["textOnlyNul", withInvoice({ note: "\u0000" })],
   ["vatRateHuge", withLine({ vatRate: 1e308 })],
+  // A rate kept as a fraction (rules-vat.ts): 0.19 for 19% validated clean.
+  ["vatRateFraction", withLine({ vatRate: 0.19 })],
   ["allowancePercentNaN", withLine({ allowances: [{ amount: 1, percentage: Number.NaN, reason: "Discount" }] })],
   ["grossPriceHuge", withLine({ grossUnitPrice: 1e21 })],
   ["wrongType", withInvoice({ payment: { ...clean.payment!, meansCode: 58 as unknown as string } })],

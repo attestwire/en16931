@@ -16,6 +16,7 @@ exports[`the rule set as a whole > keeps every rule at its reviewed severity 1`]
   "ATW-PROFILE-UNKNOWN": "fatal",
   "ATW-TEXT-NOT-XML": "fatal",
   "ATW-VAT-CATEGORY-UNSUPPORTED": "fatal",
+  "ATW-VAT-RATE-FRACTION": "warning",
   "ATW-VAT-RATE-OUT-OF-RANGE": "fatal",
   "BR-01": "fatal",
   "BR-02": "fatal",

@@ -375,6 +375,10 @@ function invoicedObjectNode(identifier: {
  * payload. The PDF/A-3 container that makes it a Factur-X *file* is read
  * (extraction) as of 0.7.0 via `extractFacturX`; it is still never built, so
  * nothing in this module writes one.
+ *
+ * **It does not validate**, for the same reason as `generateXRechnungUBL`: an
+ * invoice with fatal findings still comes out as well-formed XML. Call
+ * `validateInput` first and generate only when `result.valid` is true.
  */
 export function generateCii(
   inv: InvoiceInput,
