@@ -104,7 +104,8 @@ invoice. They carry an `AW-` id and no `docsUrl`, and they are not rules, so
 they are not in the rule counts: `AW-SIZE` (past the size limits without
 `--large`, or `options.limits` raised), `AW-PDF` (a `.pdf` file that is not a PDF, or a
 PDF with no readable invoice XML inside), `AW-PARSE` (not a UBL or CII
-invoice), `AW-PROFILE-SUBSET` (a Factur-X MINIMUM or BASIC WL file, which
+invoice, or not the text its encoding says; for a PDF, the XML inside it),
+`AW-PROFILE-SUBSET` (a Factur-X MINIMUM or BASIC WL file, which
 carries too little to be an EN 16931 invoice; fatal) and `AW-PROFILE-SYNTAX`
 (a `--profile` or `options.profile` for the other syntax; a warning). The
 command line alone reports `AW-IO` (the file could not be read). Until 0.10.0
@@ -231,6 +232,12 @@ for (const e of result.errors) console.log(`line ${e.location?.line}`, e.rule, e
 or a PDF with no invoice inside comes back as one fatal `AW-` finding naming what
 it is, with the reader's own exception in `result.error`. `result.invoice` is the
 invoice as read, ready for either generator.
+
+Decoding is strict. Bytes that are not valid in the encoding a file declares
+are a finding, never a replacement character, and so is a file converted to
+UTF-8 whose declaration still names a single-byte encoding such as
+ISO-8859-1: read as it declares, every "ß" in it would be "ÃŸ". If you have
+already decoded the text yourself, pass the string, which is taken as it is.
 
 **Generate the XML.** One model, pick the syntax by picking the function. The
 generators write whatever they are given, fatal findings and all, so check
@@ -576,6 +583,15 @@ attachment name, a missing or wrong `/AFRelationship`, more than one XML
 attachment. Malformed PDFs raise a named error with a stable `code`, never a
 crash.
 
+`xml` is the attachment's UTF-8 text, exactly. Factur-X and ZUGFeRD
+attachments are UTF-8, and a receiver is entitled to read them as UTF-8
+whatever they declare, so an attachment in another encoding — ISO-8859-1,
+UTF-16 — or whose bytes are not valid in the encoding it names throws
+`FacturXEncodingError`, naming the encoding, rather than coming back with
+replacement characters. Plain ASCII under another declaration reads the same
+either way and is returned, with a warning. `validate` reports the same
+refusal as a fatal `AW-PARSE` finding.
+
 Writing it is still not implemented, and is not planned here. `generateCii`
 emits the XML: it does not build the container, does not attach the XML under
 the required name (`factur-x.xml`, or `xrechnung.xml` for the XRECHNUNG
@@ -762,6 +778,7 @@ Each generator throws instead of returning XML in two cases. Every error extends
 | `UnsupportedProfileError` | `unsupported_profile` | From `generateXRechnungUBL`: `profile` is not one of `en16931`, `xrechnung-ubl`, `peppol-bis-3`. `xrechnung-cii` and `facturx-en16931` are CII documents — call `generateCii` for those. |
 | `UnsupportedCiiProfileError` | `unsupported_profile` | From `generateCii`: `profile` is not one of `en16931`, `xrechnung-cii`, `facturx-en16931`, `peppol-bis-3`. `xrechnung-ubl` names the UBL binding of XRechnung specifically — use `generateXRechnungUBL`, or `xrechnung-cii` for the same rules in CII. |
 | `PdfParseError` / `PdfSecurityError` / `PdfUnsupportedFilterError` / `FacturXNotFoundError` | see `code` | From `extractFacturX`: the bytes are not a readable PDF, a `PdfLimits` cap was hit, the file uses a compression filter this reader does not implement, or the PDF carries no XML attachment. All extend `PdfError`. |
+| `FacturXEncodingError` | `facturx_xml_encoding` | From `extractFacturX`: the XML attachment is not UTF-8, which Factur-X and ZUGFeRD require. It is in another encoding, its bytes are not valid in the one it names, or it is UTF-8 under a stale single-byte declaration. `attachmentName` and `encoding` say which. Extends `PdfError`. |
 | `UnsupportedDocumentTypeError` | `unsupported_document_type` | **Never.** It existed for one case — a credit-note `invoiceTypeCode` — and that case now generates a `ubl:CreditNote`. Kept exported so an existing `import` or `instanceof` does not break; the branch is simply never taken. |
 
 Both generators now throw on the syntax and on nothing else. A credit-note BT-3

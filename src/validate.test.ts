@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { toSarif } from "./export.js";
@@ -19,6 +20,40 @@ const bytes = (s: string) => new TextEncoder().encode(s);
 
 const all = (r: DocumentValidation) => [...r.errors, ...r.warnings, ...r.information];
 const ruleIds = (findings: { rule: string }[]) => findings.map((f) => f.rule).sort();
+
+/**
+ * A PDF carrying `xml` as factur-x.xml, registered the way Factur-X registers
+ * it, so a test controls the attachment's bytes exactly. The FeRD samples are
+ * all UTF-8, and facturx-pdf.test.ts builds the hostile shapes.
+ */
+function facturX(xml: Uint8Array): Uint8Array {
+  const stream = deflateSync(xml);
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(factur-x.xml) 4 0 R] >> >> /AF [4 0 R] >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>",
+    "<< /Type /Filespec /F (factur-x.xml) /UF (factur-x.xml) /AFRelationship /Alternative /EF << /F 5 0 R >> >>",
+  ].map((dict) => Buffer.from(`${dict}\n`, "latin1"));
+  objects.push(
+    Buffer.concat([
+      Buffer.from(`<< /Type /EmbeddedFile /Subtype /text#2Fxml /Filter /FlateDecode /Length ${stream.length} >>\nstream\n`, "latin1"),
+      stream,
+      Buffer.from("\nendstream\n", "latin1"),
+    ]),
+  );
+  const parts = [Buffer.from("%PDF-1.7\n", "latin1")];
+  const offsets: number[] = [];
+  let size = parts[0]!.length;
+  objects.forEach((body, i) => {
+    offsets.push(size);
+    const object = Buffer.concat([Buffer.from(`${i + 1} 0 obj\n`, "latin1"), body, Buffer.from("endobj\n", "latin1")]);
+    parts.push(object);
+    size += object.length;
+  });
+  const table = offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  parts.push(Buffer.from(`xref\n0 6\n0000000000 65535 f \n${table}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${size}\n%%EOF\n`, "latin1"));
+  return new Uint8Array(Buffer.concat(parts));
+}
 
 /** 1-based line and column of the first occurrence of `needle`. */
 function lineOf(source: string, needle: string): { line: number; column: number } {
@@ -154,6 +189,67 @@ describe("validate", () => {
     const r = validate(encoded);
     expect(r.syntax).toBe("ubl");
     expect(JSON.stringify(r.invoice)).toContain("Müller");
+  });
+
+  it("refuses UTF-8 bytes under a single-byte declaration, by name, rather than read mojibake", () => {
+    // A file converted to UTF-8 by something that left its declaration alone.
+    // Read as it declares, "Hauptstraße" is "HauptstraÃŸe", and it used to
+    // pass that way.
+    const xml = text("xrechnung-cii-minimal.xml");
+    for (const label of ["ISO-8859-1", "windows-1252", "ISO-8859-15"]) {
+      const stale = xml.replace('encoding="UTF-8"', `encoding="${label}"`);
+      const r = validate(bytes(stale));
+      expect(r.valid, label).toBe(false);
+      expect(r.syntax, label).toBeNull();
+      expect(r.errors, label).toHaveLength(1);
+      expect(r.errors[0], label).toMatchObject({ rule: "AW-PARSE", field: "document", severity: "fatal" });
+      expect(r.errors[0]!.message, label).toContain(`declares encoding "${label.toLowerCase()}", but its bytes are UTF-8`);
+      expect(r.errors[0]!.fix, label).toContain('encoding="UTF-8"');
+      // Text is taken as already decoded: a caller who decoded it is believed.
+      expect(validate(stale).valid, label).toBe(true);
+    }
+  });
+
+  it("still reads a single-byte declaration over plain ASCII, which reads the same either way", () => {
+    const ascii = text("xrechnung-cii-minimal.xml")
+      .replace('encoding="UTF-8"', 'encoding="ISO-8859-1"')
+      .replace(/[^\x00-\x7F]/g, "?");
+    const r = validate(bytes(ascii));
+    expect(r.syntax).toBe("cii");
+    expect(r.errors.filter((f) => f.rule.startsWith("AW-"))).toEqual([]);
+  });
+
+  it("reads a Factur-X attachment's non-ASCII text exactly, as it reads the same XML as a file", () => {
+    const file = fixture("xrechnung-cii-minimal.xml");
+    const r = validate(facturX(file));
+    expect(r.container).toBe("factur-x.xml");
+    expect(r.valid).toBe(true);
+    expect(r.invoice?.seller?.address?.line1).toBe("Hauptstraße 1");
+    expect(r.invoice).toEqual(validate(file).invoice);
+  });
+
+  it("refuses a Factur-X attachment that is not UTF-8, by name, instead of judging replacement characters", () => {
+    // Was: "Hauptstra\uFFFDe 1" in the invoice, no finding, and valid: true.
+    const latin1 = text("xrechnung-cii-minimal.xml").replace('encoding="UTF-8"', 'encoding="ISO-8859-1"');
+    const r = validate(facturX(Buffer.from(latin1, "latin1")));
+    expect(r.valid).toBe(false);
+    expect(r.syntax).toBeNull();
+    expect(r.invoice).toBeNull();
+    expect(r.container).toBe("factur-x.xml");
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({ rule: "AW-PARSE", field: "document", severity: "fatal" });
+    expect(r.errors[0]!.message).toContain('attached as "factur-x.xml" is in iso-8859-1, not UTF-8');
+    expect(r.errors[0]!.fix).toMatch(/in UTF-8, and declared as UTF-8/);
+    expect(r.error?.code).toBe("facturx_xml_encoding");
+    expect(JSON.stringify(r)).not.toContain("\uFFFD");
+  });
+
+  it("refuses a stale declaration inside a PDF as it refuses one in a file", () => {
+    const stale = bytes(text("xrechnung-cii-minimal.xml").replace('encoding="UTF-8"', 'encoding="ISO-8859-1"'));
+    const inPdf = validate(facturX(stale));
+    expect(inPdf.error?.code).toBe("facturx_xml_encoding");
+    expect(inPdf.errors[0]!.message).toContain('declares encoding "iso-8859-1", but its bytes are UTF-8');
+    expect(validate(stale).errors[0]!.message).toContain('declares encoding "iso-8859-1", but its bytes are UTF-8');
   });
 
   it("reports a document over the limits as AW-SIZE, and reads it when they are raised", () => {

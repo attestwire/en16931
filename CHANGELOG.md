@@ -5,6 +5,49 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-09-25
+
+**A Factur-X or ZUGFeRD PDF whose attached XML is not UTF-8, and a file
+converted to UTF-8 whose declaration still names a single-byte encoding, are
+now refused by name instead of judged on garbled text.**
+
+**Upgrading:** `extractFacturX` throws `FacturXEncodingError` for an
+attachment it used to return with replacement characters in it. It extends
+`PdfError`, so code that catches `PdfError` already handles it. `validate`
+answers a file whose bytes are UTF-8 under a single-byte declaration with a
+fatal `AW-PARSE` finding; it used to read such a file as mojibake, and it could
+pass. Correct the declaration, or pass the text you decoded yourself as a
+string. The FeRD sample files are UTF-8 and read exactly as before.
+
+### Fixed
+
+- **A Factur-X or ZUGFeRD PDF whose XML is not UTF-8 is refused by name, not
+  judged with replacement characters.** `extractFacturX` decoded the
+  attachment as UTF-8 and replaced whatever did not decode, whatever the
+  attachment declared. So an ISO-8859-1 `factur-x.xml` came back with U+FFFD,
+  the replacement character, in place of every "ß", and no warning, and
+  `validate` judged that text `valid: true`. The attachment now goes through
+  the decoder `validate` uses for a file (the byte-order mark, then the
+  declaration, strictly), and it must turn out to be UTF-8. That is what
+  Factur-X and ZUGFeRD attachments are: ZUGFeRD 1.0 says so (§6.1), FeRD's
+  samples are UTF-8, and Mustang, the open-source ZUGFeRD library and
+  validator, reads the attachment as UTF-8 whatever it declares, so a receiver
+  that follows the format sees a Latin-1 file's "ß" corrupted too. An
+  attachment in another encoding, one whose bytes are not valid in the
+  encoding it names, or UTF-8 under a stale single-byte declaration throws the
+  new `FacturXEncodingError` (code `facturx_xml_encoding`, exported, with
+  `attachmentName` and `encoding`). `validate` reports it as one fatal
+  `AW-PARSE` finding, with `container` naming the attachment. Plain ASCII
+  under another declaration reads the same either way, and is returned with a
+  warning.
+- **A file converted to UTF-8 whose declaration still names a single-byte
+  encoding is refused by name.** Bytes that are valid multi-byte UTF-8 under
+  `encoding="ISO-8859-1"`, windows-1252 or any other single-byte encoding were
+  read as declared, so "Hauptstraße" became "HauptstraÃŸe", and the document
+  could pass. A genuine single-byte file is practically never valid UTF-8, so
+  `validate` now answers with a fatal `AW-PARSE` finding that says to correct
+  the declaration. A string is still taken as already decoded.
+
 ## [0.11.0] — 2026-09-24
 
 **A VAT rate passed as a fraction (0.19 for 19%) is now a warning instead of a
@@ -2098,6 +2141,7 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.12.0]: https://github.com/attestwire/en16931/releases/tag/v0.12.0
 [0.11.0]: https://github.com/attestwire/en16931/releases/tag/v0.11.0
 [0.10.0]: https://github.com/attestwire/en16931/releases/tag/v0.10.0
 [0.1.0]: https://github.com/attestwire/en16931/releases/tag/v0.1.0

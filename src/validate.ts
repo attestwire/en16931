@@ -17,13 +17,14 @@
  * Every finding carries a `location` in the caller's file: see locate.ts.
  */
 
-import { extractFacturX, type PdfLimits } from "./facturx-pdf.js";
+import { extractFacturX, FacturXEncodingError, type PdfLimits } from "./facturx-pdf.js";
 import { CII_NAMESPACES } from "./generate-cii.js";
 import { locateFinding } from "./locate.js";
 import { parseCiiTree } from "./parse-cii.js";
 import { parseUblTree, type ParsedInvoice, type UnmappedElement } from "./parse.js";
 import { runInputRules } from "./rules.js";
 import type { BusinessTerm, InvoiceInput, Profile, TeachingError } from "./types.js";
+import { decodeXml, type UndecodableXml } from "./xml-decode.js";
 import { parseXml, type XmlElement, type XmlLimits } from "./xml-parse.js";
 
 export interface ValidateOptions {
@@ -143,6 +144,20 @@ export function validate(
       } catch (err) {
         if (!isReadFailure(err)) throw err;
         if (SIZE_CODES.has(err.code)) return tooLarge(err);
+        if (err instanceof FacturXEncodingError) {
+          // The PDF was read and the attachment found; what failed is its
+          // text. So this is the XML's finding, and it says which attachment,
+          // as a parse failure of the XML inside a PDF does.
+          return {
+            ...unreadable(
+              "AW-PARSE",
+              err.message,
+              "Export the invoice again with its XML attachment in UTF-8, and declared as UTF-8, which is what Factur-X and ZUGFeRD require.",
+              err,
+            ),
+            container: err.attachmentName,
+          };
+        }
         return unreadable(
           "AW-PDF",
           err.code === "facturx_no_xml_attachment"
@@ -158,14 +173,8 @@ export function validate(
       const kind = notXml(bytes);
       if (kind) return unreadable("AW-PARSE", `This is ${kind.what}.`, kind.fix);
       const decoded = decodeXml(bytes);
-      if (typeof decoded !== "string") {
-        return unreadable(
-          "AW-PARSE",
-          `This could not be decoded: ${decoded.problem}.`,
-          "Save the file as UTF-8, or declare the encoding it is actually in.",
-        );
-      }
-      xml = decoded;
+      if ("problem" in decoded) return unreadable("AW-PARSE", ...undecodable(decoded));
+      xml = decoded.text;
     }
   }
 
@@ -304,40 +313,26 @@ export function notXml(bytes: Uint8Array): { what: string; fix: string } | null 
 }
 
 /**
- * Bytes to text, honouring the byte-order mark and the XML declaration.
- *
- * The engine takes a string and does not read the declaration, so a
- * windows-1252 invoice decoded as UTF-8 would reach the rules with every "ü"
- * replaced, and pass. Decoding is strict: bytes that are not valid in the
- * declared encoding are a finding, not a replacement character.
+ * The finding for a file whose bytes are not the text it says they are, as
+ * `[message, fix]`. The engine takes a string and does not read the
+ * declaration, so the decoding is done here (xml-decode.ts), and strictly: a
+ * file that does not decode is a finding, not a replacement character.
  */
-function decodeXml(bytes: Uint8Array): string | { problem: string } {
-  let label = "utf-8";
-  let start = 0;
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) start = 3;
-  else if (bytes[0] === 0xff && bytes[1] === 0xfe) [label, start] = ["utf-16le", 2];
-  else if (bytes[0] === 0xfe && bytes[1] === 0xff) [label, start] = ["utf-16be", 2];
-  else {
-    // The declaration is ASCII in every encoding this can apply to.
-    const head = String.fromCharCode(...bytes.subarray(0, 200));
-    const declared = /^<\?xml[^>]*\bencoding\s*=\s*["']([A-Za-z0-9._-]+)["']/.exec(head)?.[1];
-    if (declared) label = declared.toLowerCase();
-  }
-  let decoder: TextDecoder;
-  try {
-    // ignoreBOM: the mark is skipped above, by hand, and a SECOND one is a
-    // character of the document that TextDecoder would otherwise eat too.
-    decoder = new TextDecoder(label, { fatal: true, ignoreBOM: true });
-  } catch {
-    return { problem: `it declares encoding "${label}", which this runtime cannot decode` };
-  }
-  try {
-    // The mark goes back on as U+FEFF, so the text is exactly what a caller
-    // who decoded the file themselves would pass, and a column on line 1
-    // means the same thing whichever way the document arrived.
-    return (start > 0 ? "\uFEFF" : "") + decoder.decode(bytes.subarray(start));
-  } catch {
-    return { problem: `it contains bytes that are not valid ${label}` };
+function undecodable({ problem, label }: UndecodableXml): [message: string, fix: string] {
+  const fix = "Save the file as UTF-8, or declare the encoding it is actually in.";
+  switch (problem) {
+    case "unsupported":
+      return [`This could not be decoded: it declares encoding "${label}", which this runtime cannot decode.`, fix];
+    case "invalid":
+      return [`This could not be decoded: it contains bytes that are not valid ${label}.`, fix];
+    case "mislabelled":
+      return [
+        `This declares encoding "${label}", but its bytes are UTF-8: it was converted to UTF-8 and its ` +
+          "declaration was not. Read as it declares, which is how an XML processor reads it, every " +
+          "non-ASCII character in it comes out as two or more wrong ones.",
+        `Change the declaration to encoding="UTF-8", which is what the file is; or, if it is meant to ` +
+          `be ${label}, save it in ${label} again.`,
+      ];
   }
 }
 

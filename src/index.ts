@@ -56,6 +56,7 @@ export {
   PdfSecurityError,
   PdfUnsupportedFilterError,
   FacturXNotFoundError,
+  FacturXEncodingError,
   type PdfLimits,
   type FacturXExtraction,
 } from "./facturx-pdf.js";

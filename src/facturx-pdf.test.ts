@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_PDF_LIMITS,
+  FacturXEncodingError,
   FacturXNotFoundError,
   PdfError,
   PdfParseError,
@@ -31,8 +32,8 @@ import { parseXml } from "./xml-parse.js";
  * which is exactly the outcome these tests exist to rule out.
  *
  * `node:zlib` appears here to *build* corrupt fixtures. The module under test
- * never imports it — the inflater is hand-written, and `src/facturx-pdf.ts` has
- * no imports at all.
+ * never imports it — the inflater is hand-written, and `src/facturx-pdf.ts`
+ * imports nothing but this package's own XML decoder (`xml-decode.ts`).
  */
 
 const FIXTURES = fileURLToPath(new URL("../fixtures/facturx/", import.meta.url));
@@ -251,6 +252,114 @@ describe("extractFacturX: hand-built documents", () => {
       buildPdf({ xml: '<?xml version="1.0"?><Invoice/>' }),
     );
     expect(result.warnings.join(" ")).toMatch(/no rsm:CrossIndustryInvoice/);
+  });
+});
+
+describe("extractFacturX: the attachment's encoding", () => {
+  // The attachment used to be decoded as UTF-8 with replacement, whatever it
+  // declared: an ISO-8859-1 factur-x.xml came back as "Hafenstra\uFFFDe 12",
+  // with no warning. Factur-X attachments are UTF-8 (see "The attachment's
+  // text" in facturx-pdf.ts); these pin what happens to one that is not.
+  const cii = (declaration: string, street = "Hafenstraße 12") =>
+    `<?xml version="1.0"${declaration}?>\n` +
+    `<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100">` +
+    `<rsm:Street>${street}</rsm:Street></rsm:CrossIndustryInvoice>`;
+  const utf8 = (s: string) => new Uint8Array(Buffer.from(s, "utf8"));
+  const latin1 = (s: string) => new Uint8Array(Buffer.from(s, "latin1"));
+  const attached = (payload: Uint8Array) =>
+    buildPdf({ rawPayload: new Uint8Array(deflateSync(payload)) });
+
+  const refusal = (payload: Uint8Array): FacturXEncodingError => {
+    let caught: unknown;
+    try {
+      extractFacturX(attached(payload));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(FacturXEncodingError);
+    expect(caught).toBeInstanceOf(PdfError);
+    const error = caught as FacturXEncodingError;
+    expect(error.code).toBe("facturx_xml_encoding");
+    expect(error.attachmentName).toBe("factur-x.xml");
+    expect(error.message).toMatch(/^The XML attached as "factur-x\.xml" /);
+    expect(error.message).not.toContain("\uFFFD");
+    return error;
+  };
+
+  it("returns a UTF-8 attachment's text exactly, non-ASCII characters and all", () => {
+    for (const declaration of [' encoding="UTF-8"', ' encoding="utf-8"', ""]) {
+      const result = extractFacturX(attached(utf8(cii(declaration))));
+      expect(result.xml, declaration).toBe(cii(declaration));
+      expect(result.warnings, declaration).toEqual([]);
+    }
+  });
+
+  it("drops a UTF-8 byte-order mark, which is not part of the XML, and keeps a second one, which is", () => {
+    const bom = [0xef, 0xbb, 0xbf];
+    const once = extractFacturX(attached(new Uint8Array([...bom, ...utf8(cii(' encoding="UTF-8"'))])));
+    expect(once.xml).toBe(cii(' encoding="UTF-8"'));
+    const twice = extractFacturX(attached(new Uint8Array([...bom, ...bom, ...utf8(cii(""))])));
+    expect(twice.xml).toBe(`\uFEFF${cii("")}`);
+  });
+
+  it("refuses an ISO-8859-1 attachment by name, rather than returning replacement characters", () => {
+    const error = refusal(latin1(cii(' encoding="ISO-8859-1"')));
+    expect(error.encoding).toBe("iso-8859-1");
+    expect(error.message).toMatch(/is in iso-8859-1, not UTF-8/);
+    expect(error.message).toMatch(/whatever they declare/);
+  });
+
+  it("refuses a windows-1252 attachment too, though every byte of it decodes", () => {
+    // 0x80 is "€" in windows-1252: nothing here is invalid, only not UTF-8.
+    const error = refusal(latin1(cii(' encoding="windows-1252"', "Hafenstraße 12, 5 \x80")));
+    expect(error.encoding).toBe("windows-1252");
+  });
+
+  it("refuses a UTF-16 attachment, in either byte order", () => {
+    const le = new Uint8Array([0xff, 0xfe, ...Buffer.from(cii(' encoding="UTF-16"'), "utf16le")]);
+    expect(refusal(le).encoding).toBe("utf-16le");
+    const be = new Uint8Array([0xfe, 0xff, ...Buffer.from(cii(' encoding="UTF-16"'), "utf16le").swap16()]);
+    expect(refusal(be).encoding).toBe("utf-16be");
+  });
+
+  it("refuses bytes that are not valid UTF-8 when the attachment names no other encoding", () => {
+    for (const declaration of [' encoding="UTF-8"', ""]) {
+      const error = refusal(latin1(cii(declaration)));
+      expect(error.encoding, declaration).toBe("utf-8");
+      expect(error.message, declaration).toMatch(/contains bytes that are not valid utf-8/);
+    }
+  });
+
+  it("refuses UTF-8 bytes under a stale single-byte declaration, naming both", () => {
+    // What a conversion to UTF-8 that forgot the declaration leaves behind. A
+    // receiver that honours the declaration reads "HafenstraÃŸe 12".
+    const error = refusal(utf8(cii(' encoding="ISO-8859-1"')));
+    expect(error.encoding).toBe("iso-8859-1");
+    expect(error.message).toMatch(/declares encoding "iso-8859-1", but its bytes are UTF-8/);
+  });
+
+  it("names an encoding this runtime cannot decode", () => {
+    const error = refusal(latin1(cii(' encoding="x-nonsense"')));
+    expect(error.encoding).toBe("x-nonsense");
+    expect(error.message).toMatch(/cannot decode/);
+  });
+
+  it("returns plain ASCII under another declaration, which reads the same either way, and says so", () => {
+    const ascii = cii(' encoding="ISO-8859-1"', "Hafenstrasse 12");
+    const result = extractFacturX(attached(latin1(ascii)));
+    expect(result.xml).toBe(ascii);
+    expect(result.warnings.join(" ")).toMatch(/declares encoding "iso-8859-1".*only ASCII/);
+  });
+
+  it("does not take ASCII bytes for ASCII text: ISO-2022-JP spells kanji in them", () => {
+    // ESC $ B switches to JIS X 0208, where 0x467C 0x4B5C is 日本. Every byte
+    // is below 0x80, and a UTF-8 reader would see different text.
+    const jis = new Uint8Array([
+      ...latin1(`<?xml version="1.0" encoding="ISO-2022-JP"?>\n<rsm:CrossIndustryInvoice xmlns:rsm="x">`),
+      0x1b, 0x24, 0x42, 0x46, 0x7c, 0x4b, 0x5c, 0x1b, 0x28, 0x42,
+      ...latin1("</rsm:CrossIndustryInvoice>"),
+    ]);
+    expect(refusal(jis).encoding).toBe("iso-2022-jp");
   });
 });
 

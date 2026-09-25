@@ -11,8 +11,8 @@
  * embedding, colour profiles, XMP metadata and a conformance claim that a
  * validator will check, and shipping a half-conformant writer would produce
  * files that look like Factur-X and are not. Extraction has no such failure
- * mode: either the attachment is there and comes out byte-identical, or it is
- * not and this throws.
+ * mode: either the attachment is there and comes out as exactly the text it
+ * holds, or this throws.
  *
  * ## Zero dependencies, including the decompressor
  *
@@ -34,6 +34,34 @@
  * not decrypt, and does not implement `LZWDecode`, `/Crypt` or any of the image
  * filters — it names them and refuses instead, because a wrong answer about the
  * contents of a tax document is worse than no answer.
+ *
+ * ## The attachment's text: UTF-8, or a refusal that names the encoding
+ *
+ * The attachment is bytes, and `xml` is text, so something decides the
+ * encoding. Until this was written down it was decided badly: the bytes were
+ * decoded as UTF-8 with replacement, whatever the attachment declared, so an
+ * ISO-8859-1 `factur-x.xml` came back with U+FFFD in place of every "ß", no
+ * warning, and — through `validate` — `valid: true`.
+ *
+ * Factur-X and ZUGFeRD attachments are UTF-8. ZUGFeRD 1.0 said so in as many
+ * words (§6.1: "Als Zeichensatz wird ausschließlich UTF-8 verwendet"), FeRD's
+ * sample files are UTF-8, and Mustang, the open-source ZUGFeRD library and
+ * validator, decodes the attachment as UTF-8 without reading its declaration
+ * (`getUTF8()`). So an
+ * attachment in another encoding is not just unusual. A receiver that follows
+ * the format reads it as UTF-8, one that honours the XML declaration reads it
+ * as declared, and the two see different invoices. Whichever of them this
+ * package imitated, its verdict would be about a document some receiver does
+ * not see.
+ *
+ * So the bytes go through `decodeXml` (xml-decode.ts), the decoder `validate`
+ * uses for a file: the byte-order mark, then the declaration, strictly. The
+ * attachment is returned when both readers would agree on its text, which
+ * means UTF-8, with or without a byte-order mark; or plain ASCII under another
+ * declaration, which reads the same either way and is returned with a warning.
+ * Anything else throws `FacturXEncodingError` naming the encoding: an
+ * attachment in ISO-8859-1 or UTF-16, bytes that are not valid in the
+ * encoding named, or UTF-8 bytes under a stale single-byte declaration.
  *
  * ## Hostile input
  *
@@ -58,6 +86,8 @@
  *   the byte it came from. `maxObjectNodes` is the cap that corresponds to what
  *   a Cloudflare Worker actually runs out of.
  */
+
+import { decodeXml, type DecodedXml, type UndecodableXml } from "./xml-decode.js";
 
 /** Caps on what a hostile or accidental PDF can make this do. */
 export interface PdfLimits {
@@ -146,6 +176,27 @@ export class FacturXNotFoundError extends PdfError {
   }
 }
 
+/**
+ * The XML attachment is there, and is not UTF-8 text: it is in another
+ * encoding, its bytes are not valid in the one it names, or it names one it is
+ * not in. Factur-X and ZUGFeRD attachments are UTF-8; see "The attachment's
+ * text" at the top of this module for why this is a refusal and not a guess.
+ */
+export class FacturXEncodingError extends PdfError {
+  /** The attachment's filename, e.g. `factur-x.xml`. */
+  readonly attachmentName: string;
+  /**
+   * The encoding the attachment's byte-order mark or XML declaration names,
+   * lower-cased (`iso-8859-1`, `utf-16le`), or `utf-8` when it names none.
+   */
+  readonly encoding: string;
+  constructor(attachmentName: string, encoding: string, message: string) {
+    super("facturx_xml_encoding", message);
+    this.attachmentName = attachmentName;
+    this.encoding = encoding;
+  }
+}
+
 /** A filter we do not implement — named rather than guessed at. */
 export class PdfUnsupportedFilterError extends PdfError {
   readonly filter: string;
@@ -162,7 +213,11 @@ export class PdfUnsupportedFilterError extends PdfError {
 }
 
 export interface FacturXExtraction {
-  /** The embedded XML, decoded as UTF-8. */
+  /**
+   * The embedded XML: the attachment's UTF-8 text, exactly, without a
+   * byte-order mark. An attachment that is not UTF-8 throws
+   * `FacturXEncodingError` instead of coming back with replacement characters.
+   */
   xml: string;
   /** The attachment's filename as the PDF states it, e.g. `factur-x.xml`. */
   attachmentName: string;
@@ -1610,8 +1665,42 @@ function walkNameTree(
   state.path.delete(dict);
 }
 
+/** For PDF text strings (names), where a replaced byte costs a character of a filename. Never for the XML. */
 function utf8(bytes: Uint8Array): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
+/**
+ * Would a reader that takes the attachment as UTF-8 get this same text? Only
+ * when the bytes are ASCII and so is what they decoded to: ISO-2022-JP, for
+ * one, spells non-ASCII characters in ASCII bytes. A UTF-16 byte-order mark
+ * is not ASCII, so a UTF-16 attachment never passes.
+ */
+function readsTheSameAsUtf8(raw: Uint8Array, decoded: DecodedXml): boolean {
+  return raw.every((b) => b < 0x80) && !/[^\x00-\x7F]/.test(decoded.text);
+}
+
+/** `FacturXEncodingError`'s message for an attachment whose bytes did not decode. */
+function undecodableAttachment(name: string, { problem, label }: UndecodableXml): string {
+  const attached = `The XML attached as "${name}"`;
+  switch (problem) {
+    case "unsupported":
+      return (
+        `${attached} declares encoding "${label}", which this runtime cannot decode. Factur-X and ` +
+        `ZUGFeRD attachments are UTF-8, which every runtime decodes.`
+      );
+    case "invalid":
+      return (
+        `${attached} contains bytes that are not valid ${label}, so it is not the text its producer ` +
+        `meant. Factur-X and ZUGFeRD attachments are UTF-8.`
+      );
+    case "mislabelled":
+      return (
+        `${attached} declares encoding "${label}", but its bytes are UTF-8: it was converted to UTF-8 ` +
+        `and its declaration was not. A receiver that honours the declaration reads every non-ASCII ` +
+        `character in it as two or more wrong ones.`
+      );
+  }
 }
 
 /**
@@ -1663,14 +1752,15 @@ function decodePdfTextString(value: string): string {
  * Pull the invoice XML out of a Factur-X / ZUGFeRD / XRechnung-CII PDF.
  *
  * Extraction only — this never writes a PDF. The returned `xml` is the
- * attachment's bytes decoded as UTF-8 and is suitable input for
- * `parseCiiInvoice`.
+ * attachment's UTF-8 text and is suitable input for `parseCiiInvoice`.
  *
  * Throws `FacturXNotFoundError` when the document carries no XML attachment,
- * `PdfParseError` when the bytes are not a readable PDF, `PdfSecurityError`
- * when a limit in `PdfLimits` is hit, and `PdfUnsupportedFilterError` for a
- * compression filter this reader does not implement. It does not return a
- * partial result and it does not throw anything else.
+ * `FacturXEncodingError` when the attachment is not UTF-8 (see "The
+ * attachment's text" above), `PdfParseError` when the bytes are not a readable
+ * PDF, `PdfSecurityError` when a limit in `PdfLimits` is hit, and
+ * `PdfUnsupportedFilterError` for a compression filter this reader does not
+ * implement. It does not return a partial result and it does not throw
+ * anything else.
  */
 export function extractFacturX(
   bytes: Uint8Array,
@@ -1815,7 +1905,31 @@ export function extractFacturX(
     );
   }
 
-  const xml = utf8(raw).replace(/^﻿/, "");
+  const decoded = decodeXml(raw);
+  if ("problem" in decoded) {
+    throw new FacturXEncodingError(chosen.name, decoded.label, undecodableAttachment(chosen.name, decoded));
+  }
+  if (decoded.encoding !== "utf-8") {
+    if (!readsTheSameAsUtf8(raw, decoded)) {
+      throw new FacturXEncodingError(
+        chosen.name,
+        decoded.label,
+        `The XML attached as "${chosen.name}" is in ${decoded.label}, not UTF-8. Factur-X and ZUGFeRD ` +
+          `attachments are UTF-8, and a receiver that follows the format reads them as UTF-8 whatever ` +
+          `they declare — Mustang, the open-source ZUGFeRD validator, does — so every non-ASCII ` +
+          `character in this one would reach it as something else.`,
+      );
+    }
+    warnings.push(
+      `The attachment "${chosen.name}" declares encoding "${decoded.label}". Factur-X and ZUGFeRD ` +
+        `attachments are UTF-8. This one holds only ASCII, which reads the same in both, so it was ` +
+        `returned; the first non-ASCII character its producer writes will not read the same.`,
+    );
+  }
+
+  // The byte-order mark is not part of the XML. A second one would be: it
+  // stays, as it does when validate() reads a file.
+  const xml = decoded.text.replace(/^\uFEFF/, "");
   if (!/<[^>]*CrossIndustryInvoice/i.test(xml) && !/<\?xml/i.test(xml)) {
     warnings.push(
       `The attachment "${chosen.name}" does not begin with an XML declaration and contains no ` +
