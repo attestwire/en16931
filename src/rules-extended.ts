@@ -3,7 +3,9 @@ import { codelistRules } from "./rules-codelists.js";
 import { coreRules } from "./rules-core.js";
 import { creditNoteRules } from "./rules-credit-note.js";
 import { decimalRules } from "./rules-decimals.js";
+import { defaultsRules } from "./rules-defaults.js";
 import { germanRules } from "./rules-de.js";
+import { identifierRules } from "./rules-identifiers.js";
 import { peppolRules } from "./rules-peppol.js";
 import { referenceRules } from "./rules-references.js";
 import { representableRules } from "./rules-representable.js";
@@ -33,5 +35,7 @@ export const extendedRules: RuleFn[] = [
   ...referenceRules,
   ...germanRules,
   ...peppolRules,
+  ...identifierRules,
   ...representableRules,
+  ...defaultsRules,
 ];

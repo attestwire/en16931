@@ -5,7 +5,14 @@ import { inputRules, validateInput } from "./index.js";
 import { CATEGORY_RULE_INFIX, makeRuleContext } from "./rule-kit.js";
 import type { RuleContext } from "./rule-kit.js";
 import { clean, cleanLine, withInvoice, withLine } from "./testkit.js";
-import type { InvoiceInput, InvoiceTotals, TeachingError, VatCategory } from "./types.js";
+import type {
+  InvoiceFacts,
+  InvoiceInput,
+  InvoiceLineFacts,
+  InvoiceTotals,
+  TeachingError,
+  VatCategory,
+} from "./types.js";
 
 /**
  * Cross-cutting guarantees about the whole rule set.
@@ -24,6 +31,16 @@ import type { InvoiceInput, InvoiceTotals, TeachingError, VatCategory } from "./
  * library if it did. If you change a rule, regenerate them and run the whole
  * repository's tests, not just this package's.
  */
+
+/** `clean`, stated as business facts: lines may leave the VAT category to a scenario. */
+const withFacts = (overrides: Partial<InvoiceFacts>): InvoiceInput =>
+  ({ ...clean, ...overrides }) as unknown as InvoiceInput;
+
+/** A line with no VAT category of its own. */
+const factLine = (overrides: Partial<InvoiceLineFacts> = {}): InvoiceLineFacts => {
+  const { vatCategory: _category, vatRate: _rate, ...line } = cleanLine();
+  return { ...line, ...overrides };
+};
 
 const outOfScopeParty = {
   seller: { ...clean.seller, vatId: undefined, taxRegistrationId: "18/181/08155" },
@@ -1016,6 +1033,48 @@ const BATTERY: [string, InvoiceInput][] = [
   ["documentStatedGroupIncomplete", withInvoice({
     declaredTotals: statedDocument([{}]),
   })],
+  // The VAT scenarios (rules-defaults.ts, 0.14.0): business facts in place of
+  // codes. Each fixture states a scenario, so validateInput judges the facts as
+  // stated and everything else on the explicit invoice they stand for.
+  ["vatScenarioApplied", withFacts({
+    vatScenario: "intra-eu-services",
+    buyer: { ...clean.buyer, vatId: "FR12345678901", address: { city: "Lyon", postalCode: "69001", countryCode: "FR" } },
+    lines: [factLine()],
+  })],
+  ["vatScenarioUnknown", withFacts({
+    lines: [factLine({ vatScenario: "intra-eu-service" as never })],
+  })],
+  ["vatScenarioConflict", withFacts({
+    lines: [factLine({ vatScenario: "export", vatCategory: "S", vatRate: 19 })],
+  })],
+  ["vatScenarioFactMissing", withFacts({
+    vatScenario: "intra-eu-goods",
+    buyer: { ...clean.buyer, vatId: "FR12345678901", address: { city: "Lyon", postalCode: "69001", countryCode: "FR" } },
+    lines: [factLine()],
+  })],
+  ["vatScenarioUnsupported", withFacts({
+    vatScenario: "small-business-exemption",
+    seller: { ...clean.seller, address: { city: "Linz", postalCode: "4020", countryCode: "AT" } },
+    lines: [factLine()],
+  })],
+  // An IBAN and no payment means code: "58" is inferred and noted (0.14.0).
+  ["paymentMeansInferred", withFacts({
+    payment: { iban: "DE02120300000000202051", accountName: "Acme GmbH" },
+  })],
+  // The identifier checks (rules-identifiers.ts): a Leitweg-ID with a wrong
+  // check digit in BT-10, one without its hyphens under scheme 0204, an IBAN
+  // with a wrong check digit outside BR-DE-19's reach (credit transfer 30), a
+  // lower-case BIC, and a SIREN and a SIRET whose Luhn checks fail.
+  ["leitwegIdCheckDigits", withInvoice({ buyerReference: "04011000-1234512345-07" })],
+  ["leitwegIdForm", withInvoice({
+    buyer: { ...clean.buyer, electronicAddress: { schemeId: "0204", value: "04011000123451234506" } },
+  })],
+  ["ibanCheckDigits", withInvoice({ payment: { meansCode: "30", iban: "DE02120300000000202052" } })],
+  ["bicCase", withInvoice({ payment: { ...clean.payment!, bic: "byladem1001" } })],
+  ["sirenCheckDigit", withInvoice({
+    seller: { ...clean.seller, legalRegistrationId: "123456789", legalRegistrationSchemeId: "0002" },
+  })],
+  ["siretCheckDigit", withInvoice({ buyer: { ...clean.buyer, identifier: { schemeId: "0009", value: "12345678200011" } } })],
 ];
 
 /** Every finding the battery produces, tagged with the case that produced it. */

@@ -48,8 +48,9 @@ Usage:
   npx @attestwire/en16931 <file|directory>... [options]
 
 Reads UBL 2.1 and UN/CEFACT CII XML, and the CII payload inside a Factur-X /
-ZUGFeRD PDF. A directory is searched recursively for .xml and .pdf files.
-Everything runs locally: no account, no key, no network call.
+ZUGFeRD PDF, whose attachment and XMP metadata it checks too (the AW-PDF-*
+findings; not a PDF/A verdict). A directory is searched recursively for .xml
+and .pdf files. Everything runs locally: no account, no key, no network call.
 
 Options:
   --short              One line per finding: rule, business term, the problem

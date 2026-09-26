@@ -62,6 +62,25 @@ export {
 } from "./facturx-pdf.js";
 
 /**
+ * The container's own findings: what a Factur-X / ZUGFeRD PDF says about its
+ * invoice XML and in its XMP metadata, as `extractFacturX(...).findings` (each
+ * with a stable `id`) and as the `AW-PDF-*` findings `validate()` reports.
+ * Never fatal. `facturXProfileFindings` adds the ones that need the XML's
+ * BT-24, for a caller that extracts and parses the XML itself.
+ */
+export {
+  FACTURX_RULES,
+  FACTURX_OBSERVATIONS,
+  facturXLevel,
+  facturXProfileFindings,
+  type FacturXFinding,
+  type FacturXLevel,
+  type FacturXObservation,
+  type FacturXRule,
+} from "./facturx-findings.js";
+export type { FacturXXmp, FacturXXmpSchema } from "./xmp.js";
+
+/**
  * One call for an existing file — new in 0.10.0.
  *
  * XML (UBL or CII, any declared encoding) or a Factur-X / ZUGFeRD PDF in, the
@@ -129,6 +148,26 @@ export {
 } from "./fixtures.js";
 
 /**
+ * Business facts in, EN 16931 codes out — new in 0.14.0.
+ *
+ * State what happened (`vatScenario: "intra-eu-services"`) and the engine
+ * fills the VAT category, the rate and the exemption code and text; give an
+ * IBAN and leave out the payment means code, and it infers that too.
+ * `validateInput` and both generators apply `applyDefaults` on their own;
+ * calling it returns the explicit invoice and a note of everything that was
+ * filled in. `applyVatScenarios` is the VAT half alone.
+ */
+export { applyVatScenarios, VAT_SCENARIOS } from "./vat-scenarios.js";
+export { applyDefaults } from "./defaults.js";
+
+/**
+ * A credit note from the invoice it credits — new in 0.14.0: BT-3 381, the
+ * reference to the original (BT-25, BT-26), the same parties, currency and
+ * payment details, and the chosen lines with their positive amounts.
+ */
+export { createCreditNote } from "./create-credit-note.js";
+
+/**
  * The EN 16931 code lists the BR-CL-* rules enforce, as frozen arrays and
  * membership sets — useful for building a unit picker or a currency dropdown
  * that cannot offer a value the validator will then reject.
@@ -139,8 +178,39 @@ export {
  */
 export * from "./codelists/index.js";
 
+/**
+ * A unit word ("Stk", "Stunden", "hours", "pièces") to its UN/ECE
+ * Recommendation 20 code, or undefined. `BR-CL-23` uses it to name the code in
+ * its fix; a caller can convert its own units before they reach an invoice.
+ */
+export { resolveUnitCode, type ResolvedUnitCode } from "./units.js";
+
+/**
+ * Identifier checks the regulation does not make: the Leitweg-ID's check
+ * digits, the IBAN's length and check digits, the BIC's form, and the Luhn
+ * check of a SIREN or SIRET. `validateInput` reports each as an `ATW-` warning
+ * where the identifier is expected; these are the same checks as yes/no
+ * answers, for a form that wants one before the invoice exists.
+ */
+export {
+  isValidLeitwegId,
+  isValidIban,
+  isValidBic,
+  isValidSiren,
+  isValidSiret,
+  IBAN_LENGTHS,
+} from "./identifiers.js";
+
+/**
+ * What a finding means for the business that received the invoice, under the
+ * German BMF letter of 15 October 2025: `format` (not an e-invoice at all),
+ * `vat-relevant` (about content §§ 14 Abs. 4, 14a UStG require) or `formal`.
+ * Attestwire's reading of the letter, not tax advice.
+ */
+export { recipientClass, type RecipientClass } from "./recipient-class.js";
+
 import { runInputRules } from "./rules.js";
-import type { InvoiceInput, Profile, ValidationResult } from "./types.js";
+import type { InvoiceFacts, InvoiceInput, Profile, ValidationResult } from "./types.js";
 
 /**
  * Validate an invoice object (the `InvoiceInput` model) against EN 16931 / CIUS
@@ -159,8 +229,15 @@ import type { InvoiceInput, Profile, ValidationResult } from "./types.js";
  * uses. `information` is deliberately *not* folded into `warnings`: a caller
  * whose build fails on a non-empty `warnings` array should not be stopped by a
  * finding the official validator raises and then accepts.
+ *
+ * Business facts are accepted too (0.14.0). An `InvoiceFacts` whose lines say
+ * `vatScenario` instead of a VAT category, or whose payment instructions leave
+ * out the means code, becomes the explicit invoice `applyDefaults` returns,
+ * and every rule judges that invoice. The facts themselves are judged as
+ * stated (`ATW-VAT-SCENARIO-*`), and what was filled in comes back in
+ * `information`.
  */
-export function validateInput(inv: InvoiceInput): ValidationResult {
+export function validateInput(inv: InvoiceInput | InvoiceFacts): ValidationResult {
   const findings = runInputRules(inv);
   return {
     valid: findings.every((e) => e.severity !== "fatal"),

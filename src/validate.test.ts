@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { toSarif } from "./export.js";
 import { extractFacturX } from "./facturx-pdf.js";
+import { buildPdf, FACTURX_EN16931_XML, xmpPacket, type BuildPdfOptions } from "./facturx-testkit.js";
 import { extendedXRechnungCii } from "./fixtures.js";
 import { generateXRechnungUBL } from "./generate.js";
 import { parseCiiInvoice } from "./parse-cii.js";
@@ -127,7 +128,11 @@ describe("validate", () => {
     const r = validate(fixture("facturx/facturx-en16931-einfach.pdf"));
     expect(r.syntax).toBe("cii");
     expect(r.container).toBe("factur-x.xml");
-    for (const f of all(r)) expect(f.location?.attachment).toBe("factur-x.xml");
+    // Every finding about the XML is located in the attachment. The
+    // container's own AW-PDF-* findings are about the PDF around it, which has
+    // no line to point at (see the container tests below).
+    const aboutTheXml = all(r).filter((f) => !f.rule.startsWith("AW-PDF-"));
+    for (const f of aboutTheXml) expect(f.location?.attachment).toBe("factur-x.xml");
   });
 
   it("calls a Factur-X MINIMUM document what it is", () => {
@@ -480,4 +485,158 @@ describe("a document that states its VAT rates as fractions", () => {
       expect(stated).toBeDefined();
     });
   }
+});
+
+describe("the Factur-X container's own findings", () => {
+  // The same XML in every PDF here, so any difference between two results is
+  // the container's. Its BT-24 declares EN 16931, as the default container's
+  // metadata does.
+  const cii = FACTURX_EN16931_XML;
+  const pdf = (options: BuildPdfOptions = {}) => buildPdf({ xml: cii, compress: true, ...options });
+  const container = (findings: { rule: string }[]) => findings.filter((f) => f.rule.startsWith("AW-PDF-"));
+
+  it("reports what the PDF says about its attachment, and the verdict on the invoice does not move", () => {
+    const clean = validate(pdf());
+    expect(clean.valid).toBe(true);
+    expect(container(all(clean))).toEqual([]);
+
+    const r = validate(pdf({ attachmentName: "invoice.xml", afRelationship: null, subtype: null }));
+    expect(r.valid).toBe(true);
+    expect(r.container).toBe("invoice.xml");
+    expect(ruleIds(container(r.warnings))).toEqual(["AW-PDF-ATTACHMENT", "AW-PDF-MIME", "AW-PDF-RELATIONSHIP"]);
+    expect(r.errors).toEqual([]);
+    expect(r.invoice).toEqual(clean.invoice);
+  });
+
+  it("gives them the TeachingError fields and nothing else: no location, xpath or docsUrl", () => {
+    // The hosted API passes these through verbatim, and its schema admits no
+    // other key and no location on an AW- finding.
+    const r = validate(pdf({ attachmentName: "invoice.xml", afRelationship: "Unspecified", omitAf: true }));
+    const found = container(all(r));
+    expect(found.length).toBe(3);
+    for (const f of found) {
+      expect(Object.keys(f).sort()).toEqual(["field", "fix", "message", "rule", "severity"]);
+      expect(f).toMatchObject({ field: "document" });
+    }
+  });
+
+  it("lists them after the engine's profile findings and before the rule findings", () => {
+    const r = validate(pdf({ attachmentName: "invoice.xml" }), { profile: "xrechnung-ubl" });
+    expect(r.warnings[0]!.rule).toBe("AW-PROFILE-SYNTAX");
+    expect(r.warnings[1]!.rule).toBe("AW-PDF-ATTACHMENT");
+    const firstRule = r.warnings.findIndex((f) => !f.rule.startsWith("AW-"));
+    const lastContainer = r.warnings.map((f) => f.rule).lastIndexOf("AW-PDF-ATTACHMENT");
+    if (firstRule !== -1) expect(lastContainer).toBeLessThan(firstRule);
+  });
+
+  it("keeps information in `information`, where it never touches a warnings gate", () => {
+    const r = validate(pdf({ extraAttachment: { name: "timesheet.xml", xml: "<timesheet/>" } }));
+    expect(container(r.warnings)).toEqual([]);
+    expect(container(r.information)).toMatchObject([{ rule: "AW-PDF-ATTACHMENT", severity: "information" }]);
+  });
+
+  it("still says what the PDF says when the XML inside cannot be read, and that explains the refusal", () => {
+    const ferd1 =
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<rsm:CrossIndustryDocument xmlns:rsm="urn:ferd:CrossIndustryDocument:invoice:1p0"/>';
+    const r = validate(buildPdf({ xml: ferd1, attachmentName: "ZUGFeRD-invoice.xml" }));
+    expect(r.syntax).toBeNull();
+    expect(r.valid).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toMatchObject({ rule: "AW-PARSE", severity: "fatal" });
+    expect(r.container).toBe("ZUGFeRD-invoice.xml");
+    const [notCii] = container(r.warnings);
+    expect(notCii).toMatchObject({ rule: "AW-PDF-ATTACHMENT", severity: "warning" });
+    expect(notCii!.message).toContain("ZUGFeRD 1.0 CrossIndustryDocument");
+  });
+
+  it("says nothing about a container when there is none", () => {
+    expect(container(all(validate(cii)))).toEqual([]);
+    expect(container(all(validate(bytes(cii))))).toEqual([]);
+  });
+
+  it("sets the profile the metadata declares against the one BT-24 declares", () => {
+    const basic = validate(pdf({ xmp: xmpPacket({ conformanceLevel: "BASIC" }) }));
+    expect(basic.valid).toBe(true);
+    const found = container(basic.warnings);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ rule: "AW-PDF-XMP-PROFILE", field: "BT-24", severity: "warning" });
+    expect(found[0]!.message).toContain(
+      'declares the BASIC profile (ConformanceLevel), but the XML declares EN 16931: its BT-24 is "urn:cen.eu:en16931:2017"',
+    );
+    expect(found[0]!.fix).toMatch(/^Write EN 16931 to the XMP ConformanceLevel\./);
+    expect(Object.keys(found[0]!).sort()).toEqual(["field", "fix", "message", "rule", "severity"]);
+
+    // XRechnung CII in a PDF: the metadata level is XRECHNUNG.
+    const xrechnung = text("xrechnung-cii-minimal.xml");
+    const agreeing = validate(buildPdf({ xml: xrechnung, compress: true, xmp: xmpPacket({ conformanceLevel: "XRECHNUNG" }) }));
+    expect(container(all(agreeing))).toEqual([]);
+    const disagreeing = validate(buildPdf({ xml: xrechnung, compress: true }));
+    expect(container(disagreeing.warnings)[0]!.message).toContain("declares the EN 16931 profile (ConformanceLevel), but the XML declares XRECHNUNG");
+  });
+
+  it("compares nothing when BT-24 declares no profile the metadata has a name for", () => {
+    const peppol = cii.replace(
+      "urn:cen.eu:en16931:2017",
+      "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0",
+    );
+    expect(peppol).not.toBe(cii);
+    const r = validate(buildPdf({ xml: peppol, compress: true, xmp: xmpPacket({ conformanceLevel: "BASIC" }) }));
+    expect(container(all(r))).toEqual([]);
+  });
+
+  it("reports an unknown level once, as unknown, not as a second disagreement", () => {
+    const r = validate(pdf({ xmp: xmpPacket({ conformanceLevel: "COMFORT" }) }));
+    expect(container(all(r)).map((f) => f.rule)).toEqual(["AW-PDF-XMP-PROFILE"]);
+    expect(container(all(r))[0]!.message).toMatch(/not one the Factur-X metadata defines/);
+  });
+
+  it("Data or Source on a profile Germany asks Alternative for is information, and the verdict does not move", () => {
+    for (const rel of ["Data", "Source"]) {
+      const r = validate(pdf({ afRelationship: rel }));
+      expect(r.valid, rel).toBe(true);
+      expect(container(r.warnings), rel).toEqual([]);
+      const found = container(r.information);
+      expect(found, rel).toHaveLength(1);
+      expect(found[0], rel).toMatchObject({ rule: "AW-PDF-RELATIONSHIP", field: "document", severity: "information" });
+      expect(found[0]!.message, rel).toContain(
+        `attached with /AFRelationship /${rel}, and its BT-24 declares the EN 16931 profile`,
+      );
+      expect(found[0]!.message, rel).toContain("Germany the ZUGFeRD specification requires Alternative");
+      expect(found[0]!.fix, rel).toContain(`For France, /${rel} can stay.`);
+    }
+    expect(container(all(validate(pdf({ afRelationship: "Alternative" }))))).toEqual([]);
+  });
+
+  it("asks it of BASIC, EN 16931, EXTENDED and XRECHNUNG only: MINIMUM and BASIC WL are Data", () => {
+    const cases: [string, string, boolean][] = [
+      ["urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic", "BASIC", true],
+      ["urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended", "EXTENDED", true],
+      ["urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0", "XRECHNUNG", true],
+      ["urn:factur-x.eu:1p0:minimum", "MINIMUM", false],
+      ["urn:factur-x.eu:1p0:basicwl", "BASIC WL", false],
+      ["urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0", "EN 16931", false],
+    ];
+    for (const [id, level, asked] of cases) {
+      const xml = cii.replace("urn:cen.eu:en16931:2017", id);
+      const r = validate(buildPdf({ xml, compress: true, afRelationship: "Data", xmp: xmpPacket({ conformanceLevel: level }) }));
+      expect(container(r.warnings), id).toEqual([]);
+      expect(container(r.information).length, id).toBe(asked ? 1 : 0);
+    }
+  });
+
+  it("FeRD's samples: MINIMUM's container agrees with its XML; BASIC's and EN 16931's lack the Factur-X metadata and use Data", () => {
+    const minimum = validate(fixture("facturx/facturx-minimum-rechnung.pdf"));
+    expect(container(all(minimum))).toEqual([]);
+    expect(minimum.errors[0]!.rule).toBe("AW-PROFILE-SUBSET");
+
+    for (const name of ["facturx-basic-einfach.pdf", "facturx-en16931-einfach.pdf"]) {
+      const r = validate(fixture(`facturx/${name}`));
+      expect(container(r.warnings).map((f) => f.rule), name).toEqual(["AW-PDF-XMP"]);
+      expect(container(r.warnings)[0]!.message, name).toMatch(/does not declare this file as Factur-X or ZUGFeRD/);
+      expect(container(r.information).map((f) => f.rule), name).toEqual(["AW-PDF-RELATIONSHIP"]);
+      expect(container(r.information)[0]!.message, name).toContain("/AFRelationship /Data");
+    }
+    expect(validate(fixture("facturx/facturx-en16931-einfach.pdf")).valid).toBe(true);
+  });
 });

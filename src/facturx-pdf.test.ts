@@ -14,6 +14,8 @@ import {
   PdfUnsupportedFilterError,
   extractFacturX,
 } from "./facturx-pdf.js";
+import { FACTURX_OBSERVATIONS } from "./facturx-findings.js";
+import { buildPdf, bytes, concat, xmpPacket } from "./facturx-testkit.js";
 import { parseCiiInvoice } from "./parse-cii.js";
 import { parseXml } from "./xml-parse.js";
 
@@ -46,126 +48,8 @@ const REAL = [
   { file: "facturx-en16931-einfach.pdf", profile: "en16931", xref: "xref stream + ObjStm" },
 ] as const;
 
-// ---------------------------------------------------------------------------
-// Hand-built PDFs
-// ---------------------------------------------------------------------------
-
-const bytes = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, "latin1"));
-const concat = (parts: Uint8Array[]): Uint8Array => {
-  const total = parts.reduce((n, p) => n + p.length, 0);
-  const out = new Uint8Array(total);
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-};
-
-/**
- * A minimal, valid, classic-xref PDF with one embedded XML attachment.
- *
- * Built byte by byte with real offsets so the parser is exercised rather than
- * humoured. `options` perturbs exactly one thing at a time, which is what makes
- * each adversarial case below attributable to one cause.
- */
-function buildPdf(
-  options: {
-    attachmentName?: string;
-    xml?: string;
-    compress?: boolean;
-    afRelationship?: string | null;
-    omitNames?: boolean;
-    omitAf?: boolean;
-    subtype?: string;
-    startxref?: number | "missing";
-    extraAttachment?: { name: string; xml: string };
-    /** Extra filter on the embedded-file stream, e.g. LZWDecode / Crypt. */
-    streamFilter?: string;
-    /** Point /EF at an object number the xref table does not list. */
-    danglingEf?: boolean;
-    /** Raw bytes to use as the embedded stream, with /Filter /FlateDecode. */
-    rawPayload?: Uint8Array;
-  } = {},
-): Uint8Array {
-  const name = options.attachmentName ?? "factur-x.xml";
-  const xml =
-    options.xml ??
-    '<?xml version="1.0" encoding="UTF-8"?>\n<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>';
-  const payload =
-    options.rawPayload ??
-    (options.compress
-      ? new Uint8Array(deflateSync(Buffer.from(xml, "utf8")))
-      : bytes(xml));
-
-  const objects: string[] = [];
-  const streams = new Map<number, Uint8Array>();
-
-  objects[1] =
-    `<< /Type /Catalog /Pages 2 0 R` +
-    (options.omitNames ? "" : ` /Names << /EmbeddedFiles << /Names [ (${name}) 4 0 R ] >> >>`) +
-    (options.omitAf ? "" : ` /AF [ 4 0 R ]`) +
-    ` >>`;
-  objects[2] = `<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>`;
-  objects[3] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>`;
-  objects[4] =
-    `<< /Type /Filespec /F (${name}) /UF (${name})` +
-    (options.afRelationship === null
-      ? ""
-      : ` /AFRelationship /${options.afRelationship ?? "Alternative"}`) +
-    ` /EF << /F ${options.danglingEf ? 99 : 5} 0 R >> >>`;
-  const filter =
-    options.streamFilter ??
-    (options.compress || options.rawPayload ? "FlateDecode" : undefined);
-  objects[5] =
-    `<< /Type /EmbeddedFile /Subtype /${options.subtype ?? "text#2Fxml"} /Length ${payload.length}` +
-    (filter ? ` /Filter /${filter}` : ``) +
-    ` >>`;
-  streams.set(5, payload);
-
-  if (options.extraAttachment) {
-    objects[1] =
-      `<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [ (${name}) 4 0 R (${options.extraAttachment.name}) 6 0 R ] >> >> /AF [ 4 0 R 6 0 R ] >>`;
-    objects[6] = `<< /Type /Filespec /F (${options.extraAttachment.name}) /UF (${options.extraAttachment.name}) /AFRelationship /Data /EF << /F 7 0 R >> >>`;
-    objects[7] = `<< /Type /EmbeddedFile /Subtype /text#2Fxml /Length ${options.extraAttachment.xml.length} >>`;
-    streams.set(7, bytes(options.extraAttachment.xml));
-  }
-
-  const parts: Uint8Array[] = [bytes("%PDF-1.7\n")];
-  let offset = parts[0]!.length;
-  const offsets: number[] = [];
-
-  for (let num = 1; num < objects.length; num++) {
-    const body = objects[num];
-    if (body === undefined) continue;
-    offsets[num] = offset;
-    const head = bytes(`${num} 0 obj\n${body}\n`);
-    const chunks = [head];
-    const stream = streams.get(num);
-    if (stream) {
-      chunks.push(bytes("stream\n"), stream, bytes("\nendstream\n"));
-    }
-    chunks.push(bytes("endobj\n"));
-    for (const c of chunks) {
-      parts.push(c);
-      offset += c.length;
-    }
-  }
-
-  const xrefStart = offset;
-  const count = objects.length;
-  let table = `xref\n0 ${count}\n0000000000 65535 f \n`;
-  for (let num = 1; num < count; num++) {
-    table += `${String(offsets[num] ?? 0).padStart(10, "0")} 00000 n \n`;
-  }
-  table += `trailer\n<< /Size ${count} /Root 1 0 R >>\n`;
-  parts.push(bytes(table));
-
-  if (options.startxref !== "missing") {
-    parts.push(bytes(`startxref\n${options.startxref ?? xrefStart}\n%%EOF\n`));
-  }
-  return concat(parts);
-}
+// The hand-built PDFs (buildPdf, and the bytes and concat helpers) live in
+// facturx-testkit.ts, shared with the validate, command-line and export tests.
 
 // ---------------------------------------------------------------------------
 
@@ -1165,5 +1049,437 @@ describe("extractFacturX: limits", () => {
     expect(() => extractFacturX("not bytes" as unknown as Uint8Array)).toThrow(
       PdfParseError,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The container's findings
+// ---------------------------------------------------------------------------
+
+describe("extractFacturX: the container's findings", () => {
+  const ids = (pdf: Uint8Array) => extractFacturX(pdf).findings.map((f) => f.id);
+  const only = (pdf: Uint8Array, id: string) => {
+    const found = extractFacturX(pdf).findings.filter((f) => f.id === id);
+    expect(found, `${id} raised ${found.length} times`).toHaveLength(1);
+    return found[0]!;
+  };
+
+  it("a file registered the way Factur-X asks has none", () => {
+    const result = extractFacturX(buildPdf());
+    expect(result.findings).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.relationship).toBe("Alternative");
+  });
+
+  it("FeRD's samples register their attachment the way Factur-X asks", () => {
+    for (const { file } of REAL) {
+      const rules = extractFacturX(read(file)).findings.map((f) => f.rule);
+      expect(rules.filter((r) => !r.startsWith("AW-PDF-XMP")), file).toEqual([]);
+    }
+  });
+
+  it("a house name is AW-PDF-ATTACHMENT, a warning that names the standard ones", () => {
+    const f = only(buildPdf({ attachmentName: "invoice.xml" }), "attachment_name");
+    expect(f).toMatchObject({ rule: "AW-PDF-ATTACHMENT", field: "document", severity: "warning" });
+    expect(f.message).toContain('attached as "invoice.xml"');
+    expect(f.message).toMatch(/factur-x\.xml.*zugferd-invoice\.xml.*xrechnung\.xml/);
+    expect(f.fix).toMatch(/^Attach the invoice XML as factur-x\.xml/);
+  });
+
+  it("a second XML attachment beside factur-x.xml is information: the standard name decides", () => {
+    const f = only(
+      buildPdf({ extraAttachment: { name: "timesheet.xml", xml: "<other/>" } }),
+      "attachment_extra",
+    );
+    expect(f).toMatchObject({ rule: "AW-PDF-ATTACHMENT", severity: "information" });
+    expect(f.message).toContain('read from "factur-x.xml"');
+    expect(f.message).toContain('"timesheet.xml"');
+  });
+
+  it("several XML attachments with no standard name, or two, are a warning: nothing says which is the invoice", () => {
+    const none = buildPdf({ attachmentName: "a.xml", extraAttachment: { name: "b.xml", xml: "<other/>" } });
+    expect(only(none, "attachment_ambiguous")).toMatchObject({ severity: "warning" });
+    expect(only(none, "attachment_ambiguous").message).toContain("none has a standard name");
+    expect(ids(none)).toContain("attachment_name");
+
+    const two = buildPdf({ extraAttachment: { name: "xrechnung.xml", xml: "<other/>" } });
+    expect(only(two, "attachment_ambiguous").message).toContain("2 have a standard name");
+    expect(ids(two)).not.toContain("attachment_extra");
+  });
+
+  it("ASCII under a declaration other than UTF-8 is a warning, and the XML still comes back", () => {
+    const ascii =
+      '<?xml version="1.0" encoding="ISO-8859-1"?>\n' +
+      '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"/>';
+    const result = extractFacturX(
+      buildPdf({ rawPayload: new Uint8Array(deflateSync(Buffer.from(ascii, "latin1"))) }),
+    );
+    expect(result.xml).toBe(ascii);
+    const f = result.findings.find((x) => x.id === "attachment_encoding");
+    expect(f).toMatchObject({ rule: "AW-PDF-ATTACHMENT", severity: "warning" });
+    expect(f!.message).toContain('declares encoding "iso-8859-1"');
+    expect(f!.fix).toContain('encoding="UTF-8"');
+  });
+
+  it("an attachment that is not CII is a warning, with or without an XML declaration", () => {
+    for (const xml of ['<?xml version="1.0"?><Invoice/>', "<Invoice/>"]) {
+      expect(only(buildPdf({ xml }), "attachment_not_cii"), xml).toMatchObject({
+        rule: "AW-PDF-ATTACHMENT",
+        severity: "warning",
+      });
+    }
+  });
+
+  it("two different files under one name are AW-PDF-AF, reported once", () => {
+    const f = only(buildPdf({ afCopy: "<rsm:CrossIndustryInvoice/>" }), "af_streams_differ");
+    expect(f).toMatchObject({ rule: "AW-PDF-AF", severity: "warning" });
+    expect(f.message).toContain("two versions of the invoice XML");
+  });
+
+  it("an attachment missing from /AF, or from the name tree, is AW-PDF-AF", () => {
+    expect(only(buildPdf({ omitAf: true }), "af_missing")).toMatchObject({
+      rule: "AW-PDF-AF",
+      severity: "warning",
+    });
+    expect(only(buildPdf({ omitNames: true }), "af_name_tree_missing")).toMatchObject({
+      rule: "AW-PDF-AF",
+      severity: "warning",
+    });
+    // Neither was ever a warning, and `warnings` keeps saying what it said.
+    expect(extractFacturX(buildPdf({ omitAf: true })).warnings).toEqual([]);
+    expect(extractFacturX(buildPdf({ omitNames: true })).warnings).toEqual([]);
+  });
+
+  it("counts an /AF entry that holds the attachment's stream under no name of its own", () => {
+    // The name tree names the file; /AF lists a second file specification with
+    // no /F or /UF that embeds the same stream. That is the attachment in /AF.
+    const payload = bytes(SAMPLE_XML);
+    const objects: (string | undefined)[] = [];
+    objects[1] =
+      `<< /Type /Catalog /Names << /EmbeddedFiles << /Names [ (factur-x.xml) 4 0 R ] >> >> /AF [ 6 0 R ] >>`;
+    objects[4] =
+      `<< /Type /Filespec /F (factur-x.xml) /UF (factur-x.xml) /AFRelationship /Alternative /EF << /F 5 0 R >> >>`;
+    objects[5] = `<< /Type /EmbeddedFile /Subtype /text#2Fxml /Length ${payload.length} >>`;
+    objects[6] = `<< /Type /Filespec /AFRelationship /Alternative /EF << /F 5 0 R >> >>`;
+    const result = extractFacturX(assemble(objects, new Map([[5, payload]])));
+    expect(result.attachmentName).toBe("factur-x.xml");
+    expect(result.findings.map((f) => f.id)).not.toContain("af_missing");
+    expect(result.findings.map((f) => f.id)).not.toContain("af_name_tree_missing");
+  });
+
+  it("no /AFRelationship, or one Factur-X does not allow, is AW-PDF-RELATIONSHIP", () => {
+    const missing = extractFacturX(buildPdf({ afRelationship: null }));
+    expect(missing.relationship).toBeUndefined();
+    expect(missing.findings).toMatchObject([
+      { rule: "AW-PDF-RELATIONSHIP", id: "relationship_missing", severity: "warning" },
+    ]);
+
+    for (const rel of ["Unspecified", "Supplement"]) {
+      const f = only(buildPdf({ afRelationship: rel }), "relationship_unexpected");
+      expect(f.message, rel).toContain(`/AFRelationship /${rel}`);
+      expect(f.fix, rel).toMatch(/\/Alternative/);
+    }
+    for (const rel of ["Alternative", "Data", "Source"]) {
+      const result = extractFacturX(buildPdf({ afRelationship: rel }));
+      expect(result.relationship, rel).toBe(rel);
+      expect(result.findings, rel).toEqual([]);
+    }
+  });
+
+  it("a media type that is not XML, or none, is AW-PDF-MIME", () => {
+    const octet = only(buildPdf({ subtype: "application#2Foctet-stream" }), "mime_not_xml");
+    expect(octet).toMatchObject({ rule: "AW-PDF-MIME", severity: "warning" });
+    expect(octet.message).toContain("application/octet-stream");
+    expect(only(buildPdf({ subtype: null }), "mime_missing")).toMatchObject({
+      rule: "AW-PDF-MIME",
+      severity: "warning",
+    });
+    // application/xml is an XML type too: FeRD's own samples use it.
+    expect(extractFacturX(buildPdf({ subtype: "application#2Fxml" })).findings).toEqual([]);
+  });
+
+  it("every finding has the shape validate() reports, is never fatal, and comes in rule order", () => {
+    const pdfs = [
+      buildPdf({ attachmentName: "a.xml", extraAttachment: { name: "b.xml", xml: "<other/>" } }),
+      buildPdf({ afRelationship: null, subtype: null, omitAf: true }),
+      buildPdf({ afCopy: "<x/>", afRelationship: "Unspecified", xml: "<Invoice/>" }),
+    ];
+    const order = ["AW-PDF-ATTACHMENT", "AW-PDF-AF", "AW-PDF-RELATIONSHIP", "AW-PDF-MIME"];
+    for (const pdf of pdfs) {
+      const { findings } = extractFacturX(pdf);
+      expect(findings.length).toBeGreaterThan(1);
+      for (const f of findings) {
+        expect(Object.keys(f).sort()).toEqual(["field", "fix", "id", "message", "rule", "severity"]);
+        expect(["warning", "information"]).toContain(f.severity);
+        expect(f.rule).toMatch(/^AW-PDF-[A-Z]+(-[A-Z]+)*$/);
+        expect(f.message.length).toBeGreaterThan(80); // it has to teach
+        expect(f.fix.length).toBeGreaterThan(20);
+      }
+      const ranks = findings.map((f) => order.indexOf(f.rule));
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    }
+  });
+
+  it("every sentence `warnings` carries has a finding beside it, so the two views cannot drift", () => {
+    const cases = [
+      buildPdf({ attachmentName: "invoice.xml" }),
+      buildPdf({ extraAttachment: { name: "extra.xml", xml: "<other/>" } }),
+      buildPdf({ afRelationship: null }),
+      buildPdf({ afRelationship: "Unspecified" }),
+      buildPdf({ subtype: "application#2Foctet-stream" }),
+      buildPdf({ afCopy: "<x/>" }),
+      buildPdf({ xml: '<?xml version="1.0"?><Invoice/>' }),
+    ];
+    for (const pdf of cases) {
+      const { warnings, findings } = extractFacturX(pdf);
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(findings.length).toBe(warnings.length);
+    }
+  });
+});
+
+describe("extractFacturX: the XMP metadata", () => {
+  const FX = "urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#";
+  const DECLARED = {
+    pdfaPart: "3",
+    pdfaConformance: "B",
+    namespace: FX,
+    schema: "factur-x",
+    documentType: "INVOICE",
+    documentFileName: "factur-x.xml",
+    version: "1.0",
+    conformanceLevel: "EN 16931",
+  };
+  const only = (pdf: Uint8Array, id: string) => {
+    const result = extractFacturX(pdf);
+    const found = result.findings.filter((f) => f.id === id);
+    expect(found, `${id} raised ${found.length} times among ${result.findings.map((f) => f.id)}`).toHaveLength(1);
+    return found[0]!;
+  };
+
+  it("reads the packet stored or FlateDecode'd, as elements or attributes, in x:xmpmeta or bare", () => {
+    const cases: [string, Parameters<typeof buildPdf>[0]][] = [
+      ["stored, elements, wrapped", {}],
+      ["FlateDecode", { xmpCompress: true }],
+      ["attributes", { xmp: xmpPacket({ attributes: true }) }],
+      ["bare rdf:RDF with attributes, FlateDecode, as FeRD writes it", { xmp: xmpPacket({ attributes: true, bare: true }), xmpCompress: true }],
+      ["no extension schema", { xmp: xmpPacket({ noExtensionSchema: true }) }],
+    ];
+    for (const [label, options] of cases) {
+      const result = extractFacturX(buildPdf(options));
+      expect(result.xmp, label).toEqual(DECLARED);
+      expect(result.findings, label).toEqual([]);
+    }
+  });
+
+  it("does not take the extension schema's property names for the properties", () => {
+    // The pdfaExtension block names all four as text. With the properties
+    // themselves gone, what remains is a file that declares none of them.
+    const result = extractFacturX(
+      buildPdf({ xmp: xmpPacket({ documentType: null, documentFileName: null, version: null, conformanceLevel: null }) }),
+    );
+    expect(result.xmp).toEqual({ pdfaPart: "3", pdfaConformance: "B" });
+    expect(result.findings.map((f) => f.id)).toEqual(["xmp_facturx_missing"]);
+  });
+
+  it("reads FeRD's samples: MINIMUM declares itself in full, BASIC and EN 16931 claim PDF/A-3 and nothing more", () => {
+    const minimum = extractFacturX(read("facturx-minimum-rechnung.pdf"));
+    expect(minimum.xmp).toEqual({ ...DECLARED, conformanceLevel: "MINIMUM" });
+    expect(minimum.findings).toEqual([]);
+    for (const file of ["facturx-basic-einfach.pdf", "facturx-en16931-einfach.pdf"]) {
+      // FlateDecode, bare rdf:RDF, pdfaid as attributes, and no Factur-X
+      // properties at all: Mustang reports four errors for each of them.
+      const result = extractFacturX(read(file));
+      expect(result.xmp, file).toEqual({ pdfaPart: "3", pdfaConformance: "U" });
+      expect(result.findings.map((f) => f.id), file).toEqual(["xmp_facturx_missing"]);
+      expect(result.warnings, file).toEqual([]);
+    }
+  });
+
+  it("no metadata is AW-PDF-XMP, a warning, and `xmp` is null", () => {
+    const result = extractFacturX(buildPdf({ xmp: null }));
+    expect(result.xmp).toBeNull();
+    expect(result.findings).toMatchObject([{ rule: "AW-PDF-XMP", id: "xmp_missing", severity: "warning" }]);
+    expect(result.findings[0]!.message).toMatch(/no \/Metadata stream/);
+  });
+
+  it("metadata that cannot be read is a finding, never a throw, and the invoice still comes back", () => {
+    const cases: [string, Parameters<typeof buildPdf>[0], RegExp][] = [
+      ["not a stream", { metadataObject: "<< /Type /Metadata /Subtype /XML >>" }, /not a stream/],
+      ["an unimplemented filter", { xmpFilter: "LZWDecode" }, /encoded with the LZWDecode filter/],
+      ["corrupt FlateDecode", { xmpBytes: new Uint8Array(64).fill(0xff) }, /DEFLATE|stream/],
+      ["not valid UTF-8", { xmpBytes: new Uint8Array(deflateSync(Buffer.from([0x3c, 0x78, 0x3e, 0xff, 0x3c, 0x2f, 0x78, 0x3e]))) }, /not valid utf-8/],
+      ["not well-formed", { xmp: '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF></x:xmpmeta>' }, /could not be read: /],
+      ["XML that is not XMP", { xmp: '<?xml version="1.0"?><html/>' }, /not XMP: it has no rdf:RDF element \(its root element is <html>\)/],
+      ["a DOCTYPE", { xmp: '<!DOCTYPE x [<!ENTITY a "b">]><x/>' }, /DOCTYPE/],
+    ];
+    for (const [label, options, detail] of cases) {
+      let result: ReturnType<typeof extractFacturX> | undefined;
+      expect(() => (result = extractFacturX(buildPdf(options))), label).not.toThrow();
+      expect(result!.xml, label).toContain("CrossIndustryInvoice");
+      expect(result!.xmp, label).toBeNull();
+      const [f] = result!.findings;
+      expect(result!.findings, label).toHaveLength(1);
+      expect(f, label).toMatchObject({ rule: "AW-PDF-XMP", id: "xmp_unreadable", severity: "warning" });
+      expect(f!.message, label).toMatch(detail);
+      expect(f!.message, label).toMatch(/[.!?)] A receiver reads the file's PDF\/A claim/);
+    }
+  });
+
+  it("a metadata flate bomb stops at the limit, as a finding; the invoice is read regardless", () => {
+    const bomb = new Uint8Array(deflateSync(Buffer.alloc(2 * 1024 * 1024)));
+    const result = extractFacturX(buildPdf({ xmpBytes: bomb }), { maxStreamBytes: 64 * 1024 });
+    expect(result.xml).toContain("CrossIndustryInvoice");
+    expect(only(buildPdf({ xmpBytes: bomb }), "xmp_unreadable")).toBeDefined();
+    expect(result.findings[0]!.message).toMatch(/inflated past the 65536-byte limit/);
+  });
+
+  it("a file that claims no PDF/A, another part, or no level of it, says so", () => {
+    const none = only(buildPdf({ xmp: xmpPacket({ part: null, conformance: null }) }), "xmp_pdfa_missing");
+    expect(none).toMatchObject({ rule: "AW-PDF-XMP", severity: "warning" });
+    expect(none.message).toContain("no pdfaid:part and no pdfaid:conformance");
+
+    expect(only(buildPdf({ xmp: xmpPacket({ part: "1" }) }), "xmp_pdfa_part").message).toMatch(/PDF\/A-1 forbids embedded files/);
+    expect(only(buildPdf({ xmp: xmpPacket({ part: "2" }) }), "xmp_pdfa_part").message).toMatch(
+      /identifies this file as PDF\/A-2 .*PDF\/A-2 allows only PDF\/A files to be embedded/,
+    );
+    expect(only(buildPdf({ xmp: xmpPacket({ part: "4", conformance: null }) }), "xmp_pdfa_part").message).toMatch(
+      /PDF\/A-4 .*finds a claim to something else/,
+    );
+
+    expect(only(buildPdf({ xmp: xmpPacket({ conformance: null }) }), "xmp_pdfa_conformance").message).toContain(
+      "no conformance level",
+    );
+    expect(only(buildPdf({ xmp: xmpPacket({ conformance: "X" }) }), "xmp_pdfa_conformance").message).toContain(
+      'the conformance level "X"',
+    );
+    for (const level of ["A", "B", "U"]) {
+      expect(extractFacturX(buildPdf({ xmp: xmpPacket({ conformance: level }) })).findings, level).toEqual([]);
+    }
+  });
+
+  it("some of the Factur-X properties, not all, names the missing ones", () => {
+    const f = only(buildPdf({ xmp: xmpPacket({ documentType: null, version: null }) }), "xmp_facturx_incomplete");
+    expect(f).toMatchObject({ rule: "AW-PDF-XMP", severity: "warning" });
+    expect(f.message).toContain("but not DocumentType, Version.");
+    expect(f.fix).toContain(`in the namespace ${FX}`);
+    // An empty value is no value.
+    expect(only(buildPdf({ xmp: xmpPacket({ version: "  " }) }), "xmp_facturx_incomplete").message).toContain(
+      "but not Version.",
+    );
+  });
+
+  it("the properties in a namespace no format defines are still read, and reported as unseen", () => {
+    const pdf = buildPdf({ xmp: xmpPacket({ namespace: "urn:example:factur-x#", documentFileName: "other.xml" }) });
+    const result = extractFacturX(pdf);
+    expect(result.xmp).toEqual({ ...DECLARED, namespace: "urn:example:factur-x#", schema: undefined, documentFileName: "other.xml" });
+    expect(result.xmp).not.toHaveProperty("schema");
+    expect(result.findings.map((f) => f.id)).toEqual(["xmp_facturx_namespace", "xmp_file_name"]);
+    expect(only(pdf, "xmp_facturx_namespace").message).toContain('in the namespace "urn:example:factur-x#"');
+  });
+
+  it("a producer's own Version or DocumentType property is not taken for Factur-X's", () => {
+    const own =
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+      '<rdf:Description rdf:about="" xmlns:pdfaid="http://www.aiim.org/pdfa/ns/id/" pdfaid:part="3" pdfaid:conformance="B"/>' +
+      '<rdf:Description rdf:about="" xmlns:acme="urn:example:acme#" acme:Version="7" acme:DocumentType="brochure"/>' +
+      "</rdf:RDF></x:xmpmeta>";
+    const result = extractFacturX(buildPdf({ xmp: own }));
+    expect(result.xmp).toEqual({ pdfaPart: "3", pdfaConformance: "B" });
+    expect(result.findings.map((f) => f.id)).toEqual(["xmp_facturx_missing"]);
+  });
+
+  it("the ZUGFeRD 2.0 and 1.0 namespaces are recognised, each with the levels it defines", () => {
+    const zf2 = extractFacturX(
+      buildPdf({
+        attachmentName: "zugferd-invoice.xml",
+        xmp: xmpPacket({ namespace: "urn:zugferd:pdfa:CrossIndustryDocument:invoice:2p0#", documentFileName: "zugferd-invoice.xml" }),
+      }),
+    );
+    expect(zf2.xmp?.schema).toBe("zugferd-2.0");
+    expect(zf2.findings).toEqual([]);
+
+    const zf1 = extractFacturX(
+      buildPdf({
+        attachmentName: "ZUGFeRD-invoice.xml",
+        xmp: xmpPacket({
+          namespace: "urn:ferd:pdfa:CrossIndustryDocument:invoice:1p0#",
+          documentFileName: "ZUGFeRD-invoice.xml",
+          conformanceLevel: "COMFORT",
+        }),
+      }),
+    );
+    expect(zf1.xmp?.schema).toBe("zugferd-1.0");
+    expect(zf1.findings).toEqual([]);
+
+    const f = only(
+      buildPdf({ xmp: xmpPacket({ namespace: "urn:zugferd:pdfa:CrossIndustryDocument:invoice:2p0#", conformanceLevel: "XRECHNUNG" }) }),
+      "xmp_level_unknown",
+    );
+    expect(f.message).toContain("not one the ZUGFeRD 2.0 metadata defines (MINIMUM, BASIC WL, BASIC, EN 16931, EXTENDED)");
+  });
+
+  it("DocumentType and DocumentFileName are checked against the file", () => {
+    const type = only(buildPdf({ xmp: xmpPacket({ documentType: "ORDER" }) }), "xmp_document_type");
+    expect(type).toMatchObject({ rule: "AW-PDF-XMP", severity: "warning" });
+    expect(type.message).toContain('DocumentType "ORDER"');
+
+    const name = only(buildPdf({ xmp: xmpPacket({ documentFileName: "zugferd-invoice.xml" }) }), "xmp_file_name");
+    expect(name.message).toContain('names the invoice attachment "zugferd-invoice.xml"');
+    expect(name.message).toContain('attached as "factur-x.xml"');
+  });
+
+  it("a level the schema does not define is AW-PDF-XMP-PROFILE, with the spelling it meant", () => {
+    const level = (value: string) => only(buildPdf({ xmp: xmpPacket({ conformanceLevel: value }) }), "xmp_level_unknown");
+    expect(level("COMFORT")).toMatchObject({ rule: "AW-PDF-XMP-PROFILE", field: "document", severity: "warning" });
+    expect(level("COMFORT").message).toContain("COMFORT is ZUGFeRD 1.0's name for the profile Factur-X and later ZUGFeRD call EN 16931.");
+    expect(level("EN16931").message).toContain("The level is spelled EN 16931.");
+    expect(level("basic wl").message).toContain("The level is spelled BASIC WL.");
+    expect(level("PREMIUM").message).not.toContain("spelled");
+    for (const known of ["MINIMUM", "BASIC WL", "BASIC", "EN 16931", "EXTENDED", "XRECHNUNG"]) {
+      expect(extractFacturX(buildPdf({ xmp: xmpPacket({ conformanceLevel: known }) })).findings, known).toEqual([]);
+    }
+  });
+
+  it("never throws for metadata, however it is corrupted: the invoice comes back and the damage is a finding", () => {
+    // Every byte of a real packet flipped three ways, stored and compressed.
+    // Whatever the packet turns into, extraction returns the XML, and every
+    // finding about it is one of the metadata's own.
+    const packet = Buffer.from(xmpPacket(), "utf8");
+    const own = new Set(FACTURX_OBSERVATIONS.filter((id) => id.startsWith("xmp_")));
+    for (let i = 0; i < packet.length; i += 7) {
+      for (const mask of [0x01, 0x20, 0xff]) {
+        const bad = Buffer.from(packet);
+        bad[i] = (bad[i] as number) ^ mask;
+        for (const compress of [false, true]) {
+          const pdf = compress
+            ? buildPdf({ xmpBytes: new Uint8Array(deflateSync(bad)) })
+            : buildPdf({ xmpStored: new Uint8Array(bad) });
+          let result: ReturnType<typeof extractFacturX> | undefined;
+          expect(() => (result = extractFacturX(pdf)), `byte ${i} ^ ${mask}`).not.toThrow();
+          expect(result!.xml).toContain("CrossIndustryInvoice");
+          for (const f of result!.findings) expect(own.has(f.id), `${f.id} at byte ${i} ^ ${mask}`).toBe(true);
+        }
+      }
+    }
+  }, 60_000);
+
+  it("reaches every observation that the PDF alone decides", () => {
+    // The other two, xmp_level_mismatch and relationship_not_alternative, need
+    // the XML's BT-24 and are covered where validate() supplies it.
+    const pdfs = [
+      buildPdf({ attachmentName: "a.xml", extraAttachment: { name: "b.xml", xml: "<x/>" }, afRelationship: "Unspecified", subtype: "image#2Fpng" }),
+      buildPdf({ extraAttachment: { name: "t.xml", xml: "<x/>" }, xml: "<Invoice/>", subtype: null, afRelationship: null }),
+      buildPdf({ omitAf: true }),
+      buildPdf({ omitNames: true, xmp: null }),
+      buildPdf({ afCopy: "<x/>", xmpFilter: "LZWDecode" }),
+      buildPdf({ rawPayload: new Uint8Array(deflateSync(Buffer.from('<?xml version="1.0" encoding="ISO-8859-1"?><rsm:CrossIndustryInvoice/>', "latin1"))) }),
+      buildPdf({ xmp: xmpPacket({ part: null, conformance: null, documentType: null, documentFileName: null, version: null, conformanceLevel: null }) }),
+      buildPdf({ xmp: xmpPacket({ part: "2", version: null, documentType: "ORDER", documentFileName: "x.xml", conformanceLevel: "GOLD" }) }),
+      buildPdf({ xmp: xmpPacket({ conformance: null, namespace: "urn:example:fx#" }) }),
+    ];
+    const seen = new Set(pdfs.flatMap((pdf) => extractFacturX(pdf).findings.map((f) => f.id)));
+    const needBt24 = ["xmp_level_mismatch", "relationship_not_alternative"];
+    expect(FACTURX_OBSERVATIONS.filter((id) => !seen.has(id) && !needBt24.includes(id))).toEqual([]);
   });
 });

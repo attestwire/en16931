@@ -208,6 +208,20 @@ export interface InvoiceInput {
   payee?: Payee;
   /** BG-11 seller tax representative, for a seller registered through a fiscal representative. */
   taxRepresentative?: TaxRepresentative;
+  /**
+   * What happened, for every line, document level allowance and document level
+   * charge that does not say otherwise: `"domestic"`, `"intra-eu-goods"`,
+   * `"intra-eu-services"`, `"export"` or `"small-business-exemption"` (see
+   * {@link VatScenario}). The engine derives the VAT category, the rate and the
+   * exemption reason (BT-120, BT-121) from it. An item's own `vatScenario`
+   * overrides this default, and so does its own `vatCategory`.
+   *
+   * `validateInput`, `generateXRechnungUBL` and `generateCii` apply it first,
+   * exactly as `applyVatScenarios` does, so the document is byte for byte the
+   * one the explicit codes would produce. To leave those codes out of a typed
+   * object, declare it as {@link InvoiceFacts}.
+   */
+  vatScenario?: VatScenario;
   /** BG-25. The invoice lines; at least one (BR-16). The VAT breakdown and every total are computed from them. */
   lines: InvoiceLine[];
   /** BG-20 document level allowances (discounts applying to the whole invoice). */
@@ -253,10 +267,15 @@ export interface InvoiceInput {
   /**
    * BT-120 VAT exemption reason text, per VAT category. Sensible defaults are applied
    * for AE/K/G/O; category E has no standard text, so the caller must supply one
-   * (BR-E-10).
+   * (BR-E-10). A `vatScenario` fills the text for the category it produces, in
+   * the invoice's language; a text stated here always wins.
    */
   vatExemptionReasons?: Partial<Record<VatCategory, string>>;
-  /** BT-121 VAT exemption reason code (CEF VATEX list), per VAT category. */
+  /**
+   * BT-121 VAT exemption reason code (CEF VATEX list), per VAT category. A
+   * `vatScenario` fills the code for the category it produces; a code stated
+   * here always wins.
+   */
   vatExemptionReasonCodes?: Partial<Record<VatCategory, string>>;
   /**
    * Optional caller-declared totals. When present they are checked against the
@@ -362,6 +381,14 @@ export interface DocumentAllowanceCharge {
   vatCategory: VatCategory;
   /** BT-96 allowance VAT rate / BT-103 charge VAT rate, percent. */
   vatRate?: number;
+  /**
+   * What happened, instead of the code: the engine fills `vatCategory`, the
+   * rate (except for `"domestic"`, whose rate you give in `vatRate`) and the
+   * exemption reason from it. Overrides the invoice's `vatScenario`. See
+   * {@link VatScenario}; stating a `vatCategory` that disagrees with it is the
+   * fatal `ATW-VAT-SCENARIO-CONFLICT`.
+   */
+  vatScenario?: VatScenario;
   /** BT-97 allowance reason / BT-104 charge reason, free text. */
   reason?: string;
   /** BT-98 allowance reason code (UNCL 5189) / BT-105 charge reason code (UNCL 7161). */
@@ -715,6 +742,14 @@ export interface InvoiceLine {
   vatCategory: VatCategory;
   /** BT-152. The VAT rate as a percentage, not a fraction: `19` for 19%. Omit it for category O; for Z, E, AE, K and G it is 0, or omitted. */
   vatRate?: number;
+  /**
+   * What happened on this line, instead of its code: the engine fills
+   * `vatCategory`, the rate (except for `"domestic"`, whose rate you give in
+   * `vatRate`) and the exemption reason from it. Overrides the invoice's
+   * `vatScenario`. See {@link VatScenario}; stating a `vatCategory` that
+   * disagrees with it is the fatal `ATW-VAT-SCENARIO-CONFLICT`.
+   */
+  vatScenario?: VatScenario;
   /** BT-127 line note. */
   note?: string;
   /** BT-128 line object identifier, with its BT-128-1 UNTDID 1153 scheme. */
@@ -792,6 +827,143 @@ export type VatCategory =
   | "O" // not subject to VAT
   | "L" // IGIC, Canary Islands (BR-AF-* family)
   | "M"; // IPSI, Ceuta and Melilla (BR-AG-* family)
+
+/**
+ * What happened, in business terms. The engine derives the VAT category
+ * (BT-151), the rate (BT-152) and the exemption reason (BT-120 text, BT-121
+ * VATEX code) from it: see `applyVatScenarios`.
+ *
+ * - `"domestic"`: a taxed supply inside the seller's own country. Category
+ *   `S`, at the rate you state in `vatRate`; a rate is never guessed.
+ * - `"intra-eu-goods"`: goods sent to a VAT-registered business in another EU
+ *   member state. Category `K`, rate 0, `VATEX-EU-IC`. Needs both parties'
+ *   VAT identifiers, the deliver-to country and a delivery date or invoicing
+ *   period.
+ * - `"intra-eu-services"`: a service to a business in another member state,
+ *   which accounts for the VAT itself (reverse charge). Category `AE`, rate 0,
+ *   `VATEX-EU-AE`. Needs both parties' VAT identifiers.
+ * - `"export"`: goods leaving the EU. Category `G`, rate 0, `VATEX-EU-G`.
+ *   Needs the seller's VAT identifier.
+ * - `"small-business-exemption"`: the seller's small-business exemption,
+ *   Germany's § 19 UStG or France's franchise en base (article 293 B du CGI).
+ *   Category `E`, rate 0, with the wording each country prescribes, and
+ *   `VATEX-FR-FRANCHISE` in France. A seller elsewhere is refused with
+ *   `ATW-VAT-SCENARIO-UNSUPPORTED`.
+ *
+ * The exemption text is written in German when the seller's country (BT-40) is
+ * DE or AT, in French when it is FR, and in English otherwise.
+ */
+export type VatScenario =
+  | "domestic"
+  | "intra-eu-goods"
+  | "intra-eu-services"
+  | "export"
+  | "small-business-exemption";
+
+/**
+ * An invoice line stated as business facts: an {@link InvoiceLine} whose
+ * `vatCategory` may be left out when a `vatScenario`, the line's own or the
+ * invoice's, supplies it.
+ */
+export interface InvoiceLineFacts extends Omit<InvoiceLine, "vatCategory"> {
+  /**
+   * BT-151. Optional here: left out, it comes from the line's `vatScenario` or
+   * the invoice's. Stated, it wins over an inherited scenario, and it must
+   * agree with the line's own.
+   */
+  vatCategory?: VatCategory;
+}
+
+/**
+ * A document level allowance (BG-20) or charge (BG-21) stated as business
+ * facts: its `vatCategory` may be left out when a `vatScenario`, its own or the
+ * invoice's, supplies it.
+ */
+export interface DocumentAllowanceChargeFacts
+  extends Omit<DocumentAllowanceCharge, "vatCategory"> {
+  /**
+   * BT-95 / BT-102. Optional here: left out, it comes from the entry's
+   * `vatScenario` or the invoice's. Stated, it wins over an inherited
+   * scenario, and it must agree with the entry's own.
+   */
+  vatCategory?: VatCategory;
+}
+
+/**
+ * Payment instructions (BG-16) whose means code may be left out when the
+ * account says what it is: see {@link PaymentInstructionsFacts.meansCode}.
+ */
+export interface PaymentInstructionsFacts extends Omit<PaymentInstructions, "meansCode"> {
+  /**
+   * BT-81 UNTDID 4461 payment means code. Optional here. Left out, it is
+   * inferred: `"59"` (SEPA direct debit) when `directDebit.mandateReference`
+   * is given and the invoice is in euro, `"49"` (direct debit) for a mandate
+   * in another currency; otherwise, with an `iban`, `"58"` (SEPA credit
+   * transfer) when the currency is EUR and the IBAN's country is in the SEPA
+   * scheme, and `"30"` (credit transfer) when not. A stated code, even an
+   * empty one, is never replaced.
+   */
+  meansCode?: string;
+}
+
+/**
+ * An {@link InvoiceInput} in which the codes the engine can derive from
+ * business facts may be left out: a line's or an allowance's VAT category
+ * when a `vatScenario` supplies it, and the payment means code when the
+ * payment account implies it.
+ *
+ * `validateInput`, `generateXRechnungUBL` and `generateCii` accept it and
+ * fill the codes in first, exactly as `applyDefaults` does, which returns the
+ * explicit `InvoiceInput` together with a note of everything it filled.
+ * Functions that take only `InvoiceInput`, such as `computeTotals`, want that
+ * explicit form.
+ */
+export interface InvoiceFacts
+  extends Omit<InvoiceInput, "lines" | "allowances" | "charges" | "payment"> {
+  /** BG-25. The invoice lines; at least one (BR-16). Each needs a `vatCategory`, a `vatScenario`, or the invoice's `vatScenario`. */
+  lines: InvoiceLineFacts[];
+  /** BG-20 document level allowances, each with a `vatCategory` or a `vatScenario` (its own or the invoice's). */
+  allowances?: DocumentAllowanceChargeFacts[];
+  /** BG-21 document level charges, each with a `vatCategory` or a `vatScenario` (its own or the invoice's). */
+  charges?: DocumentAllowanceChargeFacts[];
+  /** BG-16 payment instructions. The means code may be left out when the account implies it. */
+  payment?: PaymentInstructionsFacts;
+}
+
+/** What `createCreditNote` needs besides the invoice being credited. */
+export interface CreditNoteOptions {
+  /** BT-1 of the credit note: its own number, from your sequence. Example: `"2026-G00021"`. */
+  invoiceNumber: string;
+  /** BT-2 of the credit note, `"YYYY-MM-DD"`. Example: `"2026-09-01"`. */
+  issueDate: string;
+  /**
+   * The line identifiers (BT-126) of the original's lines to credit, in any
+   * order. Left out, every line is credited. Each credited line keeps its
+   * identifier, quantity, price and line allowances and charges, so the buyer
+   * can match it to the line it reverses.
+   */
+  lines?: string[];
+  /** Why the invoice is credited, written as the credit note's note (BT-22). Example: `"Leistung nicht erbracht."`. */
+  reason?: string;
+}
+
+/**
+ * What `applyVatScenarios` and `applyDefaults` return: the explicit invoice,
+ * and what was filled in to make it.
+ */
+export interface AppliedDefaults {
+  /**
+   * The explicit form: every code the facts stand for filled in, and no
+   * `vatScenario` left. The input object itself when there was nothing to
+   * fill. Facts that were missing stay missing: `validateInput` reports them.
+   */
+  invoice: InvoiceInput;
+  /**
+   * One `information` finding per thing that was filled in, saying what and
+   * why. `validateInput` returns the same notes in `information`.
+   */
+  notes: TeachingError[];
+}
 
 /** One VAT breakdown group (BG-23) as computed from the lines. */
 export interface TaxSubtotal {

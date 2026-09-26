@@ -17,8 +17,10 @@ import {
   PROFILE_IDS,
   type GenerateOptions,
 } from "./generate.js";
+import { expandDefaults } from "./defaults.js";
 import type {
   DocumentAllowanceCharge,
+  InvoiceFacts,
   InvoiceInput,
   InvoicingPeriod,
   LineAllowanceCharge,
@@ -379,14 +381,22 @@ function invoicedObjectNode(identifier: {
  * **It does not validate**, for the same reason as `generateXRechnungUBL`: an
  * invoice with fatal findings still comes out as well-formed XML. Call
  * `validateInput` first and generate only when `result.valid` is true.
+ *
+ * **Business facts are accepted** (0.14.0), as by `generateXRechnungUBL`: an
+ * `InvoiceFacts` input becomes codes first, exactly as `applyDefaults` writes
+ * them, and the XML is byte for byte the explicit invoice's.
  */
 export function generateCii(
-  inv: InvoiceInput,
+  input: InvoiceInput | InvoiceFacts,
   options: GenerateOptions = {},
 ): string {
-  if (!(CII_GENERATABLE_PROFILES as readonly string[]).includes(inv?.profile)) {
-    throw new UnsupportedCiiProfileError(String(inv?.profile));
+  if (!(CII_GENERATABLE_PROFILES as readonly string[]).includes(input?.profile)) {
+    throw new UnsupportedCiiProfileError(String(input?.profile));
   }
+  // Business facts become codes first, exactly as `applyDefaults` writes
+  // them, so the facts and their codes produce the same bytes. An input with
+  // nothing to fill in is the same object afterwards.
+  const inv = expandDefaults(input);
   const typeCode = resolveTypeCode(inv.invoiceTypeCode);
 
   const totals = computeTotals(inv);

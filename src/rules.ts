@@ -2,6 +2,8 @@ import { COUNTRY_CODES_SET } from "./codelists/country.js";
 import { VAT_RATE_DECIMALS, effectiveRate, round2, roundTo } from "./totals.js";
 import { DEFAULT_INVOICE_TYPE_CODE, documentNoun, isCreditNote, xpathRoot } from "./document-type.js";
 import { extendedRules } from "./rules-extended.js";
+import { defaultsRules } from "./rules-defaults.js";
+import { expandDefaults } from "./defaults.js";
 import {
   allowanceChargesOf,
   CATEGORY_RULE_INFIX,
@@ -14,8 +16,9 @@ import {
   withinAbsoluteTolerance,
   withinSignedTolerance,
 } from "./rule-kit.js";
-import type { RuleFn } from "./rule-kit.js";
+import type { RuleContext, RuleFn } from "./rule-kit.js";
 import type {
+  InvoiceFacts,
   InvoiceInput,
   InvoiceLine,
   Party,
@@ -561,7 +564,7 @@ const baseInputRules: RuleFn[] = [
           severity: "fatal",
           message:
             "An invoice must have at least one invoice line (BG-25). A document with no lines has no taxable supply to describe, so it cannot be an invoice — even if its totals are zero.",
-          fix: "Add at least one entry to lines. To invoice a flat fee, use quantity 1 with unitCode \"C62\" (one/piece) and the fee as unitPrice.",
+          fix: "Add at least one entry to lines. To invoice a flat fee, use quantity 1 with unitCode \"C62\" (one) and the fee as unitPrice.",
           example: `"lines": [{ "id": "1", "description": "Retainer", "quantity": 1, "unitCode": "C62", "unitPrice": 500, "vatCategory": "S", "vatRate": 19 }]`,
           xpath: "/ubl:Invoice/cac:InvoiceLine",
           docsUrl: `${DOCS}/BR-16`,
@@ -640,7 +643,7 @@ const baseInputRules: RuleFn[] = [
           field: "BT-130",
           severity: "fatal",
           message: `${where} has no unit of measure code (BT-130). EN 16931 requires a code from UN/ECE Recommendation 20, not a free-text unit — "hours" is not valid, "HUR" is.`,
-          fix: 'Set line.unitCode to the UN/ECE Rec 20 code: "HUR" hours, "DAY" days, "C62" one/piece, "MTR" metres, "KGM" kilograms, "MON" months.',
+          fix: 'Set line.unitCode to the UN/ECE Rec 20 code: "HUR" hours, "DAY" days, "H87" pieces, "C62" one (a unit of anything), "MTR" metres, "KGM" kilograms, "MON" months. resolveUnitCode() turns a unit word such as "Stk" or "hours" into its code.',
           example: `"unitCode": "HUR"`,
           xpath: `${at}/cbc:InvoicedQuantity/@unitCode`,
           docsUrl: `${DOCS}/BR-23`,
@@ -1908,9 +1911,47 @@ function notAnInvoiceObject(inv: unknown): TeachingError | null {
   };
 }
 
-export function runInputRules(inv: InvoiceInput): TeachingError[] {
-  const notAnObject = notAnInvoiceObject(inv);
+/**
+ * Every rule over one input: the findings `validateInput` sorts into errors,
+ * warnings and information, in rule order. Accepts business facts as
+ * `validateInput` does.
+ */
+export function runInputRules(input: InvoiceInput | InvoiceFacts): TeachingError[] {
+  const notAnObject = notAnInvoiceObject(input);
   if (notAnObject) return [notAnObject];
+  // Business facts first (0.14.0). A `vatScenario` stands for codes, and so
+  // does an IBAN with no payment means code; the document the generators write
+  // carries the codes, so every rule judges the explicit invoice the facts
+  // stand for (`applyDefaults`). The facts themselves are judged as the caller
+  // stated them, by the one family that reads them: on the explicit invoice it
+  // has nothing left to read and returns null, so nothing is reported twice.
+  // Input with nothing to fill in, which includes every document read from
+  // XML, comes back as the same object and runs exactly as it always did.
+  const inv = expandDefaults(input);
+  const out: TeachingError[] = [];
+  let typeError: TypeError | RangeError | null = null;
+  const run = (rules: readonly RuleFn[], subject: InvoiceInput, ctx?: RuleContext) => {
+    for (const rule of rules) {
+      let result;
+      try {
+        result = rule(subject, ctx);
+      } catch (error) {
+        // The rules trust the InvoiceInput types. A JavaScript or JSON caller
+        // can still pass a number where text belongs, and a rule calling
+        // `.trim()` on it threw out of validateInput (fuzz run, 2026-09-23).
+        // Report it once, as a finding; anything else is a bug and propagates.
+        // A RangeError is the same thing for numbers (a NaN or 1e308 the rule
+        // cannot round); the input check usually names it already.
+        if (!(error instanceof TypeError) && !(error instanceof RangeError)) throw error;
+        typeError ??= error;
+        continue;
+      }
+      if (!result) continue;
+      if (Array.isArray(result)) out.push(...result);
+      else out.push(result);
+    }
+  };
+  if (inv !== input) run(defaultsRules, input as InvoiceInput);
   // One pass, one set of totals. See `RuleContext` in rule-kit.ts for why this
   // is built here — at the top of a single run, thrown away at the bottom of it
   // — rather than keyed on `inv` in a WeakMap that would outlive the caller's
@@ -1920,28 +1961,7 @@ export function runInputRules(inv: InvoiceInput): TeachingError[] {
   // `makeRuleContext` records the throw instead of propagating it, so a rule
   // that swallows the defect still swallows it and the one rule that does not
   // still raises it, at the point in the run where it always did.
-  const ctx = makeRuleContext(inv);
-  const out: TeachingError[] = [];
-  let typeError: TypeError | RangeError | null = null;
-  for (const rule of inputRules) {
-    let result;
-    try {
-      result = rule(inv, ctx);
-    } catch (error) {
-      // The rules trust the InvoiceInput types. A JavaScript or JSON caller
-      // can still pass a number where text belongs, and a rule calling
-      // `.trim()` on it threw out of validateInput (fuzz run, 2026-09-23).
-      // Report it once, as a finding; anything else is a bug and propagates.
-      // A RangeError is the same thing for numbers (a NaN or 1e308 the rule
-      // cannot round); the input check usually names it already.
-      if (!(error instanceof TypeError) && !(error instanceof RangeError)) throw error;
-      typeError ??= error;
-      continue;
-    }
-    if (!result) continue;
-    if (Array.isArray(result)) out.push(...result);
-    else out.push(result);
-  }
+  run(inputRules, inv, makeRuleContext(inv));
   // The exception's own text is deliberately NOT in the message. It is the
   // runtime's wording, not ours, and a service that returns findings to its
   // callers (apps/api) promises never to echo an exception; a scan of that

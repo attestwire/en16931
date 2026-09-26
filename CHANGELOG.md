@@ -5,6 +5,213 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — 2026-09-26
+
+**Say what happened instead of the VAT code: `vatScenario` fills in the VAT
+category, the exemption code and its text, a missing payment means code is
+inferred from the account, and `createCreditNote` builds a credit note from the
+invoice it corrects. `validate()` now reports what a Factur-X or ZUGFeRD PDF
+says about its invoice XML and in its XMP metadata (six `AW-PDF-*` findings,
+none fatal), five new warnings catch a Leitweg-ID, IBAN, BIC, SIREN or SIRET
+with the wrong form or check digits, and `recipientClass` sorts every finding
+the way the German BMF letter of October 2025 does.**
+
+**KoSIT, the German government's validator, accepts every document shape the
+new inputs produce, as XRechnung UBL and CII: 18 of 18, with no message of any
+level (`scripts/kosit-check.md`).**
+
+**Upgrading:** an input with an IBAN and no payment means code now gets `58`
+(SEPA credit transfer) or `30`, with an information note, where it used to
+fail `BR-49`; a stated code, even an empty one, is never replaced, and a file
+read by `validate()` is judged exactly as before. The identifier checks are
+warnings, so `valid` does not move, but a gate on warnings can now stop an
+input with a mistyped Leitweg-ID, IBAN, BIC, SIREN or SIRET. For files, `valid`
+does not move either: every container finding is a
+warning or information. But `validate()` on a PDF now returns warnings and
+information it did not, so a gate on warnings (`--fail-on warning`,
+`warningsAsFailures` in `toJunitXml`, a check that `warnings` is empty) can
+fail on a PDF that used to pass. FeRD's own BASIC and EN 16931 sample files
+(`fixtures/facturx`) are two: their XMP metadata carries none of the Factur-X
+properties (one `AW-PDF-XMP` warning each, where Mustang's validator reports
+four errors), and they attach the XML as Data (one `AW-PDF-RELATIONSHIP`
+information each). The MINIMUM sample, and every PDF the hosted API writes,
+draw none. `extractFacturX(...).warnings` is unchanged, word for word; the new
+checks are in `findings` only.
+
+### Added
+
+- **The container's findings reach `validate()`, the command line, `--json`,
+  SARIF and JUnit.** `extractFacturX` noticed a house name for the attachment,
+  several XML attachments, the name tree and `/AF` pointing at different files,
+  a missing or unexpected `/AFRelationship`, a media type that is not XML,
+  ASCII under another encoding declaration and an attachment that is not CII,
+  and said so in `warnings`, which `validate()` dropped: only the browser
+  checker showed them. Each is now a finding with a message that says why it
+  matters and a fix, under `AW-PDF-ATTACHMENT`, `AW-PDF-AF`,
+  `AW-PDF-RELATIONSHIP` or `AW-PDF-MIME`. They come after the `AW-PROFILE-*`
+  findings and before the rule findings, and also with a result whose XML
+  could not be read, where one of them may be the reason (an attachment that
+  is not CII). Like every `AW-` finding they carry no `location`, `xpath` or
+  `docsUrl`: a PDF key has no line, so the message names it. New beside the
+  old observations: the XML missing from `/AF` or from the EmbeddedFiles name
+  tree, both of which Factur-X asks for, and no `/Subtype` at all. A second XML
+  attachment beside one under a standard name is information; several with
+  none, or two, under a standard name is a warning.
+- **The XMP metadata is read.** The catalog's `/Metadata` stream, stored or
+  `FlateDecode`d, is parsed as XMP with this package's own XML reader:
+  properties as elements or as attributes, with or without the `x:xmpmeta`
+  wrapper, matched by namespace URI in the three the formats defined (Factur-X,
+  which ZUGFeRD uses from 2.1 on, ZUGFeRD 2.0 and ZUGFeRD 1.0). `AW-PDF-XMP`
+  reports no metadata; metadata that cannot be read (never an exception); no
+  PDF/A identification; a PDF/A part other than 3; a PDF/A-3 claim without a
+  conformance level PDF/A-3 has; none, or only some, of the four Factur-X
+  properties (DocumentType, DocumentFileName, Version, ConformanceLevel);
+  properties in a namespace no format defines; a DocumentType other than
+  INVOICE; and a DocumentFileName that is not the attachment's name.
+  `AW-PDF-XMP-PROFILE` reports a ConformanceLevel the schema does not define,
+  with the spelling it probably meant, and one that contradicts the XML's own
+  BT-24 (on field `BT-24`). These read the claims a file makes about itself;
+  they are not a PDF/A verdict, which stays a PDF/A validator's such as
+  veraPDF.
+- **`/AFRelationship` Data or Source where Germany asks Alternative is
+  information.** When BT-24 declares BASIC, EN 16931, EXTENDED or XRECHNUNG,
+  `AW-PDF-RELATIONSHIP` says Factur-X and France accept it and that, for
+  invoices in Germany, the ZUGFeRD specification requires Alternative.
+  MINIMUM and BASIC WL, which are Data by the same specification, are left
+  alone.
+- **`extractFacturX` returns `findings`, `relationship` and `xmp`** beside
+  `xml`, `attachmentName` and `warnings`. `findings` holds every observation
+  the PDF alone decides, with a stable `id` (the README lists them all), the
+  `AW-PDF-*` rule it is reported under, a severity and a fix. The two that need
+  the XML's BT-24 come from the new `facturXProfileFindings(extraction,
+  customizationId)`, which `validate()` calls with the BT-24 it has already
+  read, so the XML is still parsed once. `facturXLevel(customizationId)` names
+  the profile a BT-24 declares, as the metadata spells it. Also exported:
+  `FACTURX_RULES`, `FACTURX_OBSERVATIONS`, and the types `FacturXFinding`,
+  `FacturXRule`, `FacturXObservation`, `FacturXLevel`, `FacturXXmp` and
+  `FacturXXmpSchema`.
+
+- **Business facts in place of VAT codes: `vatScenario`.** A line, a document
+  level allowance or charge, or the whole invoice can say `"domestic"`,
+  `"intra-eu-goods"`, `"intra-eu-services"`, `"export"` or
+  `"small-business-exemption"` instead of a VAT category. The engine writes
+  the category, the rate (0, or for `"domestic"` the caller's own, which is
+  never guessed), the VATEX code and the exemption text, in German for a
+  seller in DE or AT, in French for FR and in English otherwise.
+  `validateInput`, `generateXRechnungUBL` and `generateCii` apply it first, so
+  the XML is byte for byte the explicit invoice's; the tests prove it for
+  every scenario in both syntaxes. `applyVatScenarios(input)` returns that
+  explicit invoice and an `information` note, `ATW-VAT-SCENARIO-APPLIED`, of
+  everything it filled in. The new `InvoiceFacts` type lets a typed caller
+  leave the codes out; `InvoiceInput` itself only gains optional fields.
+- **The small-business exemption, settled from the authorities' own texts.**
+  Germany (§ 19 UStG): category E, rate 0, no VATEX code (the CEF list has
+  none), and the text "Steuerbefreiung für Kleinunternehmer gemäß § 19 UStG".
+  The category is KoSIT's (XRechnung change request 32) and matches § 19 Abs.
+  1 UStG as in force since 2025, which makes the turnover exempt; the wording
+  follows § 34a Satz 1 Nr. 5 UStDV and the BMF letter of 18 March 2025 rather
+  than the common "Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.", which
+  describes the regime before 2025. France (franchise en base): E,
+  `VATEX-FR-FRANCHISE` and "TVA non applicable, article 293 B du CGI" (BOFiP
+  BOI-TVA-DECLA-40-10-20 § 50). A seller anywhere else is refused. The README
+  section "Say what happened, not the code" gives the sources and the
+  reasoning.
+- **Four fatal findings about the facts themselves.**
+  `ATW-VAT-SCENARIO-UNKNOWN`: not one of the five, with the one the value most
+  likely meant. `ATW-VAT-SCENARIO-CONFLICT`: an item's own scenario and its
+  own `vatCategory` disagree. `ATW-VAT-SCENARIO-FACT-MISSING`: a fact the
+  scenario's treatment needs, named with the scenario and the field; both
+  VAT identifiers for intra-EU supplies (even where `BR-AE-02` would accept a
+  tax or legal registration number, because Article 226(3) and (4) of the VAT
+  Directive require them), the deliver-to country and a delivery date or
+  period for goods, the seller's VAT identifier for an export, a tax
+  identifier for a small business, and a rate on every domestic item.
+  `ATW-VAT-SCENARIO-UNSUPPORTED`: a small-business exemption for a seller
+  outside Germany and France.
+- **The payment means code, inferred when it is left out: `applyDefaults`.**
+  With `payment.meansCode` absent, a direct-debit mandate reference gives
+  `"59"` (SEPA direct debit) on a euro invoice and `"49"` otherwise, and an
+  IBAN gives `"58"` (SEPA credit transfer) when the invoice is in euro and the
+  IBAN's country is in the SEPA scheme (EPC409-09 version 8.0, 42 prefixes),
+  and `"30"` otherwise. Each inference is an `information` note,
+  `ATW-PAYMENT-MEANS-INFERRED`. `applyDefaults(input)` is the VAT scenarios
+  and this inference in one pass, and it is the pass `validateInput` and both
+  generators apply. A stated code, even an empty one, is never replaced, and a
+  file read by `validate()` always states one, so files are judged as before.
+- **`createCreditNote(original, options)`: a credit note from the invoice it
+  credits.** BT-3 381, a preceding-invoice reference to the original (BT-25,
+  BT-26), the same profile, parties, currency, payment instructions and
+  terms, references and delivery details, and the lines named in
+  `options.lines` (all by default) with their positive quantities and
+  amounts; `options.reason` becomes the note. The due date, the VAT point
+  date, the paid and rounding amounts, declared totals and attachments stay
+  behind, and document level allowances and charges and BT-111 travel only
+  with a full credit. An unknown line id throws a `RangeError`. Tested under
+  all five profiles: `validateInput` passes, UBL comes out as a `CreditNote`
+  with its `BillingReference`, CII with `TypeCode` 381.
+- **Upgrading:** nothing changes for an input that states its codes; the
+  same object goes through, and every committed fixture is byte for byte
+  unchanged. A JavaScript or JSON caller that sent payment instructions with
+  an IBAN and no `meansCode` got `BR-49`; it now gets `"58"` or `"30"` and a
+  note. `validateInput`, `runInputRules` and both generators now accept
+  `InvoiceInput | InvoiceFacts`, a wider parameter type. Counts: 294
+  regulation rules, unchanged, and 316 rule ids, all reachable from caller
+  input; the six new ids are the library's own (`ATW-`).
+- **Identifier checks, as warnings: `ATW-LEITWEG-ID-INVALID`,
+  `ATW-IBAN-INVALID`, `ATW-BIC-INVALID`, `ATW-SIREN-INVALID` and
+  `ATW-SIRET-INVALID`.** EN 16931 asks for these identifiers and does not
+  recompute their check digits, so a mistyped one validated clean and failed
+  where it was used: at the portal, the bank or the platform. The Leitweg-ID
+  is checked against the Leitweg-ID format specification 2.0.2 (form, and
+  ISO/IEC 7064 MOD 97-10 check digits) wherever an identifier declares scheme
+  0204, and in the buyer reference (BT-10) only when that has the complete
+  form of a Leitweg-ID on an invoice to a German buyer, so an arbitrary buyer
+  reference is never reported. The IBAN (BT-84) gets its country's length and
+  its check digits, under a SEPA credit transfer or whenever the value starts
+  like an IBAN; on an XRechnung SEPA transfer `BR-DE-19` keeps the form and
+  the check digits, and this adds the length. The BIC (BT-86) gets its form,
+  a SIREN (scheme 0002) and a SIRET (scheme 0009) their Luhn checks, with
+  INSEE's exception for La Poste. No check for GLNs, which
+  `PEPPOL-COMMON-R040` already makes on Peppol, or for VAT numbers. They are
+  warnings, so `valid` does not change, but a build that fails on warnings
+  (`--fail-on warning`) fails on them. Counts: 294 regulation rules and 315
+  rule ids, all reachable from caller input.
+- **`isValidLeitwegId`, `isValidIban`, `isValidBic`, `isValidSiren`,
+  `isValidSiret` and `IBAN_LENGTHS` are exported**, the same checks as yes/no
+  answers.
+- **`resolveUnitCode(text)`, and a `BR-CL-23` that names the code.** Most
+  refused units are a word where the Rec 20 code belongs ("Stk", "Stunden",
+  "hours", "pièces"). `resolveUnitCode` returns the code and its Rec 20 name
+  for the common English, German and French unit words, ignoring case,
+  surrounding punctuation and a plural in brackets, and `BR-CL-23` now puts
+  that code in its `fix` and `example` instead of a list to search. "Stück" and
+  "piece" are `H87`, a generic "Einheit" or "unit" is `C62`; every code it
+  returns is in the shipped list. The general advice in `BR-CL-23` and
+  `BR-23` names `H87` as well, and no fix calls `C62` "one/piece" any more.
+- **`recipientClass(ruleId)`: what a finding means for the business that
+  received the invoice.** The German BMF letter of 15 October 2025 on
+  mandatory e-invoicing sorts validation findings into format errors (Rn. 6a:
+  the file is not an e-invoice at all), business-rule errors about content
+  §§ 14 Abs. 4 and 14a UStG require (Rn. 35a) and business-rule errors about
+  anything else, which it calls irrelevant for VAT; its example is the buyer
+  reference. `recipientClass` returns `"format"`, `"vat-relevant"` or
+  `"formal"` for every rule id, `AW-` and `ATW-` finding this build reports,
+  from a table a test holds complete, and `"vat-relevant"` for an id it does
+  not know. It is Attestwire's reading of the letter, not tax advice, and as
+  the letter says, validation supports the recipient's own check of the
+  invoice and does not replace it.
+
+### Changed
+
+- **`toSarif` and `toJunitXml` take `validate()`'s findings without a cast**,
+  the engine's own `AW-` ones included (field `"document"`, no `docsUrl`). The
+  exported `Findings` type is unchanged.
+- **`AW-PROFILE-SUBSET` reads BT-24 through `facturXLevel`**, by the same
+  patterns as before, so it and the metadata checks cannot disagree about what
+  a BT-24 declares. No file's result changes.
+- **The command line's `--help`** says a PDF's attachment and metadata are
+  checked, and that this is not a PDF/A verdict.
+
 ## [0.13.0] — 2026-09-26
 
 **Peppol BIS Billing 3.0.21, which the Peppol network has required since 17
@@ -2284,6 +2491,7 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.14.0]: https://github.com/attestwire/en16931/releases/tag/v0.14.0
 [0.13.0]: https://github.com/attestwire/en16931/releases/tag/v0.13.0
 [0.12.1]: https://github.com/attestwire/en16931/releases/tag/v0.12.1
 [0.12.0]: https://github.com/attestwire/en16931/releases/tag/v0.12.0

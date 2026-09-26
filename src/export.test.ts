@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { toJunitXml, toSarif, type ExportProvenance } from "./export.js";
+import { buildPdf, FACTURX_EN16931_XML, xmpPacket } from "./facturx-testkit.js";
+import { validate as validateDocument } from "./validate.js";
 import { parseXml } from "./xml-parse.js";
 import { validateInput } from "./index.js";
 import { discountedXRechnung } from "./fixtures.js";
@@ -455,4 +457,60 @@ describe("toJunitXml", () => {
       }
     },
   );
+});
+
+describe("the Factur-X container's findings, exported", () => {
+  // validate()'s findings go in as they come out, the engine's own AW- ones
+  // included: no cast, no filtering.
+  const result = validateDocument(
+    buildPdf({
+      xml: FACTURX_EN16931_XML,
+      compress: true,
+      afRelationship: null,
+      extraAttachment: { name: "timesheet.xml", xml: "<timesheet/>" },
+    }),
+  );
+  const all = [...result.errors, ...result.warnings, ...result.information];
+  const own = (log: any) =>
+    log.runs[0].results.filter((r: any) => String(r.ruleId).startsWith("AW-PDF-"));
+
+  it("go into SARIF as results against the PDF, schema-valid, with no region and no rules page", () => {
+    const log = toSarif(all, { engineVersion: "0.0.0-test", documentUri: "invoice.pdf" }) as any;
+    expect(validate(log, sarifSchema)).toEqual([]);
+    expect(own(log).map((r: any) => [r.ruleId, r.level])).toEqual([
+      ["AW-PDF-RELATIONSHIP", "warning"],
+      ["AW-PDF-ATTACHMENT", "note"],
+    ]);
+    for (const r of own(log)) {
+      expect(r.locations).toEqual([{ physicalLocation: { artifactLocation: { uri: "invoice.pdf" } } }]);
+      expect(r.properties.fix).toBeTruthy();
+    }
+    const descriptor = log.runs[0].tool.driver.rules.find((d: any) => d.id === "AW-PDF-RELATIONSHIP");
+    expect(descriptor.helpUri).toBeUndefined();
+    expect(descriptor.defaultConfiguration.level).toBe("warning");
+  });
+
+  it("carry BT-24 as the business term when the metadata contradicts it", () => {
+    const mismatch = validateDocument(
+      buildPdf({ xml: FACTURX_EN16931_XML, compress: true, xmp: xmpPacket({ conformanceLevel: "EXTENDED" }) }),
+    );
+    const log = toSarif(mismatch.warnings, { engineVersion: "0.0.0-test", documentUri: "invoice.pdf" }) as any;
+    expect(validate(log, sarifSchema)).toEqual([]);
+    const [result] = own(log);
+    expect(result.ruleId).toBe("AW-PDF-XMP-PROFILE");
+    expect(result.properties.businessTerms).toEqual(["BT-24"]);
+    const xml = toJunitXml(mismatch.warnings, { engineVersion: "0.0.0-test" });
+    expect(xml).toMatch(/<testcase name="AW-PDF-XMP-PROFILE \(BT-24\) #1" classname="en16931\.BT-24"/);
+  });
+
+  it("go into JUnit as passing cases; the warning fails only when asked, the information never", () => {
+    const xml = toJunitXml(all, { engineVersion: "0.0.0-test" });
+    expect(parseXml(xml).local).toBe("testsuite");
+    expect(xml).toContain(`failures="${result.errors.length}"`);
+    expect(xml).toMatch(/<testcase name="AW-PDF-RELATIONSHIP \(document\) #\d+" classname="en16931\.document"/);
+    const strict = toJunitXml(all, { engineVersion: "0.0.0-test" }, { warningsAsFailures: true });
+    expect(strict).toContain(`failures="${result.errors.length + result.warnings.length}"`);
+    expect(strict).toMatch(/<failure message="The file specification of &quot;factur-x\.xml&quot; has no \/AFRelationship\./);
+    expect(strict).not.toMatch(/<failure message="This PDF carries 2 XML attachments/);
+  });
 });

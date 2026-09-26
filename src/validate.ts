@@ -14,10 +14,24 @@
  * holding the reader's own exception, whose `code` says why. It throws only
  * for a programming error, such as passing a number.
  *
- * Every finding carries a `location` in the caller's file: see locate.ts.
+ * Every rule finding carries a `location` in the caller's file: see locate.ts.
+ * A Factur-X / ZUGFeRD PDF adds the container's own findings (`AW-PDF-*`,
+ * never fatal, see facturx-findings.ts), which are about the PDF around the
+ * XML and so have no line to carry.
  */
 
-import { extractFacturX, FacturXEncodingError, type PdfLimits } from "./facturx-pdf.js";
+import {
+  facturXLevel,
+  facturXProfileFindings,
+  sortFacturXFindings,
+  type FacturXFinding,
+} from "./facturx-findings.js";
+import {
+  extractFacturX,
+  FacturXEncodingError,
+  type FacturXExtraction,
+  type PdfLimits,
+} from "./facturx-pdf.js";
 import { CII_NAMESPACES } from "./generate-cii.js";
 import { locateFinding } from "./locate.js";
 import { parseCiiTree } from "./parse-cii.js";
@@ -42,8 +56,11 @@ export interface ValidateOptions {
 
 /**
  * A finding from `validate`. Rule findings are ordinary `TeachingError`s. A
- * document that could not be read at all gets one finding whose rule starts
- * `AW-`, whose field is `"document"`, and which has no rules page.
+ * document that could not be read at all gets one fatal finding whose rule
+ * starts `AW-`, whose field is `"document"`, and which has no rules page. The
+ * container findings of a Factur-X / ZUGFeRD PDF (`AW-PDF-*`) have the same
+ * shape and are never fatal; they come with the result whether or not the XML
+ * inside could be read.
  */
 export type DocumentFinding = Omit<TeachingError, "field" | "docsUrl"> & {
   field: BusinessTerm | BusinessTerm[] | "document";
@@ -118,6 +135,7 @@ export function validate(
 ): DocumentValidation {
   let xml: string;
   let container: string | null = null;
+  let extracted: FacturXExtraction | undefined;
 
   if (typeof document === "string") {
     if (document.startsWith("%PDF")) {
@@ -138,7 +156,7 @@ export function validate(
     // .xml by a mail client is still a Factur-X.
     if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
       try {
-        const extracted = extractFacturX(bytes, options.pdfLimits);
+        extracted = extractFacturX(bytes, options.pdfLimits);
         xml = extracted.xml;
         container = extracted.attachmentName ?? "embedded XML";
       } catch (err) {
@@ -195,7 +213,9 @@ export function validate(
           "Supply a UBL 2.1 Invoice or CreditNote, or a UN/CEFACT CrossIndustryInvoice (XRechnung, Peppol, Factur-X).",
           err,
         );
-    return { ...result, container };
+    // The PDF was read, so what it says about itself still holds, and one of
+    // its findings may be the explanation: an attachment that is not CII.
+    return withContainer({ ...result, container }, extracted?.findings ?? []);
   }
 
   const invoice = options.profile ? { ...parsed.invoice, profile: options.profile } : parsed.invoice;
@@ -206,6 +226,18 @@ export function validate(
     else out.xpath = xpath;
     return out;
   });
+
+  // The container's findings, about the PDF around the XML: after the engine's
+  // findings about the profile and before the rules, as findings about the
+  // whole file come first. The ones that set the PDF against the XML's BT-24
+  // are made here, from the BT-24 just read, so the XML is parsed once.
+  if (extracted) {
+    const aboutThePdf = sortFacturXFindings([
+      ...extracted.findings,
+      ...facturXProfileFindings(extracted, parsed.customizationId),
+    ]);
+    findings.unshift(...aboutThePdf.map(asDocumentFinding));
+  }
 
   const sub = subInvoiceProfile(parsed.customizationId);
   if (sub) {
@@ -259,6 +291,27 @@ function unreadable(rule: string, message: string, fix: string, error?: Error & 
   };
   if (error) result.error = error;
   return result;
+}
+
+/**
+ * A container finding as `validate` reports it: the `TeachingError` fields and
+ * nothing else. The observation's `id` stays on `extractFacturX`'s result; the
+ * hosted API passes these findings through verbatim, and its schema admits no
+ * other key.
+ */
+function asDocumentFinding(f: FacturXFinding): DocumentFinding {
+  return { rule: f.rule, field: f.field, severity: f.severity, message: f.message, fix: f.fix };
+}
+
+/** A result with the container's findings added, each under its severity. */
+function withContainer(result: DocumentValidation, aboutThePdf: readonly FacturXFinding[]): DocumentValidation {
+  if (aboutThePdf.length === 0) return result;
+  const found = aboutThePdf.map(asDocumentFinding);
+  return {
+    ...result,
+    warnings: [...found.filter((f) => f.severity === "warning"), ...result.warnings],
+    information: [...found.filter((f) => f.severity === "information"), ...result.information],
+  };
 }
 
 function tooLarge(err: Error & { code: string }): DocumentValidation {
@@ -344,10 +397,12 @@ const PROFILE_SYNTAX: Partial<Record<Profile, "ubl" | "cii">> = {
   "facturx-en16931": "cii",
 };
 
-/** Factur-X / ZUGFeRD profiles below EN 16931: they are not full invoices. */
+/**
+ * Factur-X / ZUGFeRD profiles below EN 16931: they are not full invoices.
+ * Read by the classifier the container's metadata checks use, so this finding
+ * and those can never disagree about what a BT-24 declares.
+ */
 function subInvoiceProfile(customizationId: string | undefined): string | null {
-  const id = (customizationId ?? "").toLowerCase();
-  if (/factur-x\.eu:1p0:minimum|zugferd.*:minimum/.test(id)) return "MINIMUM";
-  if (/factur-x\.eu:1p0:basicwl|zugferd.*:basicwl/.test(id)) return "BASIC WL";
-  return null;
+  const level = facturXLevel(customizationId);
+  return level === "MINIMUM" || level === "BASIC WL" ? level : null;
 }

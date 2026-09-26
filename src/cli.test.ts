@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { EXIT, expand, main, parseArgs, UsageError } from "./cli.js";
+import { buildPdf, FACTURX_EN16931_XML } from "./facturx-testkit.js";
 
 const fixture = (name: string) => fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
 const FIXTURES = fileURLToPath(new URL("../fixtures", import.meta.url));
@@ -347,5 +348,98 @@ describe("locations in the output", () => {
     const r = await run(fixture("xrechnung-cii-minimal.xml"), "--profile", "peppol-bis-3");
     expect(r.stdout).toContain("--profile peppol-bis-3 is a UBL profile, but this document is CII.");
     expect(r.stdout).toContain("Leave --profile out");
+  });
+});
+
+describe("the Factur-X container's findings", () => {
+  const cii = FACTURX_EN16931_XML;
+  const write = (name: string, pdf: Uint8Array) => {
+    const file = join(scratch, name);
+    writeFileSync(file, pdf);
+    return file;
+  };
+  // A valid invoice in a PDF whose attachment has no /AFRelationship.
+  const defective = () => write("container.pdf", buildPdf({ xml: cii, compress: true, afRelationship: null }));
+
+  it("prints them in full, and a warning alone does not fail the file", async () => {
+    const r = await run(defective());
+    expect(r.code).toBe(EXIT.ok);
+    expect(r.stdout).toMatch(/^PASS .*container\.pdf {2}CII · en16931 · from factur-x\.xml$/m);
+    expect(r.stdout).toContain("! warning AW-PDF-RELATIONSHIP (document)");
+    expect(r.stdout).toContain('The file specification of "factur-x.xml" has no /AFRelationship.');
+    expect(r.stdout).toMatch(/fix: Set \/AFRelationship \/Alternative/);
+  });
+
+  it("--short gives each one line", async () => {
+    const r = await run("--short", defective());
+    expect(r.stdout).toMatch(
+      /^ {2}! AW-PDF-RELATIONSHIP document {2}The file specification of "factur-x\.xml" has no \/AFRelationship\.$/m,
+    );
+  });
+
+  it("--fail-on warning fails the file on them, and --quiet shows them exactly then", async () => {
+    const file = defective();
+    const quiet = await run("--quiet", file);
+    expect(quiet.code).toBe(EXIT.ok);
+    expect(quiet.stdout).not.toContain("AW-PDF-RELATIONSHIP");
+    const strict = await run("--quiet", "--fail-on", "warning", file);
+    expect(strict.code).toBe(EXIT.findings);
+    expect(strict.stdout).toMatch(/^FAIL /m);
+    expect(strict.stdout).toContain("! warning AW-PDF-RELATIONSHIP (document)");
+  });
+
+  it("information never fails a file, whatever --fail-on says", async () => {
+    const file = write(
+      "extra.pdf",
+      buildPdf({ xml: cii, compress: true, extraAttachment: { name: "timesheet.xml", xml: "<t/>" } }),
+    );
+    const r = await run("--fail-on", "warning", file);
+    expect(r.code).toBe(EXIT.ok);
+    expect(r.stdout).toContain("i info AW-PDF-ATTACHMENT (document)");
+
+    // Data where Germany asks Alternative: information too.
+    const data = write("data.pdf", buildPdf({ xml: cii, compress: true, afRelationship: "Data" }));
+    const d = await run("--fail-on", "warning", data);
+    expect(d.code).toBe(EXIT.ok);
+    expect(d.stdout).toContain("i info AW-PDF-RELATIONSHIP (document)");
+    expect(d.stdout).toContain("requires Alternative");
+  });
+
+  it("on FeRD's own EN 16931 sample: passes by default, fails --fail-on warning on its metadata, never on Data", async () => {
+    // The file carries no Factur-X XMP properties (a warning: Mustang rejects
+    // it) and /AFRelationship /Data (information). The invoice itself is valid.
+    const sample = fixture("facturx/facturx-en16931-einfach.pdf");
+    const plain = await run(sample);
+    expect(plain.code).toBe(EXIT.ok);
+    expect(plain.stdout).toContain("! warning AW-PDF-XMP (document)");
+    expect(plain.stdout).toContain("i info AW-PDF-RELATIONSHIP (document)");
+    expect(plain.stdout).toMatch(/1 document: 1 passed, 0 failed \(0 errors, 1 warning\)\./);
+
+    const strict = await run("--fail-on", "warning", "--short", sample);
+    expect(strict.code).toBe(EXIT.findings);
+    expect(strict.stdout).toMatch(/^ {2}! AW-PDF-XMP document {2}The XMP metadata does not declare this file as Factur-X or ZUGFeRD: /m);
+    expect(strict.stdout).toMatch(/^ {2}i AW-PDF-RELATIONSHIP document {2}/m);
+    expect(strict.stdout).toContain("1 document: 0 passed, 1 failed (0 errors, 1 warning; --fail-on warning).");
+
+    const json = JSON.parse((await run("--json", sample)).stdout) as {
+      results: { findings: { rule: string; severity: string }[] }[];
+    };
+    expect(json.results[0]!.findings.map((f) => [f.rule, f.severity])).toEqual([
+      ["AW-PDF-XMP", "warning"],
+      ["AW-PDF-RELATIONSHIP", "information"],
+    ]);
+  });
+
+  it("--json carries them with the other findings, with no location", async () => {
+    const r = await run("--json", defective());
+    const out = JSON.parse(r.stdout) as {
+      summary: { warnings: number };
+      results: { passed: boolean; findings: { rule: string; location?: unknown }[] }[];
+    };
+    const f = out.results[0]!.findings.find((x) => x.rule === "AW-PDF-RELATIONSHIP");
+    expect(f).toMatchObject({ field: "document", severity: "warning" });
+    expect(f!.location).toBeUndefined();
+    expect(out.results[0]!.passed).toBe(true);
+    expect(out.summary.warnings).toBeGreaterThan(0);
   });
 });

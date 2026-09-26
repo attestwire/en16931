@@ -14,8 +14,10 @@ import {
   formatPrice,
 } from "./totals.js";
 import { document, el, group, groupAlways, type XmlNode } from "./xml.js";
+import { expandDefaults } from "./defaults.js";
 import type {
   DocumentAllowanceCharge,
+  InvoiceFacts,
   InvoiceInput,
   InvoiceTotals,
   InvoicingPeriod,
@@ -456,16 +458,25 @@ function taxTotalNode(totals: InvoiceTotals, currency: string): XmlNode {
  *
  * The check is separate so that a caller who only generates does not ship the
  * whole rule set: this function alone bundles to a few kilobytes.
+ *
+ * **Business facts are accepted** (0.14.0): an `InvoiceFacts` input, with a
+ * `vatScenario` in place of VAT codes or no payment means code beside an
+ * IBAN, is turned into codes first, exactly as `applyDefaults` does, so the
+ * XML is byte for byte what the explicit invoice produces.
  */
 export function generateXRechnungUBL(
-  inv: InvoiceInput,
+  input: InvoiceInput | InvoiceFacts,
   options: GenerateOptions = {},
 ): string {
   // Refuse before doing any work: a wrong syntax is not something the rest of
   // this function can compensate for.
-  if (!(UBL_GENERATABLE_PROFILES as readonly string[]).includes(inv?.profile)) {
-    throw new UnsupportedProfileError(String(inv?.profile));
+  if (!(UBL_GENERATABLE_PROFILES as readonly string[]).includes(input?.profile)) {
+    throw new UnsupportedProfileError(String(input?.profile));
   }
+  // Business facts become codes first, exactly as `applyDefaults` writes
+  // them, so the facts and their codes produce the same bytes. An input with
+  // nothing to fill in is the same object afterwards.
+  const inv = expandDefaults(input);
   const typeCode = resolveTypeCode(inv.invoiceTypeCode);
   const creditNote = documentKindOf(inv.invoiceTypeCode) === "credit-note";
 

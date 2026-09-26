@@ -28,12 +28,16 @@
  *
  * ## What it parses
  *
- * Enough PDF to find an attachment, and no more: classic cross-reference
- * tables, cross-reference streams (PDF 1.5+), object streams, `/Prev` chains,
- * and the `FlateDecode` filter with PNG predictors. It does not render, does
- * not decrypt, and does not implement `LZWDecode`, `/Crypt` or any of the image
- * filters — it names them and refuses instead, because a wrong answer about the
- * contents of a tax document is worse than no answer.
+ * Enough PDF to find an attachment and the catalog's XMP metadata, and no
+ * more: classic cross-reference tables, cross-reference streams (PDF 1.5+),
+ * object streams, `/Prev` chains, and the `FlateDecode` filter with PNG
+ * predictors. It does not render, does not decrypt, and does not implement
+ * `LZWDecode`, `/Crypt` or any of the image filters — it names them and refuses
+ * instead, because a wrong answer about the contents of a tax document is worse
+ * than no answer. What the container says about the attachment, and what the
+ * metadata claims, come back as findings (facturx-findings.ts, xmp.ts): the
+ * claims are read and checked, and whether the file keeps them as PDF/A is not
+ * this module's question.
  *
  * ## The attachment's text: UTF-8, or a refusal that names the encoding
  *
@@ -87,7 +91,28 @@
  *   a Cloudflare Worker actually runs out of.
  */
 
+import {
+  afMissing,
+  afNameTreeMissing,
+  afStreamsDiffer,
+  attachmentAmbiguous,
+  attachmentEncoding,
+  attachmentExtra,
+  attachmentName,
+  attachmentNotCii,
+  mimeMissing,
+  mimeNotXml,
+  relationshipMissing,
+  relationshipUnexpected,
+  sortFacturXFindings,
+  xmpFindings,
+  xmpMissing,
+  xmpUnreadable,
+  type FacturXFinding,
+} from "./facturx-findings.js";
 import { decodeXml, type DecodedXml, type UndecodableXml } from "./xml-decode.js";
+import { ParseError } from "./xml-parse.js";
+import { readXmp, type FacturXXmp } from "./xmp.js";
 
 /** Caps on what a hostile or accidental PDF can make this do. */
 export interface PdfLimits {
@@ -221,8 +246,32 @@ export interface FacturXExtraction {
   xml: string;
   /** The attachment's filename as the PDF states it, e.g. `factur-x.xml`. */
   attachmentName: string;
-  /** Recoverable oddities. Empty means nothing surprising was seen. */
+  /**
+   * Recoverable oddities about the attachment, as sentences: the notes this
+   * function has returned since 0.7.0, unchanged in wording and in when they
+   * appear, for code that shows or matches them. `findings` has each of them
+   * too, with an id, a severity and a fix, and the checks added since.
+   */
   warnings: string[];
+  /**
+   * What the container says about the invoice XML, checked against what
+   * Factur-X and ZUGFeRD ask of it: one finding per observation, with a stable
+   * `id`, the `AW-PDF-*` rule `validate()` reports it under, a severity (never
+   * fatal) and a fix. Empty when nothing was found. See facturx-findings.ts.
+   */
+  findings: FacturXFinding[];
+  /**
+   * The `/AFRelationship` the returned attachment's file specification
+   * declares, as written (`Alternative`, `Data`, …). Absent when it declares
+   * none.
+   */
+  relationship?: string;
+  /**
+   * What the PDF's XMP metadata states: its PDF/A identification and the
+   * Factur-X / ZUGFeRD properties (see xmp.ts). Null when the PDF has no
+   * metadata, or none that could be read; `findings` says which.
+   */
+  xmp: FacturXXmp | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1749,10 +1798,61 @@ function decodePdfTextString(value: string): string {
 }
 
 /**
+ * The catalog's XMP metadata, read and checked.
+ *
+ * Read after the attachment, so a metadata stream cannot spend the inflate
+ * budget the invoice needs, and never thrown out of: a stream that is missing,
+ * uses a filter this reader lacks, hits a limit, or holds something other than
+ * XMP is a finding about a file whose invoice was read, not a reason to return
+ * no invoice. `FlateDecode` is inflated with the same code as the attachment.
+ */
+function inspectXmp(
+  doc: PdfDocument,
+  root: PdfDict,
+  attachment: string,
+): { xmp: FacturXXmp | null; findings: FacturXFinding[] } {
+  const unreadable = (detail: string) => ({ xmp: null, findings: [xmpUnreadable(detail)] });
+  let raw: Uint8Array;
+  try {
+    const metadata = doc.dictGet(root, "Metadata");
+    if (metadata === null) return { xmp: null, findings: [xmpMissing()] };
+    if (!(metadata instanceof PdfStream)) {
+      return unreadable("the catalog's /Metadata is not a stream, so it holds no XMP packet.");
+    }
+    raw = doc.decodeStream(metadata);
+  } catch (error) {
+    if (error instanceof PdfUnsupportedFilterError) {
+      return unreadable(`it is encoded with the ${error.filter} filter, which this reader does not implement.`);
+    }
+    if (error instanceof PdfError) return unreadable(error.message);
+    throw error;
+  }
+  const decoded = decodeXml(raw);
+  if ("problem" in decoded) {
+    return unreadable(
+      decoded.problem === "unsupported"
+        ? `it declares the encoding "${decoded.label}", which this runtime cannot decode.`
+        : `its bytes are not valid ${decoded.label}, so it is not the text its producer meant.`,
+    );
+  }
+  let xmp: FacturXXmp;
+  try {
+    xmp = readXmp(decoded.text);
+  } catch (error) {
+    if (error instanceof ParseError) return unreadable(error.message);
+    throw error;
+  }
+  return { xmp, findings: xmpFindings(xmp, attachment) };
+}
+
+/**
  * Pull the invoice XML out of a Factur-X / ZUGFeRD / XRechnung-CII PDF.
  *
  * Extraction only — this never writes a PDF. The returned `xml` is the
- * attachment's UTF-8 text and is suitable input for `parseCiiInvoice`.
+ * attachment's UTF-8 text and is suitable input for `parseCiiInvoice`. What
+ * the container says about that attachment — its name, where it is registered,
+ * its `/AFRelationship` and media type — comes back in `findings`, never as a
+ * throw: those are facts about a file that was read (see facturx-findings.ts).
  *
  * Throws `FacturXNotFoundError` when the document carries no XML attachment,
  * `FacturXEncodingError` when the attachment is not UTF-8 (see "The
@@ -1789,7 +1889,12 @@ export function extractFacturX(
     );
   }
 
+  // Two views of one set of observations: `warnings` keeps the sentences this
+  // function has always returned, word for word, and `findings` carries every
+  // observation with an id, a severity and a fix. Where both apply they are
+  // pushed together, so the two cannot drift apart.
   const warnings: string[] = [];
+  const findings: FacturXFinding[] = [];
   const doc = new PdfDocument(bytes, lim);
 
   const root = doc.resolve(doc.trailer.get("Root") ?? null);
@@ -1831,6 +1936,7 @@ export function extractFacturX(
   // /AF, which is correct and not worth a warning. Two *different* streams
   // under one name is worth one.
   const unique: Candidate[] = [];
+  const twoCopies = new Set<Candidate>();
   for (const candidate of candidates) {
     const twin = unique.find(
       (u) => u.name.toLowerCase() === candidate.name.toLowerCase(),
@@ -1845,6 +1951,9 @@ export function extractFacturX(
           `embedded streams. The name-tree copy was used. A conformant file has one attachment ` +
           `referenced from both places.`,
       );
+      // Once per attachment, however many times /AF repeats the other copy.
+      if (!twoCopies.has(twin)) findings.push(afStreamsDiffer(candidate.name));
+      twoCopies.add(twin);
     }
   }
 
@@ -1871,6 +1980,15 @@ export function extractFacturX(
         .map((c) => `"${c.name}"`)
         .join(", ")}). "${chosen.name}" was returned. A conformant Factur-X file has exactly one.`,
     );
+    // Exactly one under a standard name is how a receiver tells the invoice
+    // from a supporting document, so only then is the choice unambiguous.
+    const standard = ranked.filter((c) => PREFERRED_NAMES.includes(c.name.toLowerCase())).length;
+    const names = ranked.map((c) => c.name);
+    findings.push(
+      standard === 1
+        ? attachmentExtra(names, chosen.name)
+        : attachmentAmbiguous(names, chosen.name, standard),
+    );
   }
   if (!PREFERRED_NAMES.includes(chosen.name.toLowerCase())) {
     warnings.push(
@@ -1878,22 +1996,39 @@ export function extractFacturX(
         `(${PREFERRED_NAMES.join(", ")}). The XML was returned anyway, but a receiver that ` +
         `looks the attachment up by name — as Factur-X readers are entitled to — will not find it.`,
     );
+    findings.push(attachmentName(chosen.name));
+  }
+  // The name tree and /AF, as Factur-X asks for both. An entry counts when it
+  // names the attachment or holds its stream, so a file specification that
+  // /AF lists without a name of its own is still found. Neither is a legacy
+  // warning: until these findings existed, a file with only one of them was
+  // read without comment, and `warnings` keeps saying what it always said.
+  const isChosen = (c: Candidate) =>
+    c.stream === chosen.stream || c.name.toLowerCase() === chosen.name.toLowerCase();
+  if (!candidates.some((c) => c.source === "AF" && isChosen(c))) findings.push(afMissing(chosen.name));
+  if (!candidates.some((c) => c.source === "name-tree" && isChosen(c))) {
+    findings.push(afNameTreeMissing(chosen.name));
   }
   if (chosen.relationship === undefined) {
     warnings.push(
       `The attachment declares no /AFRelationship. PDF/A-3 requires one, and Germany requires ` +
         `"Alternative" for the BASIC, EN 16931, EXTENDED and XRECHNUNG profiles.`,
     );
+    findings.push(relationshipMissing(chosen.name));
   } else if (!["Alternative", "Data", "Source"].includes(chosen.relationship)) {
     warnings.push(
       `The attachment declares /AFRelationship "${chosen.relationship}". Factur-X expects ` +
         `"Alternative" (the XML and the page image are the same invoice).`,
     );
+    findings.push(relationshipUnexpected(chosen.name, chosen.relationship));
   }
   if (chosen.subtype && !/xml/i.test(chosen.subtype)) {
     warnings.push(
       `The embedded file's /Subtype is "${chosen.subtype}" rather than an XML media type.`,
     );
+    findings.push(mimeNotXml(chosen.name, chosen.subtype));
+  } else if (!chosen.subtype) {
+    findings.push(mimeMissing(chosen.name));
   }
 
   const raw = doc.decodeStream(chosen.stream);
@@ -1925,6 +2060,7 @@ export function extractFacturX(
         `attachments are UTF-8. This one holds only ASCII, which reads the same in both, so it was ` +
         `returned; the first non-ASCII character its producer writes will not read the same.`,
     );
+    findings.push(attachmentEncoding(chosen.name, decoded.label));
   }
 
   // The byte-order mark is not part of the XML. A second one would be: it
@@ -1936,12 +2072,26 @@ export function extractFacturX(
         `CrossIndustryInvoice element, so it may not be an invoice at all. It was returned ` +
         `unchanged for you to inspect.`,
     );
+    findings.push(attachmentNotCii(chosen.name));
   } else if (!/CrossIndustryInvoice/i.test(xml)) {
     warnings.push(
       `The attachment is XML but has no rsm:CrossIndustryInvoice root. Factur-X and ZUGFeRD 2.x ` +
         `carry UN/CEFACT CII; this may be a ZUGFeRD 1.0 document or another syntax entirely.`,
     );
+    findings.push(attachmentNotCii(chosen.name));
   }
 
-  return { xml, attachmentName: chosen.name, warnings };
+  // The metadata last, once the invoice is safely out.
+  const metadata = inspectXmp(doc, root, chosen.name);
+  findings.push(...metadata.findings);
+
+  const result: FacturXExtraction = {
+    xml,
+    attachmentName: chosen.name,
+    warnings,
+    findings: sortFacturXFindings(findings),
+    xmp: metadata.xmp,
+  };
+  if (chosen.relationship !== undefined) result.relationship = chosen.relationship;
+  return result;
 }

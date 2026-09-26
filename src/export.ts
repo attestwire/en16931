@@ -26,6 +26,7 @@
 
 import { escapeAttr, escapeText, stripInvalidXmlChars } from "./xml.js";
 import type { Severity, TeachingError } from "./types.js";
+import type { DocumentFinding } from "./validate.js";
 
 /**
  * Where the report came from — everything that varies between runs and must not
@@ -77,7 +78,15 @@ const TOOL_URI = "https://attestwire.com";
 /** Findings in, findings out — accepts a `ValidationResult`'s three arrays concatenated. */
 export type Findings = readonly TeachingError[];
 
-function fieldList(field: TeachingError["field"]): string[] {
+/**
+ * What both exporters accept: `validateInput`'s findings (`Findings`), or
+ * `validate`'s, which include the engine's own `AW-` findings about the file
+ * (field `"document"`, no `docsUrl`), the container's `AW-PDF-*` ones among
+ * them. A `TeachingError` is a `DocumentFinding`, so this is the wider type.
+ */
+type AnyFindings = readonly DocumentFinding[];
+
+function fieldList(field: DocumentFinding["field"]): string[] {
   return Array.isArray(field) ? [...field] : [field];
 }
 
@@ -92,7 +101,7 @@ function fieldList(field: TeachingError["field"]): string[] {
  * rule is parameterised by line number — the first occurrence wins and defines
  * the descriptor, and the per-result `message` carries the specific text.
  */
-function ruleDescriptors(findings: Findings) {
+function ruleDescriptors(findings: AnyFindings) {
   const index = new Map<string, number>();
   const rules: Record<string, unknown>[] = [];
   for (const f of findings) {
@@ -130,7 +139,7 @@ function ruleDescriptors(findings: Findings) {
  * it, and proves the check has teeth with a corrupted-input negative control.
  */
 export function toSarif(
-  findings: Findings,
+  findings: AnyFindings,
   provenance: ExportProvenance,
 ): Record<string, unknown> {
   const { rules, index } = ruleDescriptors(findings);
@@ -262,7 +271,7 @@ function attrText(value: string): string {
  * makes about rules-fired counts.
  */
 export function toJunitXml(
-  findings: Findings,
+  findings: AnyFindings,
   provenance: ExportProvenance,
   options: JunitOptions = {},
 ): string {

@@ -15,6 +15,7 @@ import {
 import { DOCS, blank, err, linesOf, totalsOutcomeOf } from "./rule-kit.js";
 import type { RuleFn } from "./rule-kit.js";
 import type { TeachingError } from "./types.js";
+import { resolveUnitCode } from "./units.js";
 
 /**
  * BR-CL-*: code-list membership.
@@ -33,7 +34,7 @@ import type { TeachingError } from "./types.js";
 
 /** Codes worth naming in a message, so the fix is actionable without the spec. */
 const COMMON_UNITS =
-  '"C62" one/piece, "HUR" hour, "DAY" day, "MON" month, "ANN" year, "KGM" kilogram, "MTR" metre, "MTK" square metre, "LTR" litre, "KWH" kilowatt hour, "E48" service unit, "P1" percent';
+  '"H87" piece, "C62" one (a unit of anything), "HUR" hour, "DAY" day, "MON" month, "ANN" year, "KGM" kilogram, "MTR" metre, "MTK" square metre, "LTR" litre, "KWH" kilowatt hour, "LS" lump sum, "E48" service unit, "P1" percent';
 
 const COMMON_CURRENCIES = '"EUR", "USD", "GBP", "CHF", "SEK", "DKK", "NOK", "PLN"';
 
@@ -307,13 +308,24 @@ export const codelistRules: RuleFn[] = [
       if (blank(line?.unitCode)) continue; // BR-23 reports absence
       const code = normalise(line.unitCode);
       if (UNIT_CODES_SET.has(code)) continue;
+      // A unit word this package can name the code for ("Stk", "hours",
+      // "pièces"): the fix and the example carry that code rather than a list
+      // to search. units.ts has the table, and why "Stück" is H87 and not C62.
+      const resolved = resolveUnitCode(code);
+      const quantity = typeof line.quantity === "number" && Number.isFinite(line.quantity) ? line.quantity : 10;
       out.push({
         rule: "BR-CL-23",
         field: "BT-130",
         severity: "fatal",
         message: `Line ${index + 1} has a unit of measure code (BT-130) of "${code}", which is not in UN/ECE Recommendation 20 (with the Rec 21 extension).${wrongCaseHint(line.unitCode, UNIT_CODES_SET)} The unit is a code, not a word: "hours", "Stk", "each" and "pcs" are all rejected, and so is a valid code in the wrong case.`,
-        fix: `Set line.unitCode to the Rec 20 code. The ones you will actually use: ${COMMON_UNITS}. The full list is large — if you cannot find your unit, "C62" (one/piece) with the unit named in the item description is the conventional fallback.`,
-        example: `"quantity": 10, "unitCode": "HUR"`,
+        fix: resolved
+          ? `Set line.unitCode to "${resolved.code}" (Rec 20: "${resolved.name}"), which is what "${code}" stands for.${
+              resolved.code === "H87" || resolved.code === "C62"
+                ? ' "H87" (piece) and "C62" (one) are both valid for a count; this package reads pieces as H87 and a generic unit as C62.'
+                : ""
+            } resolveUnitCode() in this package does the same for the common English, German and French unit words, so a unit your system stores as a word can be converted before it reaches the invoice.`
+          : `Set line.unitCode to the Rec 20 code. The ones you will actually use: ${COMMON_UNITS}. The full list is large — if you cannot find your unit, "C62" (one) with the unit named in the item description is the conventional fallback.`,
+        example: `"quantity": ${resolved ? quantity : 10}, "unitCode": "${resolved ? resolved.code : "HUR"}"`,
         xpath: `/ubl:Invoice/cac:InvoiceLine[${index + 1}]/cbc:InvoicedQuantity/@unitCode`,
         docsUrl: `${DOCS}/BR-CL-23`,
       });
