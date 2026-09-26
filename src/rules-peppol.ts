@@ -34,10 +34,10 @@ import type {
  * mandate. The other half exist because a document is about to be handed to an
  * access point that will route it on a participant identifier, and a scheme
  * the network does not know is not a validation nicety: it is an undeliverable
- * invoice. `PEPPOL-COMMON-R040`..`R053` are that half. They are checksum rules
- * over national organisation numbers, and they catch the transposed digit that
- * an EN 16931 validator, a CIUS validator and your own test suite will all wave
- * through.
+ * invoice. `PEPPOL-COMMON-R040`..`R057` are that half. They are checksum and
+ * format rules over national organisation numbers, and they catch the
+ * transposed digit that an EN 16931 validator, a CIUS validator and your own
+ * test suite will all wave through.
  *
  * **Every rule in this file is gated on `profile === "peppol-bis-3"`**, via
  * `isPeppol`, and every message says so. This matters in both directions. A
@@ -62,6 +62,18 @@ import type {
  *     `cac:TaxTotal` elements, the `130` on a line document reference, and the
  *     unit code on `cbc:BaseQuantity`. No input can make them fail, so a rule
  *     function for them would assert `true`.
+ *
+ *     3.0.21 tightened two of them without moving them off this list. `R004`
+ *     now also refuses a `CustomizationID` carrying version information (a
+ *     `::` suffix), and `R007` accepts only the ProfileIDs 3.0.21 names, where
+ *     it used to accept any `urn:fdc:peppol.eu:2017:poacc:billing:NN:1.0`: in
+ *     UBL billing 01, the two temporary French profiles and the new
+ *     `urn:peppol:bis:billing_with_response`; in CII billing 01 and
+ *     `billing_with_response` only. This library writes
+ *     `CUSTOMIZATION_IDS["peppol-bis-3"]` and billing 01, which satisfy both.
+ *     Only a caller who overrides `GenerateOptions.customizationId` or
+ *     `profileId` can break them, and `validateInput` never sees those
+ *     options.
  *   - **Not expressible in the model.** `R080` (at most one project reference)
  *     and `R100` (at most one invoiced object per line) are cardinality limits
  *     on fields this model makes scalar — `projectReference`,
@@ -96,7 +108,9 @@ import type {
  * `COMMON` checksums are here.
  *
  * Rule texts and XPath from `rules/sch/PEPPOL-EN16931-UBL.sch`,
- * OpenPEPPOL/peppol-bis-invoice-3 @ master.
+ * OpenPEPPOL/peppol-bis-invoice-3, Peppol BIS Billing 3.0.21, at the commit
+ * `scripts/build-peppol.mjs` pins. That script also fails the build when the
+ * schematron adds, retires or re-flags a rule id this file was written against.
  */
 
 const page = (rule: string): string => `${DOCS}/${rule}`;
@@ -221,7 +235,7 @@ const allowanceChargeEntries = (inv: InvoiceInput): AcEntry[] => {
 };
 
 // ---------------------------------------------------------------------------
-// PEPPOL-COMMON-R040..R053 — national identifier formats
+// PEPPOL-COMMON-R040..R057 — national identifier formats
 // ---------------------------------------------------------------------------
 
 /**
@@ -234,11 +248,27 @@ const allowanceChargeEntries = (inv: InvoiceInput): AcEntry[] => {
  * BT-46 / BT-60) and the legal registration identifier (BT-30 / BT-47 /
  * BT-61). BT-31 also lands in a `cbc:CompanyID`, inside `cac:PartyTaxScheme`,
  * but the generator writes no `schemeID` there — a VAT identifier is scoped by
- * its country prefix, not by an ICD — so it is out of context and deliberately
- * not checked here.
+ * its country prefix, not by an ICD — so it is out of context for these rules.
+ * The one rule that reads VAT identifiers, `PEPPOL-COMMON-R056-2`, selects them
+ * by that prefix instead, and has its own function below.
+ *
+ * Those are the UBL contexts. The CII binding's are wider, `ram:ID`,
+ * `ram:GlobalID` or `ram:URIID` with the scheme anywhere in the document, which
+ * also reaches the deliver-to location (BT-71) and the item standard identifier
+ * (BT-157). Neither is checked here; the README lists the gap.
+ *
+ * `schemeId` and `value` are kept exactly as the caller wrote them, because the
+ * generator writes them that way and the schematron reads them that way. Its
+ * contexts compare `@schemeID` exactly, so `"0096 "` is not scheme 0096 there,
+ * and CL008 finds it on no list. Most of its tests read the value through
+ * `normalize-space()`, but `R042`, `R052` and `R053` test `string()`, so a
+ * value padded to a fixed width fails them on its length. Each check below
+ * reads the value the way its own assertion does.
  */
 interface SchemedIdentifier {
+  /** As written: the schematron compares it exactly. */
   schemeId: string;
+  /** As written; see {@link SchemeCheck.reads}. */
   value: string;
   /** Model path, for the fix. */
   path: string;
@@ -257,7 +287,7 @@ const schemedIdentifiers = (inv: InvoiceInput): SchemedIdentifier[] => {
     spec: Omit<SchemedIdentifier, "schemeId" | "value">,
   ) => {
     if (!entry || blank(entry.schemeId) || blank(entry.value)) return;
-    out.push({ ...spec, schemeId: entry.schemeId!.trim(), value: entry.value!.trim() });
+    out.push({ ...spec, schemeId: entry.schemeId!, value: entry.value! });
   };
 
   const parties = [
@@ -331,6 +361,16 @@ const schemedIdentifiers = (inv: InvoiceInput): SchemedIdentifier[] => {
 
   return out;
 };
+
+/**
+ * XPath's `normalize-space()`: strip the four XML whitespace characters from
+ * both ends and collapse every run of them inside to one space. Not
+ * JavaScript's `trim()`, which also strips a no-break space and the other
+ * Unicode spaces the schematron keeps, so a value the official check refuses
+ * would pass here.
+ */
+const normalizeSpace = (value: string): string =>
+  value.replace(/[\x20\t\r\n]+/g, " ").replace(/^ | $/g, "");
 
 const digitsOnly = (value: string): boolean => /^[0-9]+$/.test(value);
 
@@ -443,6 +483,18 @@ const danishCvr = (value: string): boolean =>
   (value.length === 10 && value.slice(0, 2) === "DK" && digitsOnly(value.slice(2))) ||
   (value.length === 8 && digitsOnly(value));
 
+/** "NL", nine digits, "B", two digits: the one written form of a Dutch VAT number. */
+const dutchVatNumber = (value: string): boolean => /^NL[0-9]{9}B[0-9]{2}$/.test(value);
+
+/**
+ * The last sentence of every Dutch identifier finding. OpenPEPPOL added the
+ * five rules to 3.0.21 as warnings "to allow for transition period for
+ * implementers" and said they become fatal in a future release, so data that
+ * draws one of these warnings today will be refused later.
+ */
+const DUTCH_TRANSITION =
+  "Peppol added this rule in BIS 3.0.21 as a warning, to give senders time to correct their data, and has said the Dutch identifier rules become fatal in a later release.";
+
 interface SchemeCheck {
   rule: string;
   /** Scheme identifiers the rule's context selects. */
@@ -457,23 +509,42 @@ interface SchemeCheck {
   shape: string;
   /** Why the format carries information — what the check actually buys. */
   why: string;
+  /** Said after the severity, for a rule whose severity is due to change. */
+  transition?: string;
+  /**
+   * How the official test reads the value. Most read `normalize-space()`, so
+   * whitespace around the value is forgiven. `"string"` marks the three that
+   * test `string()` itself (R042, R052, R053), where it is not.
+   */
+  reads?: "string";
   example: string;
 }
 
 /**
- * `PEPPOL-COMMON-R040`..`R053`, in schematron order.
+ * `PEPPOL-COMMON-R040`..`R057`, in schematron order, except `R056-2`.
  *
- * Twelve rules, one table, because the difference between them is a scheme
+ * Sixteen rules, one table, because the difference between them is a scheme
  * code and an arithmetic — everything else about the finding is the same. The
  * severities are the schematron's, not a judgement: the four Italian schemes
- * and the two secondary Danish ones are `warning`, the rest `fatal`, and that
- * split is worth respecting rather than levelling, since an access point
- * enforces exactly this list at exactly these levels.
+ * and the four Dutch ones are `warning`, the rest `fatal`, and that split is
+ * worth respecting rather than levelling, since an access point enforces
+ * exactly this list at exactly these levels. scripts/build-peppol.mjs fails
+ * when the schematron's split changes, and src/rules-invariants.test.ts fails
+ * when this table disagrees with that script.
+ *
+ * The split moved in 3.0.21, mandatory from 17 August 2026. `R052` and `R053`,
+ * the two secondary Danish schemes, went from `warning` to `fatal`, so a
+ * malformed P-number or SE number that used to leave `valid: true` now makes
+ * the document invalid. The same release added the Dutch rules `R054` (KVK
+ * number, scheme 0106), `R055` (OIN, 0190), `R056-1` (VAT number, 9944) and
+ * `R057` (establishment number, 0217) as warnings, with a note that they become
+ * fatal in a later release, and `R056-2`, which checks any VAT identifier
+ * that starts with "NL" and so needs no scheme.
  *
  * `PEPPOL-COMMON-R048` is missing on purpose. It checked an Italian VAT number
  * under endpoint scheme 9906, and Peppol BIS 3.0.14 (November 2022) removed
  * 9906 and 9907 from the participant scheme list and commented R048 out of
- * `PEPPOL-EN16931-UBL.sch`. It is still commented out at the pinned v3.0.20. A
+ * `PEPPOL-EN16931-UBL.sch`. It is still commented out at the pinned 3.0.21. A
  * 9906 endpoint is now refused by `PEPPOL-EN16931-CL008` alone, and the same
  * value belongs under 0211, where R047 checks it. This table kept R048 through
  * 0.12.0, a warning the reference validator no longer raised, because the
@@ -504,6 +575,7 @@ const SCHEME_CHECKS: SchemeCheck[] = [
   },
   {
     rule: "PEPPOL-COMMON-R042",
+    reads: "string",
     schemes: ["0184"],
     severity: "fatal",
     register: "Danish CVR number",
@@ -587,24 +659,111 @@ const SCHEME_CHECKS: SchemeCheck[] = [
   },
   {
     rule: "PEPPOL-COMMON-R052",
+    reads: "string",
     schemes: ["0096"],
-    severity: "warning",
+    severity: "fatal",
     register: "Danish chamber of commerce number (P-number)",
     ok: (v) => /^[0-9]{10}$/.test(v),
     shape: "exactly ten digits",
-    why: "A Danish P-number identifies a production unit — a site — rather than the legal entity the CVR number identifies. It is ten digits with no check digit, so length is the only thing that can be verified, which is also why this is a warning and not a rejection.",
+    why: "A Danish P-number identifies a production unit — a site — rather than the legal entity the CVR number identifies. It is ten digits with no check digit, so the length and the digits are all a format check can verify. Peppol flagged this rule a warning until BIS 3.0.21 made it fatal for every profile, mandatory from 17 August 2026, so a document that passed with a warning before then is now refused.",
     example: `"identifier": { "schemeId": "0096", "value": "1234567890" }`,
   },
   {
     rule: "PEPPOL-COMMON-R053",
+    reads: "string",
     schemes: ["0198"],
-    severity: "warning",
+    severity: "fatal",
     register: "Danish ERSTORG number (SE number)",
     ok: (v) =>
       v.length === 10 && v.slice(0, 2) === "DK" && digitsOnly(v.slice(2)),
     shape: '"DK" followed by eight digits',
-    why: 'The SE number is the CVR number in its VAT-registration guise, and in this scheme it is always written with the "DK" prefix — unlike scheme 0184, which accepts the bare form as well.',
+    why: 'The SE number is the CVR number in its VAT-registration guise, and in this scheme it is always written with the "DK" prefix — unlike scheme 0184, which accepts the bare form as well. Peppol flagged this rule a warning until BIS 3.0.21 made it fatal for every profile, mandatory from 17 August 2026, so a document that passed with a warning before then is now refused.',
     example: `"identifier": { "schemeId": "0198", "value": "DK12345678" }`,
+  },
+  {
+    rule: "PEPPOL-COMMON-R054",
+    schemes: ["0106"],
+    severity: "warning",
+    register: "Dutch Chamber of Commerce number (KVK-nummer)",
+    ok: (v) => /^[0-9]{8}$/.test(v),
+    shape: "exactly eight digits",
+    why: `The KVK number identifies a company in the Dutch trade register and is always eight digits, with no check digit. A twelve-digit value is usually the company's establishment number (vestigingsnummer), which Peppol files under scheme 0217 instead.`,
+    transition: DUTCH_TRANSITION,
+    example: `"legalRegistrationId": "12345678", "legalRegistrationSchemeId": "0106"`,
+  },
+  {
+    rule: "PEPPOL-COMMON-R055",
+    schemes: ["0190"],
+    severity: "warning",
+    register: "Dutch government organisation identification number (OIN)",
+    ok: (v) => /^[0-9]{20}$/.test(v),
+    shape: "exactly twenty digits",
+    why: `The OIN (Organisatie-identificatienummer) is the twenty-digit number the Dutch government issues to public organisations, and it is how many Dutch public bodies are addressed on Peppol. Leading zeros are part of it: stored as a number rather than as text, an OIN loses them and fails this check.`,
+    transition: DUTCH_TRANSITION,
+    example: `"electronicAddress": { "schemeId": "0190", "value": "00000001234567890000" }`,
+  },
+  {
+    rule: "PEPPOL-COMMON-R056-1",
+    schemes: ["9944"],
+    severity: "warning",
+    register: "Dutch VAT number (Peppol scheme 9944)",
+    ok: dutchVatNumber,
+    shape: '"NL", nine digits, the letter "B" and two digits, as in NL123456789B01',
+    why: `The Dutch VAT identification number (btw-identificatienummer) has exactly one written form. Without the "B", with spaces or dots, or with a lower-case prefix it is a different string, and a participant lookup on it finds nobody.`,
+    transition: DUTCH_TRANSITION,
+    example: `"electronicAddress": { "schemeId": "9944", "value": "NL123456789B01" }`,
+  },
+  {
+    rule: "PEPPOL-COMMON-R057",
+    schemes: ["0217"],
+    severity: "warning",
+    register: "Dutch establishment number (vestigingsnummer)",
+    ok: (v) => /^[0-9]{12}$/.test(v),
+    shape: "exactly twelve digits",
+    why: `The establishment number identifies one branch of a company in the Dutch trade register, and it is twelve digits where the company's KVK number is eight. An eight-digit value here is almost always the KVK number, which belongs under scheme 0106. As an electronic address, 0217 is also refused by PEPPOL-EN16931-CL008: it left Peppol's participant scheme list in the same release.`,
+    transition: DUTCH_TRANSITION,
+    example: `"identifier": { "schemeId": "0217", "value": "000012345678" }`,
+  },
+];
+
+/**
+ * `PEPPOL-COMMON-R056-2`: a VAT identifier that starts with "NL" must be in
+ * the Dutch format.
+ *
+ * Unlike the table above, this rule selects on the value, not on a scheme. Its
+ * context is every `cac:PartyTaxScheme` whose tax scheme is VAT, filtered to a
+ * `cbc:CompanyID` starting with "NL", case-sensitively, which is where the
+ * generator writes BT-31, BT-48 and BT-63. The CII binding says the same of
+ * `ram:SpecifiedTaxRegistration` with `schemeID="VA"`.
+ */
+const VAT_IDENTIFIERS: {
+  /** Model path, for the fix. */
+  path: string;
+  field: BusinessTerm;
+  who: string;
+  value: (inv: InvoiceInput) => string | undefined;
+  xpath: string;
+}[] = [
+  {
+    path: "seller.vatId",
+    field: "BT-31",
+    who: "seller",
+    value: (inv) => inv.seller?.vatId,
+    xpath: "/ubl:Invoice/cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID",
+  },
+  {
+    path: "buyer.vatId",
+    field: "BT-48",
+    who: "buyer",
+    value: (inv) => inv.buyer?.vatId,
+    xpath: "/ubl:Invoice/cac:AccountingCustomerParty/cac:Party/cac:PartyTaxScheme/cbc:CompanyID",
+  },
+  {
+    path: "taxRepresentative.vatId",
+    field: "BT-63",
+    who: "seller tax representative",
+    value: (inv) => inv.taxRepresentative?.vatId,
+    xpath: "/ubl:Invoice/cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID",
   },
 ];
 
@@ -649,9 +808,12 @@ const VATEX_CATEGORY_RULES: {
  * UNTDID 1001 codes Peppol billing process 01 admits on an invoice (P0100).
  *
  * Verbatim from the assertion's own `tokenize(...)` literal in
- * `rules/sch/PEPPOL-EN16931-UBL.sch` @ v3.0.20. Its context element is
- * `cbc:InvoiceTypeCode`, which exists only on `ubl:Invoice` — hence the
- * document-kind gate on the rule below.
+ * `rules/sch/PEPPOL-EN16931-UBL.sch` @ 3.0.21, where the list is the one
+ * v3.0.20 had. What 3.0.21 changed is the gate: the assertion now applies to
+ * billing process 02 (`urn:peppol:bis:billing_with_response`) as well as 01.
+ * This library emits 01 only, so the change reaches no document it writes.
+ * Its context element is `cbc:InvoiceTypeCode`, which exists only on
+ * `ubl:Invoice` — hence the document-kind gate on the rule below.
  */
 export const PROFILE_01_INVOICE_TYPE_CODES: ReadonlySet<string> = new Set([
   "71", "80", "82", "84", "102", "218", "219", "326", "331", "380", "382",
@@ -821,8 +983,12 @@ export const peppolRules: RuleFn[] = [
         rule: "PEPPOL-EN16931-CL008",
         field: entry.field,
         severity: "fatal",
-        message: `The ${entry.label} (${entry.field}) uses the scheme identifier "${entry.schemeId}", which is not in the Peppol Participant Identifier Scheme list. This is the rule people are most surprised by, because "${entry.schemeId}" may well be a perfectly valid CEF Electronic Address Scheme code and satisfy BR-CL-25: the CEN list is the *register* of address schemes, and this one is the subset an access point will actually resolve. A code in the first and not the second gives you a document that passes every validator you can run locally and is refused at the network edge. ${PROFILE_NOTE}`,
-        fix: `Set ${entry.path}.schemeId to a code from the PEPPOL_EAS_SCHEME_CODES list this package exports — ${PEPPOL_EAS_SCHEME_CODES.slice(0, 6).join(", ")} and ${PEPPOL_EAS_SCHEME_CODES.length - 6} others. In practice the choice is made for you: it is whichever scheme your counterparty is registered under in the Peppol directory, so look them up rather than guessing.`,
+        message: PEPPOL_EAS_SCHEME_CODES_SET.has(entry.schemeId.trim())
+          ? `The ${entry.label} (${entry.field}) uses the scheme identifier "${entry.schemeId}", with whitespace around "${entry.schemeId.trim()}". Peppol compares the scheme identifier character for character against its Participant Identifier Scheme list, so the padded value is on no list, and the address cannot be resolved. A fixed-width database column or form field is the usual source. ${PROFILE_NOTE}`
+          : `The ${entry.label} (${entry.field}) uses the scheme identifier "${entry.schemeId}", which is not in the Peppol Participant Identifier Scheme list. This is the rule people are most surprised by, because "${entry.schemeId}" may well be a perfectly valid CEF Electronic Address Scheme code and satisfy BR-CL-25: the CEN list is the *register* of address schemes, and this one is the subset an access point will actually resolve. A code in the first and not the second gives you a document that passes every validator you can run locally and is refused at the network edge. ${PROFILE_NOTE}`,
+        fix: PEPPOL_EAS_SCHEME_CODES_SET.has(entry.schemeId.trim())
+          ? `Remove the whitespace: set ${entry.path}.schemeId to "${entry.schemeId.trim()}".`
+          : `Set ${entry.path}.schemeId to a code from the PEPPOL_EAS_SCHEME_CODES list this package exports — ${PEPPOL_EAS_SCHEME_CODES.slice(0, 6).join(", ")} and ${PEPPOL_EAS_SCHEME_CODES.length - 6} others. In practice the choice is made for you: it is whichever scheme your counterparty is registered under in the Peppol directory, so look them up rather than guessing.`,
         example: `"electronicAddress": { "schemeId": "0088", "value": "7300010000001" }`,
         xpath: entry.xpath,
         docsUrl: page("PEPPOL-EN16931-CL008"),
@@ -831,7 +997,7 @@ export const peppolRules: RuleFn[] = [
     return out;
   },
 
-  // --- PEPPOL-COMMON-R040..R053: national identifier formats -------------
+  // --- PEPPOL-COMMON-R040..R057: national identifier formats -------------
   (inv) => {
     if (!isPeppol(inv)) return null;
     const out: TeachingError[] = [];
@@ -839,22 +1005,61 @@ export const peppolRules: RuleFn[] = [
       for (const check of SCHEME_CHECKS) {
         if (!check.schemes.includes(entry.schemeId)) continue;
         if (check.endpointOnly && !entry.isEndpoint) continue;
-        if (check.ok(entry.value)) continue;
+        const tested = check.reads === "string" ? entry.value : normalizeSpace(entry.value);
+        if (check.ok(tested)) continue;
+        // Right apart from the padding: say so, or the reader re-checks digits
+        // that were never wrong.
+        const padded = check.reads === "string" && check.ok(normalizeSpace(entry.value));
         out.push({
           rule: check.rule,
           field: entry.field,
           severity: check.severity,
-          message: `The ${entry.label} (${entry.field}) is "${entry.value}" under scheme "${entry.schemeId}", which identifies the ${check.register}. A value in that scheme must be ${check.shape}, and this one is not. ${check.why} ${
+          message: `The ${entry.label} (${entry.field}) is "${entry.value}" under scheme "${entry.schemeId}", which identifies the ${check.register}. A value in that scheme must be ${check.shape}, and this one is not.${
+            padded
+              ? ` Its characters are right, but it carries whitespace around them, and this rule measures the value as written, spaces included, where most of Peppol's identifier rules trim it first.`
+              : ""
+          } ${check.why} ${
             check.severity === "warning"
               ? "Peppol flags this one as a warning rather than a rejection, so the document will be delivered — but a wrong identifier is delivered to the wrong place, or to nowhere."
-              : "Peppol flags this fatal: the identifier is what an access point resolves to find your counterparty, so a value that fails its own check digit is undeliverable."
-          } ${PROFILE_NOTE}`,
-          fix: `Correct ${entry.path}, or change its scheme identifier if the value belongs to a different register. A check digit failing almost always means one digit was transposed or dropped in transcription — compare it against the source register rather than re-typing it.`,
+              : "Peppol flags this fatal: the identifier is what an access point resolves to find your counterparty, so a value in the wrong form is undeliverable."
+          }${check.transition ? ` ${check.transition}` : ""} ${PROFILE_NOTE}`,
+          fix: padded
+            ? `Remove the whitespace around ${entry.path}: "${normalizeSpace(entry.value)}". A value padded to a fixed width by a database column or form field is the usual source, so trim it where it is read.`
+            : `Correct ${entry.path}, or change its scheme identifier if the value belongs to a different register. A failing check digit or length almost always means a digit was transposed, dropped or added in transcription — compare it against the source register rather than re-typing it.`,
           example: check.example,
           xpath: entry.xpath,
           docsUrl: page(check.rule),
         });
       }
+    }
+    return out;
+  },
+
+  // --- PEPPOL-COMMON-R056-2: a VAT identifier that says NL is Dutch ------
+  //
+  // Selected on the value's own prefix, case-sensitively, as the schematron's
+  // `starts-with(normalize-space(.), 'NL')` does, so "nl123456789B01" is out of
+  // context here as it is there, and BR-CO-09 reports the prefix instead. The
+  // value is read through XPath's normalize-space, not trim(): a trailing
+  // no-break space fails the official test, and must fail here.
+  (inv) => {
+    if (!isPeppol(inv)) return null;
+    const out: TeachingError[] = [];
+    for (const vat of VAT_IDENTIFIERS) {
+      const raw = vat.value(inv);
+      if (blank(raw)) continue;
+      const value = normalizeSpace(raw!);
+      if (!value.startsWith("NL") || dutchVatNumber(value)) continue;
+      out.push({
+        rule: "PEPPOL-COMMON-R056-2",
+        field: vat.field,
+        severity: "warning",
+        message: `The ${vat.who} VAT identifier (${vat.field}) is "${value}". It starts with "NL", so Peppol reads it as a Dutch VAT number, and a Dutch VAT number has exactly one written form: "NL", nine digits, the letter "B" and two digits, as in NL123456789B01. This one does not match it. PEPPOL-COMMON-R056-1 asks the same of an electronic address under scheme 9944; this rule asks it of every VAT identifier, whatever scheme the party is addressed under. Peppol flags this one as a warning rather than a rejection, so the document will be delivered, but a VAT number in any other form fails a VIES lookup and the buyer's own checks against it. ${DUTCH_TRANSITION} ${PROFILE_NOTE}`,
+        fix: `Write ${vat.path} in the form the Dutch tax administration issued it: "NL", the nine digits, "B" and the two-digit suffix, with no spaces, dots or hyphens. If the party is not Dutch, the value should not start with "NL": use the prefix of the country that issued the number.`,
+        example: `"vatId": "NL123456789B01"`,
+        xpath: vat.xpath,
+        docsUrl: page("PEPPOL-COMMON-R056-2"),
+      });
     }
     return out;
   },

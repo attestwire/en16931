@@ -14,6 +14,11 @@ recorded in the addendum, covers the same five inputs emitted in both syntaxes,
 ten documents. Both are conformance checks on those documents, not a schematron
 parity suite.
 
+**The current record is the third run, 2026-09-25, against Peppol BIS Billing
+3.0.21**, at the end of this file, with probes of each rule 3.0.21 changed. The
+first two runs, both on 2026-08-14, were against v3.0.20 and are kept as they
+were written: the first is the one that found defects.
+
 ## Running it
 
 ```bash
@@ -22,7 +27,12 @@ JAVA_BIN=/opt/homebrew/opt/openjdk@17/bin/java ./scripts/peppol-check.sh
 ```
 
 Requires a JDK 11+, `xmllint` and `python3`. Everything is downloaded into a
-scratch directory; nothing is installed system-wide.
+scratch directory; nothing is installed system-wide. The script prints the
+SHA-256 of the four schematrons it judges with, because since 3.0.21 a release
+number no longer identifies the files: OpenPEPPOL did not tag that release, and
+the script fetches it by commit (see the third run).
+
+The artefacts of the two runs on 2026-08-14:
 
 | Artefact | Version | Source |
 | --- | --- | --- |
@@ -64,7 +74,7 @@ these five are not. They are the five committed UBL fixture *inputs* with
 that the question answered is what Peppol says about the documents this library
 already emits, rather than what it says about documents written to pass.
 
-## Last recorded result
+## First run — 2026-08-14, against v3.0.20
 
 Run on **2026-08-14** against Peppol BIS Billing 3.0.20, from a clean scratch
 directory.
@@ -462,3 +472,171 @@ layer. Added to it by this run:
   `noteSubjectCode` and generates CII under `peppol-bis-3` gets a document
   without it. That is the only way to satisfy R002, it is warned about before it
   happens, and it is still a business term this library declines to emit.
+
+---
+
+## Last recorded result — third run, 2026-09-25, against Peppol BIS Billing 3.0.21
+
+Peppol BIS Billing 3.0.21 was published on docs.peppol.eu on 2026-05-20 and is
+mandatory from 2026-08-17. This build implemented v3.0.20 until this run, and
+nothing in the repository noticed the new release, because OpenPEPPOL never
+tagged it: on 2026-09-25 the newest tag and GitHub release of
+`OpenPEPPOL/peppol-bis-invoice-3` are still `v3.0.20`, and
+`scripts/upstream-check.mjs` read only those. It now reads docs.peppol.eu as
+well: the newest version on the release notes, and the SHA-256 of the
+schematron served there, compared with the one this build pins.
+
+### Which files are 3.0.21
+
+With no tag, "3.0.21" has to be pinned to files. docs.peppol.eu serves
+[`PEPPOL-EN16931-UBL.sch`](https://docs.peppol.eu/poacc/billing/3.0/files/PEPPOL-EN16931-UBL.sch)
+and `CEN-EN16931-UBL.sch` (both `Last-Modified: 18 Aug 2026`) and no CII
+schematrons. Both files match byte for byte at the tip of branch
+`2026-Q2-QA2`, commit `806866b`, and at its parent `75009b9` ("addition of
+0158"), because `806866b` changed only the release notes. Neither branch whose
+name suggests 3.0.21 has them:
+
+| Where | `PEPPOL-EN16931-UBL.sch` | `CEN-EN16931-UBL.sch` |
+| --- | --- | --- |
+| docs.peppol.eu, fetched 2026-09-25 | `62e5b678…` | `268d4f7a…` |
+| branch `2026-Q2-QA2` @ `806866b` (2026-06-10, "Updated mandatory date") | `62e5b678…` | `268d4f7a…` |
+| branch `2026-Q2-validation-artefacts` @ `ffcc6bc` (2026-04-26) | `b02d8777…` | `268d4f7a…` |
+| branch `2026-Q2-DEV-v3.0.21` @ `f90a391` (2026-03-02) | `17afcf9e…` | `bdcbb7b7…`, v3.0.20's |
+| tag `v3.0.20` | `5ddf3a2f…` | `bdcbb7b7…` |
+
+The validation-artefacts branch still carries the fourteen participant schemes
+3.0.21 removed and lacks the two French ProfileIDs; `806866b` is twelve commits
+past it. So `scripts/build-peppol.mjs` and `scripts/lib/validator-setup.sh` pin
+commit `806866bd2bd91d7e9623b68f08164e8fbe9e67a0`, the branch tip as
+published, and `build-peppol.mjs` also pins the SHA-256 of both files and
+refuses a commit whose files hash differently. The CII schematrons come from the same commit; there is no
+published copy to compare them with.
+
+The CEN schematron bundled with 3.0.21 also caught up with the one this
+build's code lists come from. Its 22 code-list assertions (`BR-CL-01` ..
+`BR-CL-26`) are identical, test and flag, to CEN `validation-1.3.16`'s
+`EN16931-UBL-codes.sch`, which `scripts/build-codelists.mjs` pins; the copy
+bundled with v3.0.20 differed on nine of them. It also no longer contains
+`BR-CO-25`, which this build does not emit.
+
+### What 3.0.21 changed, and what this build did
+
+| 3.0.21 | This build |
+| --- | --- |
+| `PEPPOL-COMMON-R052` (Danish P-number, scheme `0096`) and `R053` (SE number, `0198`) go from warning to fatal, for every profile | Both fatal. A document with a malformed P-number or SE number was valid with a warning up to 0.12.x; it is invalid now. |
+| New warnings: `R054` (KVK number, `0106`, eight digits), `R055` (OIN, `0190`, twenty digits), `R056-1` (VAT number, `9944`, `NL123456789B12`), `R056-2` (any VAT identifier starting `NL`, same form), `R057` (establishment number, `0217`, twelve digits). OpenPEPPOL says they become fatal in a later release. | All five implemented, as warnings. `build-peppol.mjs` fails the build when their flag changes. |
+| `$eaid` (`CL008`): fourteen schemes removed (`0037`, `0147`, `0154`, `0170`, `0177`, `0193`, `0194`, `0202`, `0203`, `0205`, `0212`, `0213`, `0215`, `0217`). Against v3.0.20's file it also gains `0242`, `0246` and `0248`, which the release notes' table does not list. | Regenerated from the file: 83 schemes, was 94. |
+| `ISO4217` (`CL007`): `ANG` and `BGN` removed, `XCG` added. The file also swaps `STD` for `STN`, which the release notes do not list. | Regenerated: 178 codes, was 179. Peppol's list and the CEN one now differ only on `STD`/`STN`, the other way round from before. |
+| `P0100` and `P0101` also bind profile 02, billing with response. | Nothing to do: the code lists are unchanged, and this build emits profile 01 only. |
+| `R004` also refuses a `CustomizationID` with version information (`::`); `R007` accepts only the ProfileIDs it lists (in UBL billing 01, two temporary French ones and billing with response; in CII billing 01 and billing with response), where any `…:billing:NN:1.0` passed before. | Nothing to do: both are generator-controlled, and the identifiers this build writes satisfy the new tests. A caller who overrides `GenerateOptions.profileId` or `customizationId` can break them; `validateInput` does not see those options. |
+| Every rule text is prefixed with its id. | The site's quotes of official texts now carry the prefix; this build's messages are its own. |
+| `DK-R-003` and `DK-R-017` become fatal; `DE-R-T02` is new; German, Greek, Italian and Dutch rule texts reworded. | Not implemented: this build does not run Peppol's country rule sets (see below). |
+| `PEPPOL-COMMON-R048` stays commented out. | Retired here in 0.12.1. |
+
+### Result: 10 documents, 10 ACCEPTED, 0 findings
+
+Run on **2026-09-25** from a clean scratch directory, against the 3.0.21
+artefacts above, with this build carrying the rule changes in the table (engine
+0.13.0). Saxon-HE 12.5, the ISO Schematron skeleton at `77dcd36`, UBL 2.1 OS and
+OpenJDK 17.0.18 as before, with the heap capped at 1 GB.
+
+| Document | Root | XSD | `CEN-EN16931-*` | `PEPPOL-EN16931-*` | Verdict | This build says |
+| --- | --- | --- | --- | --- | --- | --- |
+| `peppol-ubl-minimal` | `ubl:Invoice` | pass | pass (70 fired) | pass (45) | **ACCEPTED** | `valid: true`, no findings |
+| `peppol-ubl-reverse-charge` | `ubl:Invoice` | pass | pass (65) | pass (35) | **ACCEPTED** | `valid: true`, no findings |
+| `peppol-ubl-discount` | `ubl:Invoice` | pass | pass (127) | pass (87) | **ACCEPTED** | `valid: true`, warning `PEPPOL-EN16931-R002` |
+| `peppol-ubl-credit-note` | `ubl:CreditNote` | pass | pass (73) | pass (46) | **ACCEPTED** | `valid: true`, no findings |
+| `peppol-ubl-credit-note-discount` | `ubl:CreditNote` | pass | pass (123) | pass (83) | **ACCEPTED** | `valid: true`, warning `PEPPOL-EN16931-R002` |
+| `peppol-cii-minimal` | `rsm:CrossIndustryInvoice` | n/a | pass (102) | pass (16) | **ACCEPTED** | `valid: true`, no findings |
+| `peppol-cii-reverse-charge` | `rsm:CrossIndustryInvoice` | n/a | pass (96) | pass (18) | **ACCEPTED** | `valid: true`, no findings |
+| `peppol-cii-discount` | `rsm:CrossIndustryInvoice` | n/a | pass (189) | pass (35) | **ACCEPTED** | `valid: true`, warning `PEPPOL-EN16931-R002` |
+| `peppol-cii-credit-note` | `rsm:CrossIndustryInvoice` | n/a | pass (106) | pass (16) | **ACCEPTED** | `valid: true`, no findings |
+| `peppol-cii-credit-note-discount` | `rsm:CrossIndustryInvoice` | n/a | pass (186) | pass (35) | **ACCEPTED** | `valid: true`, warning `PEPPOL-EN16931-R002` |
+
+**Accepted: 10  Rejected: 0.  `total findings across all reports: 0`.**
+
+SHA-256 of what judged them, as the script printed it and as fetched on
+2026-09-25:
+
+```
+268d4f7a2688676695e6c69cba6fba69a6802604fee12cb544a6b30ff09555a3  CEN-EN16931-UBL.sch
+62e5b67892f12755352d78b06f63229a02cc2eccc748677c56efbc8dbcb336e3  PEPPOL-EN16931-UBL.sch
+54e0dc6d06cd7f17d268bb9696ff56f58d386ee28961c9bbef0a56718c400c89  CEN-EN16931-CII.sch
+7678c3cd4a219095ef5d4f2ece17e5d447eb92655e57a7d52290b35acfdc9dd8  PEPPOL-EN16931-CII.sch
+a843cd3808c6e95565eded1a535a5a40a88ad6f92e009d2b1816a4818a82299e  peppol-806866bd2bd91d7e9623b68f08164e8fbe9e67a0.tar.gz
+```
+
+The other downloads hash as in the table at the top of this file. GitHub
+generates the tarball on request, so its hash is the least durable of these;
+the four schematron hashes are the ones to compare.
+
+### The fired-rule counts moved, and every move is accounted for
+
+- **CEN, the three UBL invoices, one fewer each** (71 → 70, 66 → 65,
+  128 → 127): the rule that held `BR-CO-25` is gone from the bundled CEN
+  schematron. Its context was `/ubl:Invoice/cac:LegalMonetaryTotal/cbc:PayableAmount`,
+  so the two credit notes are unchanged at 73 and 123.
+- **Peppol, the reverse-charge document, two more in both syntaxes** (UBL
+  33 → 35, CII 16 → 18): its buyer is Dutch, with VAT identifier and `9944`
+  electronic address `NL123456789B01`. So `R056-1` and `R056-2` fired on real
+  data and passed, and this build agrees: no findings.
+- **Peppol, the two UBL discount documents, one more each** (86 → 87,
+  82 → 83): `DE-R-T02`, a new German warning on an attachment's external
+  reference, fired on their supporting-document link (both parties are German)
+  and passed.
+
+### Probes: each change put to the artefact
+
+A clean document shows that a rule passes, not that it fires. Nine probe
+documents were emitted from the minimal fixture with `profile: "peppol-bis-3"`,
+in both syntaxes, and put to the same compiled artefacts. Like the KoSIT probes
+they are not committed: most exist to be rejected.
+
+| Probe | Official, UBL | Official, CII | This build |
+| --- | --- | --- | --- |
+| Seller identifier `0096` `"123"`, buyer identifier `0198` `"12345678"` | `PEPPOL-COMMON-R052` fatal, `R053` fatal | the same | `R052` fatal, `R053` fatal; `valid: false` |
+| Seller address `9944` `"NL123456789"`, identifier `0217` `"12345678"`, legal id `0106` `"1234567"`; buyer address `0190` `"1234567890"`, VAT `"NL123456789"` | `R054`, `R055`, `R056-1`, `R056-2`, `R057`, all warning | the same | the same five, all warning; `valid: true` |
+| The same six slots, each value well formed | no findings (50 Peppol rules fired) | no findings (21 fired) | no findings |
+| Currency `STD` | `PEPPOL-EN16931-CL007` fatal, once per `currencyID` (13); CEN passes | `CL007` fatal; CEN passes | `CL007` fatal, once, on BT-5 |
+| Currency `STN` | Peppol passes; CEN `BR-CL-04` fatal and `BR-CL-03` (13) | the same | `BR-CL-04` and `BR-CL-03`, fatal |
+| Seller address scheme `0037` | `PEPPOL-EN16931-CL008` fatal | the same | `CL008` fatal |
+| Seller identifier `0096` `"1234567890 "`, right digits and a trailing space | `R052` fatal | the same | `R052` fatal |
+| Seller address scheme `" 0088"`, padded | `CL008` fatal | the same | `CL008` fatal |
+| Buyer VAT `"NL123456789B01"` and a trailing no-break space | `R056-2` warning | the same | `R056-2` warning |
+
+The same rule ids at the same flags in every row, in both syntaxes. The counts
+differ where they always have: the schematron reports a currency once per
+attribute, this build once per business term.
+
+The last three rows are the review of this change finding something the first
+six missed. This build trimmed identifiers before checking them, and returned
+no finding for any of the three. `R042`, `R052` and `R053` measure the value
+as written, the other identifier rules trim only XML whitespace, and Peppol
+compares scheme identifiers exactly. The three rows were run after the fix.
+
+### What this run does not settle
+
+Everything the two earlier lists name still stands: the XRechnung-profile
+gating gap at `scripts/kosit-check.md:433`, the unmeasured ratio of Peppol
+assertions implemented, `PEPPOL-EN16931-R040` with a percentage, the Peppol
+network layer, no XSD check for `peppol-bis-3` CII, the CII documents not being
+committed, and `P0100` unverified in CII: its context in the 3.0.21 CII
+schematron is still `ram:ExchangedDocument/ram:TypeCode`, which matches nothing.
+Added by this run:
+
+- **Peppol's country rule sets are not implemented**, so 3.0.21's changes to
+  them (`DK-R-003` and `DK-R-017` fatal, `DE-R-T02` new) are not in this build.
+  The German documents above passing `DE-R-T02` is evidence about those
+  documents only.
+- **Peppol's identifier rules at CII-only positions are not checked.** In
+  CII, `PEPPOL-COMMON-R040` .. `R057` apply to any `ram:ID`, `ram:GlobalID`
+  or `ram:URIID` carrying the scheme, which includes the deliver-to location
+  (BT-71) and the item standard identifier (BT-157). This build checks the
+  UBL positions only: electronic addresses, party and legal registration
+  identifiers. The ten documents carry none of these schemes in those places.
+- **`R004` and `R007` were not probed.** This build cannot emit a
+  `CustomizationID` with `::` or an unlisted ProfileID unless the caller
+  overrides `GenerateOptions`, which `validateInput` never sees.
+- **The Dutch rules are warnings for now.** OpenPEPPOL has said they become
+  fatal in a later release; data that draws one of these warnings today will be
+  refused then.

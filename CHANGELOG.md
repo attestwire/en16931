@@ -5,6 +5,113 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-09-26
+
+**Peppol BIS Billing 3.0.21, which the Peppol network has required since 17
+August 2026: a malformed Danish P-number or SE number now makes a Peppol
+invoice invalid, five Dutch identifier checks are new, and the participant
+scheme and currency lists follow the release.**
+
+**OpenPEPPOL's own 3.0.21 artefacts accept all ten sample documents in both
+syntaxes, and nine probe documents draw the same rule ids at the same severity
+from those artefacts as from this build.**
+
+**Upgrading:** on `profile: "peppol-bis-3"` only. `PEPPOL-COMMON-R052` (scheme
+0096) and `PEPPOL-COMMON-R053` (scheme 0198) are errors now, so an invoice that
+came back `valid: true` with one of them as a warning comes back
+`valid: false`, as it does from an access point on 3.0.21. An electronic
+address under one of the fourteen schemes 3.0.21 removed (0037, 0147, 0154,
+0170, 0177, 0193, 0194, 0202, 0203, 0205, 0212, 0213, 0215, 0217) now draws the
+fatal `PEPPOL-EN16931-CL008`, and a currency of ANG, BGN or STD the fatal
+`PEPPOL-EN16931-CL007`. The five Dutch checks are warnings, so `valid` does not
+change for them, but a build that fails on warnings (`--fail-on warning`) fails
+on them. If you override `GenerateOptions.customizationId` or `profileId` for
+Peppol, check the values against 3.0.21's tighter `PEPPOL-EN16931-R004` and
+`R007`: no version suffix (`::`) in the CustomizationID, and one of the
+ProfileIDs it lists (four in UBL, including two temporary French ones; in CII
+only billing 01 and `urn:peppol:bis:billing_with_response`). The identifiers
+this library writes by default pass both. And identifiers are now read as
+written, as Peppol reads them: a value or scheme identifier padded with spaces,
+typically by a fixed-width database column, can fail where it used to pass.
+
+### Changed
+
+- **Peppol BIS Billing 3.0.21 replaces v3.0.20 as the release this build
+  implements.** OpenPEPPOL published it on docs.peppol.eu on 2026-05-20,
+  mandatory from 2026-08-17, and has not tagged it on GitHub, which is why
+  nothing here noticed it until five weeks after it became mandatory. So
+  `scripts/build-peppol.mjs` pins a
+  commit instead of a tag (`806866b`, on the branch `2026-Q2-QA2`): the one
+  whose `PEPPOL-EN16931-UBL.sch` and `CEN-EN16931-UBL.sch` are byte for byte
+  the files docs.peppol.eu serves. The script records both files' SHA-256 and
+  refuses a commit whose files hash differently.
+- **`PEPPOL-COMMON-R052` and `PEPPOL-COMMON-R053` are fatal.** 3.0.21 made the
+  Danish P-number check (scheme 0096, ten digits) and the SE-number check
+  (scheme 0198, `DK` and eight digits) errors for every profile. This build
+  kept reporting them as warnings, and nothing failed, because the build
+  script compared rule ids and never flags.
+- **`PEPPOL-EN16931-CL008` follows 3.0.21's participant scheme list: 83
+  schemes, was 94.** The fourteen above are gone, and against v3.0.20's file
+  0242, 0246 and 0248 are new. The release notes' table lists none added; the
+  schematron is what an access point enforces, and the list is read from it.
+- **`PEPPOL-EN16931-CL007` follows 3.0.21's currency list: 178 codes, was
+  179.** ANG and BGN are gone and XCG is in, which ends the divergence from the
+  CEN list (`BR-CL-04`) that 0.2.0 described. The file also swaps STD for STN,
+  the São Tomé and Príncipe dobra since 2018, which the release notes do not
+  mention and the CEN list has not done: an invoice in STD now fails `CL007`
+  and passes `BR-CL-04`, and one in STN does the reverse.
+
+### Added
+
+- **Five Dutch identifier checks, as warnings.** `PEPPOL-COMMON-R054` (KVK
+  number, scheme 0106, eight digits), `PEPPOL-COMMON-R055` (OIN, 0190, twenty
+  digits), `PEPPOL-COMMON-R056-1` (VAT number as an electronic address, 9944,
+  `NL123456789B01`), `PEPPOL-COMMON-R056-2` (any VAT identifier starting with
+  `NL`, in the same form: BT-31, BT-48, BT-63) and `PEPPOL-COMMON-R057`
+  (establishment number, 0217, twelve digits). 3.0.21 added them as warnings
+  and says they become fatal in a later release; each message says so too.
+- **`scripts/build-peppol.mjs` checks each rule's flag as well as its id.** It
+  fails when the schematron flags a known rule differently from its
+  `WARNING_R_IDS`, and `src/rules-invariants.test.ts` fails when this build
+  reports a Peppol id at a severity that list does not give it. It also reads
+  every id in the two families whatever follows the number (`R056-1` did not
+  match before), fails if it cannot read every `<assert>` in the file, and
+  `src/rules-invariants.test.ts` refuses a generated code list whose header
+  does not name the pinned file.
+
+### Fixed
+
+- **Peppol's identifier rules read each value the way the official
+  assertion does.** This build trimmed identifiers before checking them. But
+  `PEPPOL-COMMON-R042`, `PEPPOL-COMMON-R052` and `PEPPOL-COMMON-R053` test the
+  value as written, and the generator writes it as given, so a P-number padded
+  to `"1234567890 "` passed here and is refused upstream, now fatally. Those
+  three now measure the value with its padding, and name it when the padding
+  is the only fault. The other identifier rules read `normalize-space()`, which
+  trims only the four XML whitespace characters, so a trailing no-break space
+  now fails them here too. Scheme identifiers are compared exactly, as
+  Peppol's `@schemeID = '…'` contexts do: `" 0088"` on an electronic address is
+  on no list, and `PEPPOL-EN16931-CL008` now refuses it and says why.
+- **`scripts/peppol-check.sh` could judge documents with the previous
+  release's rules.** It compiles the schematrons into its scratch directory
+  and reused whatever it found there, so after the pin moved, a warm cache
+  kept running the old release without saying so. The compiled files now
+  carry a stamp naming the commit they came from, and a different commit
+  recompiles. The script also prints the SHA-256 of the four schematrons it
+  judges with.
+
+### Verified against OpenPEPPOL's own artefacts
+
+- **Third run of `scripts/peppol-check.sh`, 2026-09-25, against 3.0.21: 10
+  documents, 10 accepted, 0 findings,** five UBL and five CII. Nine probe
+  documents (the Danish rules; the five Dutch rules, broken and well formed;
+  STD and STN; scheme 0037; a padded P-number, a padded scheme identifier and a
+  VAT number ending in a no-break space) drew the same rule ids at the same
+  flags from the official artefacts as from this build, in both syntaxes. The record, with
+  the fired-rule counts and why each moved, is in `scripts/peppol-check.md`.
+  Counts: 294 regulation rules and 310 rule ids, all reachable from caller
+  input.
+
 ## [0.12.1] — 2026-09-25
 
 **`PEPPOL-COMMON-R048` is no longer reported. Peppol retired it in BIS Billing
@@ -2177,6 +2284,7 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.13.0]: https://github.com/attestwire/en16931/releases/tag/v0.13.0
 [0.12.1]: https://github.com/attestwire/en16931/releases/tag/v0.12.1
 [0.12.0]: https://github.com/attestwire/en16931/releases/tag/v0.12.0
 [0.11.0]: https://github.com/attestwire/en16931/releases/tag/v0.11.0

@@ -13,7 +13,7 @@ body:
     attributes:
       label: Rule set or CIUS
       description: The name and version, as your counterparty or authority states it.
-      placeholder: "XRechnung 3.0.2 / Peppol BIS Billing 3.0.20 / Factur-X EN 16931 / a national extension"
+      placeholder: "XRechnung 3.0.2 / Peppol BIS Billing 3.0.21 / Factur-X EN 16931 / a national extension"
     validations:
       required: true
 

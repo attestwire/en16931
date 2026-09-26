@@ -158,30 +158,42 @@ describe("PEPPOL-EN16931-CL007 — Peppol's own currency list", () => {
     );
   });
 
-  it("rejects a currency Peppol has not yet adopted, even though BR-CL-04 accepts it", () => {
-    // XCG (Caribbean guilder) is in the CEN list and not in Peppol's. This is
-    // the whole reason the two lists ship separately.
-    const ids = errorIds(peppol({ currency: "XCG" }));
+  it("rejects a currency Peppol has retired, even though BR-CL-04 accepts it", () => {
+    // STD is the São Tomé and Príncipe dobra ISO 4217 replaced with STN in
+    // 2018. The CEN list still has STD; Peppol swapped it for STN in 3.0.21.
+    // This is the whole reason the two lists ship separately.
+    const ids = errorIds(peppol({ currency: "STD" }));
     expect(ids).toContain("PEPPOL-EN16931-CL007");
     expect(ids).not.toContain("BR-CL-04");
   });
 
-  it("accepts a currency Peppol still carries and the CEN list has retired", () => {
-    const ids = errorIds(peppol({ currency: "BGN" }));
+  it("accepts a currency Peppol carries and the CEN list does not", () => {
+    const ids = errorIds(peppol({ currency: "STN" }));
     expect(ids).not.toContain("PEPPOL-EN16931-CL007");
     expect(ids).toContain("BR-CL-04");
   });
 
+  it("follows 3.0.21 on the three currencies it caught up on", () => {
+    // v3.0.20 refused XCG and still admitted ANG and BGN; 3.0.21 reversed all
+    // three, so the CEN list and Peppol's now agree on them.
+    expect(errorIds(peppol({ currency: "XCG" }))).not.toContain("PEPPOL-EN16931-CL007");
+    for (const code of ["ANG", "BGN"]) {
+      const ids = errorIds(peppol({ currency: code }));
+      expect(ids, code).toContain("PEPPOL-EN16931-CL007");
+      expect(ids, code).toContain("BR-CL-04");
+    }
+  });
+
   it("checks the VAT accounting currency too", () => {
     const finding = findingFor(
-      peppol({ vatAccountingCurrency: "XCG", taxAmountInAccountingCurrency: 10 }),
+      peppol({ vatAccountingCurrency: "STD", taxAmountInAccountingCurrency: 10 }),
       "PEPPOL-EN16931-CL007",
     )!;
     expect(finding.field).toBe("BT-6");
   });
 
   it("does not fire on the xrechnung profile", () => {
-    expect(allIds(xrechnung({ currency: "XCG" }))).not.toContain(
+    expect(allIds(xrechnung({ currency: "STD" }))).not.toContain(
       "PEPPOL-EN16931-CL007",
     );
   });
@@ -208,6 +220,18 @@ describe("PEPPOL-EN16931-CL008 — the endpoint scheme must be routable", () => 
     ).not.toContain("PEPPOL-EN16931-CL008");
   });
 
+  it("follows the 3.0.21 list: fourteen schemes out, three in", () => {
+    // 3.0.21 corrected $eaid, which "was pointing to a wrong codelist". 0037
+    // (Finnish LY-tunnus) is one of the fourteen it removed; 0246 is one of
+    // the three it gained over v3.0.20.
+    expect(errorIds(peppol(withElectronicAddress("0037", "12345678")))).toContain(
+      "PEPPOL-EN16931-CL008",
+    );
+    expect(errorIds(peppol(withElectronicAddress("0246", "12345678")))).not.toContain(
+      "PEPPOL-EN16931-CL008",
+    );
+  });
+
   it("does not fire on the xrechnung profile", () => {
     expect(allIds(xrechnung(withElectronicAddress("EM", "billing@acme.example")))).not.toContain(
       "PEPPOL-EN16931-CL008",
@@ -215,9 +239,9 @@ describe("PEPPOL-EN16931-CL008 — the endpoint scheme must be routable", () => 
   });
 });
 
-describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
+describe("PEPPOL-COMMON-R040..R057 — national identifier formats", () => {
   const cases: [string, string, string, string, boolean][] = [
-    // rule, scheme, good value, bad value, fatal?
+    // rule, scheme, good value, bad value, fatal? — the flags are 3.0.21's.
     ["PEPPOL-COMMON-R040", "0088", "7300010000001", "7300010000002", true],
     ["PEPPOL-COMMON-R041", "0192", "991825827", "991825828", true],
     ["PEPPOL-COMMON-R042", "0184", "DK12345678", "DK1234567", true],
@@ -228,8 +252,12 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
     ["PEPPOL-COMMON-R047", "0211", "IT01234567897", "IT01234567890", false],
     ["PEPPOL-COMMON-R049", "0007", "2021005489", "2021005488", true],
     ["PEPPOL-COMMON-R050", "0151", "51824753556", "51824753557", true],
-    ["PEPPOL-COMMON-R052", "0096", "1234567890", "123456789", false],
-    ["PEPPOL-COMMON-R053", "0198", "DK12345678", "12345678", false],
+    ["PEPPOL-COMMON-R052", "0096", "1234567890", "123456789", true],
+    ["PEPPOL-COMMON-R053", "0198", "DK12345678", "12345678", true],
+    ["PEPPOL-COMMON-R054", "0106", "12345678", "123456789012", false],
+    ["PEPPOL-COMMON-R055", "0190", "00000001234567890000", "1234567890", false],
+    ["PEPPOL-COMMON-R056-1", "9944", "NL123456789B01", "NL123456789", false],
+    ["PEPPOL-COMMON-R057", "0217", "000012345678", "12345678", false],
   ];
 
   for (const [rule, scheme, good, bad, fatal] of cases) {
@@ -238,10 +266,11 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
     });
 
     it(`${rule} rejects a malformed value in scheme ${scheme}`, () => {
-      const ids = fatal
-        ? errorIds(peppol(withElectronicAddress(scheme, bad)))
-        : warningIds(peppol(withElectronicAddress(scheme, bad)));
-      expect(ids).toContain(rule);
+      const input = peppol(withElectronicAddress(scheme, bad));
+      expect(fatal ? errorIds(input) : warningIds(input)).toContain(rule);
+      // …and at that severity only: a warning that is also reported as an
+      // error, or the reverse, has not been given the schematron's flag.
+      expect(fatal ? warningIds(input) : errorIds(input)).not.toContain(rule);
     });
 
     it(`${rule} does not fire on the xrechnung profile`, () => {
@@ -287,7 +316,7 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
 
   it("does not emit PEPPOL-COMMON-R048, which Peppol retired in BIS 3.0.14", () => {
     // 3.0.14 removed scheme 9906 from the participant scheme list and commented
-    // R048 out of the schematron; it is still commented out at v3.0.20. So a
+    // R048 out of the schematron; it is still commented out at 3.0.21. So a
     // 9906 endpoint with a bad check digit draws CL008 and nothing else, as it
     // does from the reference validator.
     const input = peppol(withElectronicAddress("9906", "IT01234567890"));
@@ -313,6 +342,94 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
     );
   });
 
+  it("makes a malformed Danish P-number or SE number invalid, as 3.0.21 does", () => {
+    // R052 and R053 were warnings until 3.0.21, so this document used to come
+    // back valid with two warnings. It is the one change in the release that
+    // flips `valid` for an input this library accepted before.
+    const result = validateInput(
+      peppol({
+        seller: { ...clean.seller, identifier: { schemeId: "0096", value: "123" } } as Party,
+        buyer: { ...clean.buyer, identifier: { schemeId: "0198", value: "12345678" } } as Party,
+      }),
+    );
+    expect(result.valid).toBe(false);
+    expect(result.errors.map((e) => e.rule).sort()).toEqual([
+      "PEPPOL-COMMON-R052",
+      "PEPPOL-COMMON-R053",
+    ]);
+  });
+
+  it("checks a Dutch KVK number wherever scheme 0106 appears", () => {
+    const input = peppol({
+      seller: {
+        ...clean.seller,
+        legalRegistrationId: "1234567",
+        legalRegistrationSchemeId: "0106",
+      } as Party,
+    });
+    expect(warningIds(input)).toContain("PEPPOL-COMMON-R054");
+    // A warning only: the document stays valid, as it does on the network.
+    expect(validateInput(input).valid).toBe(true);
+  });
+
+  it("checks an establishment number as a party identifier, where 0217 is still valid", () => {
+    // 3.0.21 took 0217 off the participant scheme list, so as an address it
+    // draws CL008 as well. As a party identifier it is an ordinary ICD, and
+    // R057 is the only thing that can object to it.
+    const ids = allIds(peppol(withPartyIdentifier("0217", "12345678")));
+    expect(ids).toContain("PEPPOL-COMMON-R057");
+    expect(ids).not.toContain("PEPPOL-EN16931-CL008");
+    expect(errorIds(peppol(withElectronicAddress("0217", "000012345678")))).toContain(
+      "PEPPOL-EN16931-CL008",
+    );
+  });
+
+  it("says the Dutch rules are due to become fatal", () => {
+    const finding = findingFor(
+      peppol(withElectronicAddress("9944", "NL123456789")),
+      "PEPPOL-COMMON-R056-1",
+    )!;
+    expect(finding.severity).toBe("warning");
+    expect(finding.message).toMatch(/become fatal in a later release/);
+  });
+
+  it("reads each value the way its assertion does: string() or normalize-space()", () => {
+    // R042, R052 and R053 test string(), so a value padded to a fixed width
+    // fails on its length, and since 3.0.21 two of them are fatal. The others
+    // read normalize-space() and forgive the padding. The generator writes the
+    // value as given, so this is what an access point sees.
+    for (const [rule, scheme, padded] of [
+      ["PEPPOL-COMMON-R052", "0096", "1234567890 "],
+      ["PEPPOL-COMMON-R053", "0198", " DK12345678"],
+      ["PEPPOL-COMMON-R042", "0184", "DK12345678 "],
+    ]) {
+      const finding = findingFor(peppol(withPartyIdentifier(scheme, padded)), rule);
+      expect(finding?.severity, rule).toBe("fatal");
+      expect(finding?.message, rule).toMatch(/whitespace/);
+      expect(finding?.fix, rule).toMatch(/Remove the whitespace/);
+    }
+    expect(allIds(peppol(withPartyIdentifier("0088", "7300010000001 ")))).not.toContain(
+      "PEPPOL-COMMON-R040",
+    );
+    expect(allIds(peppol(withPartyIdentifier("0106", " 12345678 ")))).not.toContain(
+      "PEPPOL-COMMON-R054",
+    );
+  });
+
+  it("matches the scheme identifier exactly, as the schematron's @schemeID = '…' does", () => {
+    // Out of context upstream, so out of context here: no R052 for "0096 ".
+    expect(allIds(peppol(withPartyIdentifier("0096 ", "123")))).not.toContain(
+      "PEPPOL-COMMON-R052",
+    );
+    // And as an address it is on no list, so CL008 refuses it, and says why.
+    const finding = findingFor(
+      peppol(withElectronicAddress(" 0088", "7300010000001")),
+      "PEPPOL-EN16931-CL008",
+    )!;
+    expect(finding.severity).toBe("fatal");
+    expect(finding.fix).toMatch(/Remove the whitespace/);
+  });
+
   it("keeps the schematron's severities rather than levelling them", () => {
     expect(warningIds(peppol(withElectronicAddress("0201", "TOOLONG")))).toContain(
       "PEPPOL-COMMON-R044",
@@ -325,6 +442,61 @@ describe("PEPPOL-COMMON-R040..R053 — national identifier formats", () => {
   it("ignores a scheme it has no rule for", () => {
     const ids = allIds(peppol(withElectronicAddress("9930", "DE123456789")));
     expect(ids.filter((id) => id.startsWith("PEPPOL-COMMON-"))).toEqual([]);
+  });
+});
+
+describe("PEPPOL-COMMON-R056-2 — a VAT identifier that says NL", () => {
+  const withSellerVat = (vatId: string): InvoiceInput =>
+    peppol({ seller: { ...clean.seller, vatId } as Party });
+
+  it("accepts the one written form of a Dutch VAT number", () => {
+    expect(allIds(withSellerVat("NL123456789B01"))).not.toContain("PEPPOL-COMMON-R056-2");
+  });
+
+  it("warns on a Dutch VAT number in any other form, as a warning only", () => {
+    for (const vatId of ["NL123456789", "NL 123456789 B01", "NL123456789B1", "NL123456789b01"]) {
+      const input = withSellerVat(vatId);
+      expect(warningIds(input), vatId).toContain("PEPPOL-COMMON-R056-2");
+      expect(errorIds(input), vatId).not.toContain("PEPPOL-COMMON-R056-2");
+    }
+  });
+
+  it("reads the seller, buyer and tax representative VAT identifiers", () => {
+    const input = peppol({
+      seller: { ...clean.seller, vatId: "NL1" } as Party,
+      buyer: { ...clean.buyer, vatId: "NL2" } as Party,
+      taxRepresentative: {
+        name: "Fiscaal Vertegenwoordiger BV",
+        vatId: "NL3",
+        address: { city: "Utrecht", postalCode: "3511 AA", countryCode: "NL" },
+      },
+    });
+    const fields = validateInput(input)
+      .warnings.filter((w) => w.rule === "PEPPOL-COMMON-R056-2")
+      .map((w) => w.field);
+    expect(fields).toEqual(["BT-31", "BT-48", "BT-63"]);
+  });
+
+  it("reads the value through XPath's normalize-space, not trim()", () => {
+    // A trailing no-break space is not XML whitespace, so the official test
+    // sees "NL123456789B01\u00A0" and refuses it; trim() would have hidden it.
+    expect(warningIds(withSellerVat("NL123456789B01\u00A0"))).toContain("PEPPOL-COMMON-R056-2");
+    expect(allIds(withSellerVat(" NL123456789B01\n"))).not.toContain("PEPPOL-COMMON-R056-2");
+  });
+
+  it("selects on the prefix, case-sensitively, as the schematron does", () => {
+    // starts-with(normalize-space(.), 'NL'): a lower-case prefix is out of
+    // context, and a number from another country is none of this rule's
+    // business.
+    expect(allIds(withSellerVat("nl123456789B01"))).not.toContain("PEPPOL-COMMON-R056-2");
+    expect(allIds(withSellerVat("DE123456789"))).not.toContain("PEPPOL-COMMON-R056-2");
+    expect(allIds(withSellerVat("  NL123456789B01  "))).not.toContain("PEPPOL-COMMON-R056-2");
+  });
+
+  it("does not fire on the xrechnung profile", () => {
+    expect(
+      allIds(xrechnung({ seller: { ...clean.seller, vatId: "NL123456789" } as Party })),
+    ).not.toContain("PEPPOL-COMMON-R056-2");
   });
 });
 
@@ -669,12 +841,17 @@ describe("PEPPOL-EN16931-P0100 / P0112 — invoice type codes", () => {
  *
  * The strings below are copied byte-for-byte out of
  * `rules/sch/PEPPOL-EN16931-UBL.sch` in **OpenPEPPOL/peppol-bis-invoice-3 @
- * v3.0.20** (the 2025 November release; tarball sha256
- * `54b9ada9b866338c629789d30593162f90f1d76654d978266244932aabe02802`, see
- * `scripts/peppol-check.sh` for how to fetch it). The tests parse the code list
- * back out of the assertion's own `tokenize(...)` literal and compare it with
- * the Sets this build validates against, so a hand-edited list here fails
- * rather than passes.
+ * 806866bd2bd91d7e9623b68f08164e8fbe9e67a0**, Peppol BIS Billing 3.0.21: the
+ * file whose sha256 is `SCH_SHA256` in `scripts/build-peppol.mjs`, the same
+ * bytes docs.peppol.eu serves. The tests parse the code list back out of the
+ * assertion's own `tokenize(...)` literal and compare it with the Sets this
+ * build validates against, so a hand-edited list here fails rather than
+ * passes.
+ *
+ * The lists are the ones v3.0.20 had. 3.0.21 changed the gate in front of them,
+ * from `$profile != '01'` to `not($profile = ('01','02'))`, so that they also
+ * bind the new billing-with-response process, and prefixed each message with
+ * its id.
  *
  * `String.raw` is used so the backslash in `'\s'` survives unescaped and the
  * source here reads exactly as the file does, rather than as `'\\s'`.
@@ -685,18 +862,14 @@ describe("PEPPOL-EN16931-P0100 / P0112 — invoice type codes", () => {
  * `cbc:InvoiceTypeCode` element does not exist, and rejecting `381`.
  */
 const OFFICIAL_P0100 = String.raw`<rule context="cbc:InvoiceTypeCode">
-      <assert id="PEPPOL-EN16931-P0100"
-        test="
-          $profile != '01' or (some $code in tokenize('71 80 82 84 102 218 219 326 331 380 382 383 384 386 388 393 395 553 575 623 780 817 870 875 876 877', '\s')
-            satisfies normalize-space(text()) = $code)"
-        flag="fatal">Invoice type code MUST be set according to the profile.</assert>`;
+      <assert id="PEPPOL-EN16931-P0100" test="
+          not($profile = ('01','02')) or (some $code in tokenize('71 80 82 84 102 218 219 326 331 380 382 383 384 386 388 393 395 553 575 623 780 817 870 875 876 877', '\s')
+            satisfies normalize-space(text()) = $code)" flag="fatal">[PEPPOL-EN16931-P0100]-Invoice type code MUST be set according to the profile.</assert>`;
 
 const OFFICIAL_P0101 = String.raw`<rule context="cbc:CreditNoteTypeCode">
-      <assert id="PEPPOL-EN16931-P0101"
-        test="
-          $profile != '01' or (some $code in tokenize('381 396 81 83 532', '\s')
-            satisfies normalize-space(text()) = $code)"
-        flag="fatal">Credit note type code MUST be set according to the profile.</assert>`;
+      <assert id="PEPPOL-EN16931-P0101" test="
+          not($profile = ('01','02')) or (some $code in tokenize('381 396 81 83 532', '\s')
+            satisfies normalize-space(text()) = $code)" flag="fatal">[PEPPOL-EN16931-P0101]-Credit note type code MUST be set according to the profile.</assert>`;
 
 /** The token list inside the assertion's own `tokenize('…', '\s')` call. */
 const tokensOf = (assertion: string): string[] => {
@@ -882,9 +1055,13 @@ describe("the teaching contract holds for the Peppol family", () => {
   const payloads: InvoiceInput[] = [
     peppol({ buyerReference: undefined, orderReference: undefined }),
     peppol({ vatAccountingCurrency: "EUR", taxAmountInAccountingCurrency: 1 }),
-    peppol({ currency: "XCG" }),
+    peppol({ currency: "STD" }),
     peppol(withElectronicAddress("EM", "billing@acme.example")),
     peppol(withElectronicAddress("0088", "7300010000002")),
+    peppol(withElectronicAddress("0096", "123")),
+    peppol(withElectronicAddress("0106", "123")),
+    peppol(withElectronicAddress("9944", "NL123456789")),
+    peppol({ buyer: { ...clean.buyer, vatId: "NL123456789" } as Party }),
     peppol({ allowances: [{ amount: 5, percentage: 5, vatCategory: "S", vatRate: 19 }] }),
     peppol({ allowances: [{ amount: 5, baseAmount: 100, vatCategory: "S", vatRate: 19 }] }),
     peppol({
@@ -935,7 +1112,8 @@ describe("the teaching contract holds for the Peppol family", () => {
       "PEPPOL-EN16931-P0100", "PEPPOL-EN16931-P0101",
       "PEPPOL-EN16931-P0112", "PEPPOL-EN16931-P0104",
       "PEPPOL-EN16931-R002",
-      "PEPPOL-COMMON-R040",
+      "PEPPOL-COMMON-R040", "PEPPOL-COMMON-R052", "PEPPOL-COMMON-R054",
+      "PEPPOL-COMMON-R056-1", "PEPPOL-COMMON-R056-2",
     ];
     for (const rule of expected) expect([...seen], rule).toContain(rule);
   });

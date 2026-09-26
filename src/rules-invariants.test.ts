@@ -718,7 +718,9 @@ const BATTERY: [string, InvoiceInput][] = [
     vatAccountingCurrency: "EUR",
     taxAmountInAccountingCurrency: 285,
   })],
-  ["peppolUnknownCurrency", withInvoice({ profile: "peppol-bis-3", currency: "XCG" })],
+  // STD: in the CEN list and not in Peppol's since 3.0.21, which admits STN,
+  // the code that replaced it (see scripts/build-peppol.mjs).
+  ["peppolUnknownCurrency", withInvoice({ profile: "peppol-bis-3", currency: "STD" })],
   ["peppolUnroutableScheme", withInvoice({
     profile: "peppol-bis-3",
     seller: { ...clean.seller, electronicAddress: { schemeId: "EM", value: "a@b.example" } },
@@ -760,6 +762,23 @@ const BATTERY: [string, InvoiceInput][] = [
     profile: "peppol-bis-3",
     seller: { ...clean.seller, identifier: { schemeId: "0096", value: "123" } },
     buyer: { ...clean.buyer, identifier: { schemeId: "0198", value: "12345678" } },
+  })],
+  // The Dutch rules 3.0.21 added: KVK (0106), OIN (0190), establishment
+  // number (0217), VAT number as an address (9944) and as a VAT identifier.
+  ["peppolBadDutchIdentifiers", withInvoice({
+    profile: "peppol-bis-3",
+    seller: {
+      ...clean.seller,
+      electronicAddress: { schemeId: "9944", value: "NL123456789" },
+      identifier: { schemeId: "0217", value: "12345678" },
+      legalRegistrationId: "1234567",
+      legalRegistrationSchemeId: "0106",
+    },
+    buyer: {
+      ...clean.buyer,
+      vatId: "NL123456789",
+      electronicAddress: { schemeId: "0190", value: "1234567890" },
+    },
   })],
   ["peppolPercentageNoBase", withInvoice({
     profile: "peppol-bis-3",
@@ -1164,6 +1183,64 @@ describe("the rule set as a whole", () => {
         .map(([rule, sev]) => [rule, [...sev].sort().join("|")]),
     );
     expect(pinned).toMatchSnapshot();
+  });
+
+  // The snapshot above pins what the Peppol rules do; this pins it to what
+  // Peppol says. scripts/build-peppol.mjs fails when the pinned schematron
+  // flags a known id differently from its WARNING_R_IDS, and this fails when
+  // the rule family reports an id at a different severity from that list.
+  // R052 and R053 had neither half: 3.0.21 made them fatal, and this library
+  // went on reporting them as warnings without any test noticing.
+  it("reports every Peppol rule id at the flag the pinned schematron gives it", () => {
+    const script = readFileSync(new URL("../scripts/build-peppol.mjs", import.meta.url), "utf8");
+    const list = (name: string): string[] => {
+      const match = new RegExp(`const ${name} = \\[([^\\]]*)\\]`).exec(script);
+      if (!match) throw new Error(`scripts/build-peppol.mjs no longer declares ${name}`);
+      return [...match[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+    };
+    const known = list("KNOWN_R_IDS");
+    const warnings = list("WARNING_R_IDS");
+    // Where the family departs from the flag on purpose. The CII R002 is
+    // fatal, the UBL one cannot fail, and `profile` does not say which syntax
+    // will be emitted; see the rule in rules-peppol.ts.
+    const departures: Record<string, string> = { "PEPPOL-EN16931-R002": "warning" };
+
+    const seen = new Map<string, Set<string>>();
+    for (const [, inv] of BATTERY) {
+      if (inv.profile !== "peppol-bis-3") continue;
+      const r = validateInput(inv);
+      for (const f of [...r.errors, ...r.warnings, ...r.information]) {
+        if (!known.includes(f.rule)) continue;
+        if (!seen.has(f.rule)) seen.set(f.rule, new Set());
+        seen.get(f.rule)!.add(f.severity);
+      }
+    }
+    // Every national identifier rule is implemented, so every one must be seen,
+    // or a severity could drift on a rule this loop never reaches.
+    for (const id of known.filter((k) => k.startsWith("PEPPOL-COMMON-"))) {
+      expect([...seen.keys()], id).toContain(id);
+    }
+    for (const [rule, severities] of seen) {
+      const flag = departures[rule] ?? (warnings.includes(rule) ? "warning" : "fatal");
+      expect([...severities], rule).toEqual([flag]);
+    }
+  });
+
+  // A PEPPOL_REF trial run of scripts/build-peppol.mjs rewrites
+  // src/codelists/peppol.ts and only warns, so this is what stops such a file
+  // being committed: the lists this build ships must come from the file the
+  // pins name, and the generated header says which file that was.
+  it("ships the Peppol code lists generated from the pinned schematron", () => {
+    const script = readFileSync(new URL("../scripts/build-peppol.mjs", import.meta.url), "utf8");
+    const pin = (re: RegExp): string => {
+      const match = re.exec(script);
+      if (!match) throw new Error(`scripts/build-peppol.mjs no longer declares ${re.source}`);
+      return match[1]!;
+    };
+    const generated = readFileSync(new URL("./codelists/peppol.ts", import.meta.url), "utf8");
+    expect(generated).toContain(` * Release: Peppol BIS Billing ${pin(/const VERSION = "([^"]+)"/)}\n`);
+    expect(generated).toContain(` * Ref:     ${pin(/const REF = process\.env\.PEPPOL_REF \?\? "([^"]+)"/)}\n`);
+    expect(generated).toContain(` * SHA-256: ${pin(/const SCH_SHA256 = "([0-9a-f]{64})"/)}\n`);
   });
 
   // Rules that ALSO guard the library's own computed breakdown and totals.

@@ -12,21 +12,24 @@
  * Peppol network, or the reverse — so both lists are carried, separately, and
  * the rules that cite them cite different ids.
  *
- *   node scripts/build-peppol.mjs                  # fetch pinned ref, rewrite the list
- *   PEPPOL_REF=v3.0.21 node scripts/build-peppol.mjs   # try a newer tag
+ *   node scripts/build-peppol.mjs                  # fetch the pinned commit, rewrite the list
+ *   PEPPOL_REF=<tag or commit> node scripts/build-peppol.mjs   # try another ref
  *
  * Requires network access. The generated file is committed, so a normal
  * build/test run never touches the network.
  *
- * The script also asserts, and fails on, three things it must not silently
+ * The script also asserts, and fails on, these things it must not silently
  * absorb:
+ *   - that the pinned commit's two UBL schematrons are the files
+ *     docs.peppol.eu published for the pinned release (see {@link SCH_SHA256}),
  *   - that the `$eaid` literal is still a `tokenize('…', '\s')` list,
- *   - that the five Peppol code-list rules this package deliberately does
- *     *not* re-implement (CL001, CL002, CL003, CL006, CL007) still carry
+ *   - that the four Peppol code-list rules this package deliberately does
+ *     *not* re-implement (CL001, CL002, CL003, CL006) still carry
  *     byte-identical literals to the CEN lists already generated, and
  *   - that the set of live `PEPPOL-EN16931-R*` and `PEPPOL-COMMON-R*` ids is
- *     the set the rule family was written against, in both directions: no id
- *     added upstream, none of ours retired upstream, none we retired revived.
+ *     the set the rule family was written against, in both directions (no id
+ *     added upstream, none of ours retired upstream, none we retired revived),
+ *     and that each carries the flag the rule family gives it.
  * If any of those changes, the build stops rather than shipping a rule set
  * that quietly disagrees with the network it claims to target.
  *
@@ -35,6 +38,7 @@
  * schematron with its comments removed.
  */
 
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,16 +46,46 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(HERE, "..", "src", "codelists");
 
-/** Ref of OpenPEPPOL/peppol-bis-invoice-3 the list is taken from. Pinned to
- * the release the conformance record (scripts/peppol-check.md) was run
- * against; a branch here would let the vendored list drift from the version
- * the site claims. */
-const REF = process.env.PEPPOL_REF ?? "v3.0.20";
+/**
+ * The Peppol BIS Billing 3.0 release this build implements, and where its
+ * schematron is read from. Four values that are only worth anything together:
+ *
+ *   - `VERSION` is the release the conformance record (scripts/peppol-check.md),
+ *     the site and the changelog quote.
+ *   - `REF` is a commit of OpenPEPPOL/peppol-bis-invoice-3, not a tag, because
+ *     OpenPEPPOL does not tag every release. 3.0.21 was published on
+ *     docs.peppol.eu on 2026-05-20 and is mandatory from 2026-08-17, and on
+ *     2026-09-25 GitHub still had no tag or release for it: its files sit on
+ *     the working branch `2026-Q2-QA2`. A branch name moves, so the commit is
+ *     pinned. scripts/lib/validator-setup.sh pins the same commit for
+ *     scripts/peppol-check.sh, and scripts/test/upstream-check.test.js fails
+ *     if the two differ.
+ *   - `SCH_SHA256` and `CEN_SCH_SHA256` are the hashes of
+ *     `PEPPOL-EN16931-UBL.sch` and `CEN-EN16931-UBL.sch` as docs.peppol.eu
+ *     serves them for `VERSION`: the two files access points validate a UBL
+ *     invoice against. The commit above holds both byte for byte (so does its
+ *     parent, which differs only in the release notes); neither
+ *     `2026-Q2-DEV-v3.0.21` nor `2026-Q2-validation-artefacts` does. The build
+ *     refuses a pinned `REF` whose files hash differently, and
+ *     scripts/upstream-check.mjs compares both hashes with what docs.peppol.eu
+ *     serves today. That comparison is how a release OpenPEPPOL never tags gets
+ *     noticed, and a hotfix too: 3.0.21 went unnoticed for four months because
+ *     the watch read only GitHub.
+ */
+const VERSION = "3.0.21";
+const REF = process.env.PEPPOL_REF ?? "806866bd2bd91d7e9623b68f08164e8fbe9e67a0";
+const SCH_SHA256 = "62e5b67892f12755352d78b06f63229a02cc2eccc748677c56efbc8dbcb336e3";
+const CEN_SCH_SHA256 = "268d4f7a2688676695e6c69cba6fba69a6802604fee12cb544a6b30ff09555a3";
 const SCH_URL = `https://raw.githubusercontent.com/OpenPEPPOL/peppol-bis-invoice-3/${REF}/rules/sch/PEPPOL-EN16931-UBL.sch`;
+const CEN_SCH_URL = `https://raw.githubusercontent.com/OpenPEPPOL/peppol-bis-invoice-3/${REF}/rules/sch/CEN-EN16931-UBL.sch`;
 
 const GENERATED_ON = new Date().toISOString().slice(0, 10);
 
-/** Rule ids the TypeScript rule family knows about. A new one must be triaged. */
+/**
+ * Live rule ids the TypeScript rule family was written against. A new one must
+ * be triaged: implemented in src/rules-peppol.ts, or recorded there as
+ * generator-controlled or not expressible in the model.
+ */
 const KNOWN_R_IDS = [
   "PEPPOL-EN16931-R001", "PEPPOL-EN16931-R002", "PEPPOL-EN16931-R003",
   "PEPPOL-EN16931-R004", "PEPPOL-EN16931-R005", "PEPPOL-EN16931-R007",
@@ -67,7 +101,26 @@ const KNOWN_R_IDS = [
   "PEPPOL-COMMON-R043", "PEPPOL-COMMON-R044", "PEPPOL-COMMON-R045",
   "PEPPOL-COMMON-R046", "PEPPOL-COMMON-R047",
   "PEPPOL-COMMON-R049", "PEPPOL-COMMON-R050", "PEPPOL-COMMON-R052",
-  "PEPPOL-COMMON-R053",
+  "PEPPOL-COMMON-R053", "PEPPOL-COMMON-R054", "PEPPOL-COMMON-R055",
+  "PEPPOL-COMMON-R056-1", "PEPPOL-COMMON-R056-2", "PEPPOL-COMMON-R057",
+];
+
+/**
+ * The ids in {@link KNOWN_R_IDS} the schematron flags `warning`. Every other
+ * known id is `fatal`, and the build fails when the schematron disagrees,
+ * because a flag is half a rule: it decides whether a document is valid.
+ * R052 and R053 were on this list until 3.0.21 made them fatal, and nothing
+ * noticed, because the check below only compared ids. The five Dutch rules
+ * are warnings in 3.0.21 and OpenPEPPOL says they become fatal in a later
+ * release, so expect this list to shrink again.
+ *
+ * src/rules-invariants.test.ts reads this list and fails if the rule family
+ * reports any of these ids at another severity.
+ */
+const WARNING_R_IDS = [
+  "PEPPOL-COMMON-R044", "PEPPOL-COMMON-R045", "PEPPOL-COMMON-R046",
+  "PEPPOL-COMMON-R047", "PEPPOL-COMMON-R054", "PEPPOL-COMMON-R055",
+  "PEPPOL-COMMON-R056-1", "PEPPOL-COMMON-R056-2", "PEPPOL-COMMON-R057",
 ];
 
 /**
@@ -98,12 +151,15 @@ const MIRRORED = [
 
 /**
  * `ISO4217` is deliberately *not* in {@link MIRRORED}. It used to be a
- * duplicate of the CEN currency list and no longer is: as of this ref Peppol
- * still admits `ANG` and `BGN`, which the CEN list has retired, and does not
- * yet admit `XCG`, which the CEN list has added. So a Peppol invoice
- * denominated in `XCG` passes `BR-CL-04` and fails `PEPPOL-EN16931-CL007`, and
- * one denominated in `BGN` does the reverse. Both lists ship, and both rules
- * are implemented.
+ * duplicate of the CEN currency list and has not been since. At v3.0.20
+ * Peppol still admitted `ANG` and `BGN`, which the CEN list had retired, and
+ * did not yet admit `XCG`, which the CEN list had added. 3.0.21 caught up on
+ * all three and moved past the CEN list on a fourth: it admits `STN`, the São
+ * Tomé and Príncipe dobra ISO 4217 introduced in 2018, and no longer `STD`, the
+ * code it replaced, while CEN validation-1.3.16 still has `STD` and not `STN`.
+ * So a Peppol invoice denominated in `STD` passes `BR-CL-04` and fails
+ * `PEPPOL-EN16931-CL007`, and one denominated in `STN` does the reverse. Both
+ * lists ship, and both rules are implemented.
  */
 const PEPPOL_LISTS = [
   {
@@ -188,17 +244,63 @@ function formatCodes(codes) {
   return lines.map((l) => ` ${l}`.replace(/^\s+/, "  ")).join("\n");
 }
 
+/**
+ * Every live `<assert>` in the schematron as `[id, flag]`. Attributes are read
+ * by name, whatever their order and quote style, and a quoted value may
+ * contain `>`: older files wrote `test="… > 0"` unescaped. An `<assert` this
+ * cannot read stops the build, because an assertion skipped here would pass
+ * every check below unseen.
+ */
+function assertions(sch) {
+  const found = [...sch.matchAll(/<assert((?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*\/?>/g)];
+  const total = sch.match(/<assert[\s>]/g)?.length ?? 0;
+  if (found.length !== total) {
+    fail(`read ${found.length} of the ${total} <assert> elements in the schematron; the parser needs updating.`);
+  }
+  const attr = (attrs, name) => new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`).exec(attrs)?.slice(1).find((v) => v !== undefined);
+  return found.map((m) => [attr(m[1], "id"), attr(m[1], "flag")]);
+}
+
 async function main() {
-  const response = await fetch(SCH_URL);
-  if (!response.ok) fail(`GET ${SCH_URL} → ${response.status}`);
-  const sch = (await response.text()).replace(/<!--[\s\S]*?-->/g, "");
+  const download = async (url) => {
+    const response = await fetch(url);
+    if (!response.ok) fail(`GET ${url} → ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  };
+  const bytes = await download(SCH_URL);
+  const raw = bytes.toString("utf8");
+
+  // 0. The pinned commit must hold the files Peppol published for VERSION. An
+  //    override is a trial of another ref, so it is reported, not refused, and
+  //    src/rules-invariants.test.ts refuses the file it writes.
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const cenSha256 = createHash("sha256").update(await download(CEN_SCH_URL)).digest("hex");
+  if (sha256 !== SCH_SHA256 || cenSha256 !== CEN_SCH_SHA256) {
+    if (process.env.PEPPOL_REF === undefined) {
+      fail(
+        `the schematrons at ${REF} are not the files docs.peppol.eu published for ${VERSION}: ` +
+          `PEPPOL-EN16931-UBL.sch ${sha256} (pinned ${SCH_SHA256}), ` +
+          `CEN-EN16931-UBL.sch ${cenSha256} (pinned ${CEN_SCH_SHA256}). ` +
+          `REF, VERSION and both hashes move together; see the note above them.`,
+      );
+    }
+    console.warn(
+      `build-peppol: PEPPOL_REF=${REF} is not the pinned ${VERSION} (PEPPOL-EN16931-UBL.sch ` +
+        `${sha256}, CEN-EN16931-UBL.sch ${cenSha256}). Compare them with what docs.peppol.eu ` +
+        `serves before pinning, and do not commit the file this run writes.`,
+    );
+  }
+  const sch = raw.replace(/<!--[\s\S]*?-->/g, "");
 
   // 1. The rule inventory must not have moved behind the rule family's back.
-  const present = [
-    ...new Set(
-      [...sch.matchAll(/id="(PEPPOL-(?:EN16931-R|COMMON-R)\d+)"/g)].map((m) => m[1]),
-    ),
-  ].sort();
+  //    Any id in the two families counts, whatever follows the number: 3.0.21
+  //    added PEPPOL-COMMON-R056-1 and R056-2, which the old pattern skipped.
+  const flags = new Map();
+  for (const [id, flag] of assertions(sch)) {
+    if (!id || !/^PEPPOL-(?:EN16931-R|COMMON-R)\d/.test(id)) continue;
+    flags.set(id, [...new Set([...(flags.get(id) ?? []), flag])]);
+  }
+  const present = [...flags.keys()].sort();
   const unknown = present.filter((id) => !KNOWN_R_IDS.includes(id) && !(id in RETIRED_R_IDS));
   if (unknown.length > 0) {
     fail(
@@ -219,6 +321,18 @@ async function main() {
       `the Peppol schematron no longer runs ${retired.join(", ")}: removed or commented out. ` +
         `Stop emitting it in src/rules-peppol.ts, then move it from KNOWN_R_IDS to RETIRED_R_IDS ` +
         `with the release that retired it.`,
+    );
+  }
+  const reflagged = present
+    .filter((id) => KNOWN_R_IDS.includes(id))
+    .map((id) => [id, flags.get(id).join("|"), WARNING_R_IDS.includes(id) ? "warning" : "fatal"])
+    .filter(([, upstream, ours]) => upstream !== ours);
+  if (reflagged.length > 0) {
+    fail(
+      `the Peppol schematron changed the flag of ` +
+        reflagged.map(([id, upstream, ours]) => `${id} (${ours} here, ${upstream} upstream)`).join(", ") +
+        `. Change the severity in src/rules-peppol.ts, then WARNING_R_IDS; a flag decides ` +
+        `whether a document is valid, so it also needs a changelog entry.`,
     );
   }
 
@@ -268,7 +382,9 @@ export const ${spec.constName}_SET: ReadonlySet<string> = new Set(
  *
  * Source:  OpenPEPPOL/peppol-bis-invoice-3
  *          rules/sch/PEPPOL-EN16931-UBL.sch
+ * Release: ${sha256 === SCH_SHA256 ? `Peppol BIS Billing ${VERSION}` : `not ${VERSION}: an unpinned trial ref`}
  * Ref:     ${REF}
+ * SHA-256: ${sha256}
  * Lists:   ${PEPPOL_LISTS.map((s) => `${s.rule} (${s.listName})`).join("\n *          ")}
  * Emitted: ${GENERATED_ON} by scripts/build-peppol.mjs
  *
@@ -291,7 +407,7 @@ ${sections.join("\n\n")}
   }
   console.log(
     `build-peppol: wrote peppol.ts (${counts.join(", ")}), ` +
-      `verified ${MIRRORED.length} mirrored lists and ${present.length} rule ids.`,
+      `verified ${MIRRORED.length} mirrored lists and ${present.length} rule ids and their flags.`,
   );
 }
 

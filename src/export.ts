@@ -43,7 +43,7 @@ export interface ExportProvenance {
   profile?: string;
   /**
    * Versions of the external rule sets this run's verdicts correspond to, e.g.
-   * `{ "XRechnung": "3.0.2", "Peppol BIS Billing": "3.0.20" }`. Emitted as
+   * `{ "XRechnung": "3.0.2", "Peppol BIS Billing": "3.0.21" }`. Emitted as
    * SARIF `tool.driver.properties` / JUnit `<properties>`, because "which
    * schematron release said so" is the first question anyone disputing a
    * finding asks.

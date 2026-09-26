@@ -28,7 +28,23 @@ KOSIT_VALIDATOR_VERSION="${KOSIT_VALIDATOR_VERSION:-1.6.3}"
 KOSIT_CONFIG_VERSION="${KOSIT_CONFIG_VERSION:-2026-08-31}"
 KOSIT_CONFIG_XR_VERSION="${KOSIT_CONFIG_XR_VERSION:-3.0.2}"
 
-PEPPOL_TAG="${PEPPOL_TAG:-v3.0.20}"          # OpenPEPPOL/peppol-bis-invoice-3
+# OpenPEPPOL/peppol-bis-invoice-3: the release, and the commit its files are
+# read from. A commit and not a tag, because OpenPEPPOL does not tag every
+# release: 3.0.21 is published on docs.peppol.eu and mandatory, and has no tag.
+# scripts/build-peppol.mjs pins the same two values for the engine's code
+# lists, and scripts/test/upstream-check.test.js fails if the files disagree.
+# (PEPPOL_TAG is the old name for PEPPOL_REF and is still honoured.) A ref
+# given without PEPPOL_VERSION is labelled by itself, a tag by its number, so a
+# run against other files never reports itself as the pinned release.
+if [ -z "${PEPPOL_VERSION:-}" ] && [ -n "${PEPPOL_REF:-${PEPPOL_TAG:-}}" ]; then
+  _peppol_ref="${PEPPOL_REF:-${PEPPOL_TAG}}"
+  case "$_peppol_ref" in
+    v[0-9]*.[0-9]*.[0-9]* | [0-9]*.[0-9]*.[0-9]*) PEPPOL_VERSION="${_peppol_ref#v}" ;;
+    *) PEPPOL_VERSION="unreleased ref ${_peppol_ref}" ;;
+  esac
+fi
+PEPPOL_VERSION="${PEPPOL_VERSION:-3.0.21}"
+PEPPOL_REF="${PEPPOL_REF:-${PEPPOL_TAG:-806866bd2bd91d7e9623b68f08164e8fbe9e67a0}}"
 UBL_ZIP="${UBL_ZIP:-UBL-2.1.zip}"            # OASIS UBL 2.1 OS
 SAXON_VERSION="${SAXON_VERSION:-12.5}"       # net.sf.saxon:Saxon-HE
 XMLRESOLVER_VERSION="${XMLRESOLVER_VERSION:-5.2.2}"
@@ -44,7 +60,8 @@ validator_versions_json() {
   "kositValidator": "${KOSIT_VALIDATOR_VERSION}",
   "kositConfig": "${KOSIT_CONFIG_VERSION}",
   "kositConfigXRechnung": "${KOSIT_CONFIG_XR_VERSION}",
-  "peppolBis": "${PEPPOL_TAG}",
+  "peppolBis": "${PEPPOL_VERSION}",
+  "peppolRef": "${PEPPOL_REF}",
   "saxon": "${SAXON_VERSION}",
   "schematronSkeleton": "${SCHEMATRON_REF}"
 }
@@ -103,7 +120,8 @@ kosit_run() {
 # --- Peppol / CEN: OpenPEPPOL artefacts, compiled with ISO Schematron ---------
 # Leaves $1/xslt/{CEN,PEPPOL}-EN16931-{UBL,CII}.xsl and $1/ubl/xsd/... in place.
 
-peppol_sch_dir() { echo "$1/peppol-bis-invoice-3-${PEPPOL_TAG#v}/rules/sch"; }
+# GitHub names the unpacked directory after the ref, less a tag's leading "v".
+peppol_sch_dir() { echo "$1/peppol-bis-invoice-3-${PEPPOL_REF#v}/rules/sch"; }
 
 saxon() { "$JAVA_BIN" -cp "$SAXON_LIB_DIR/*" net.sf.saxon.Transform "$@"; }
 
@@ -115,11 +133,15 @@ ensure_peppol() {
   ( cd "$work" || return 1
     # 1. official Peppol BIS Billing 3.0 schematrons (they carry the CEN
     #    EN 16931 schematrons alongside their own CIUS rules)
-    if [ ! -d "peppol-bis-invoice-3-${PEPPOL_TAG#v}/rules/sch" ]; then
-      echo "→ downloading OpenPEPPOL peppol-bis-invoice-3 ${PEPPOL_TAG}" >&2
-      curl -fsSL -o "peppol-${PEPPOL_TAG}.tar.gz" \
-        "https://github.com/OpenPEPPOL/peppol-bis-invoice-3/archive/refs/tags/${PEPPOL_TAG}.tar.gz"
-      tar xzf "peppol-${PEPPOL_TAG}.tar.gz"
+    if [ ! -d "peppol-bis-invoice-3-${PEPPOL_REF#v}/rules/sch" ]; then
+      echo "→ downloading OpenPEPPOL peppol-bis-invoice-3 ${PEPPOL_VERSION} (${PEPPOL_REF})" >&2
+      curl -fsSL -o "peppol-${PEPPOL_REF}.tar.gz" \
+        "https://github.com/OpenPEPPOL/peppol-bis-invoice-3/archive/${PEPPOL_REF}.tar.gz"
+      # GitHub names the top directory after the full commit even when asked
+      # for a short one, so unpack aside and move it to the name looked up.
+      rm -rf peppol-unpack && mkdir peppol-unpack
+      tar xzf "peppol-${PEPPOL_REF}.tar.gz" -C peppol-unpack
+      mv peppol-unpack/* "peppol-bis-invoice-3-${PEPPOL_REF#v}" && rmdir peppol-unpack
     fi
 
     # 2. OASIS UBL 2.1 XML Schema
@@ -152,8 +174,16 @@ ensure_peppol() {
       done
     fi
 
-    # 5. compile each schematron to SVRL-emitting XSLT
-    local sch_dir="peppol-bis-invoice-3-${PEPPOL_TAG#v}/rules/sch"
+    # 5. compile each schematron to SVRL-emitting XSLT. The compiled files are
+    #    named without the ref, because benchmark/ reads xslt/<name>.xsl, so a
+    #    stamp records which ref they came from. Without it a warm cache judged
+    #    documents with the previous release's rules after a pin moved, and
+    #    said nothing.
+    local sch_dir="peppol-bis-invoice-3-${PEPPOL_REF#v}/rules/sch"
+    if [ "$(cat xslt/.peppol-ref 2>/dev/null)" != "$PEPPOL_REF" ]; then
+      rm -f xslt/*.xsl xslt/*.sch
+      echo "$PEPPOL_REF" > xslt/.peppol-ref
+    fi
     for s in CEN-EN16931-UBL PEPPOL-EN16931-UBL CEN-EN16931-CII PEPPOL-EN16931-CII; do
       if [ ! -f "xslt/$s.xsl" ]; then
         echo "→ compiling $s.sch" >&2

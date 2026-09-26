@@ -57,10 +57,13 @@ registries upstream of the schematron.
 ## 2. OpenPeppol BIS Billing 3.0 schematron — Peppol code lists
 
 **Source** [OpenPEPPOL/peppol-bis-invoice-3](https://github.com/OpenPEPPOL/peppol-bis-invoice-3),
-`rules/sch/PEPPOL-EN16931-UBL.sch`, ref `master` — a moving branch, not a pinned
-tag. Retrieved 2026-08-10; which upstream release the branch pointed at that day
-is not recorded. (`scripts/lib/validator-setup.sh` separately pins `v3.0.20` for
-conformance runs.)
+`rules/sch/PEPPOL-EN16931-UBL.sch`, Peppol BIS Billing 3.0.21 at commit
+`806866bd2bd91d7e9623b68f08164e8fbe9e67a0` (branch `2026-Q2-QA2`), retrieved
+2026-09-25. OpenPEPPOL has not tagged 3.0.21; this commit's file is byte for
+byte the one docs.peppol.eu publishes (SHA-256 `62e5b678…`, recorded in
+`scripts/build-peppol.mjs`). Before 2026-08-17 the ref was `master`, and from
+then until 2026-09-25 the tag `v3.0.20`. `scripts/lib/validator-setup.sh` pins
+the same commit for conformance runs.
 
 **Upstream licence** None found (verified 2026-08-16: no `LICENSE` file at the
 repository root; the GitHub licence API returns 404 with `"license": null`).
@@ -70,13 +73,13 @@ repository root; the GitHub licence API returns 404 with `"license": null`).
 
 | Rule | `<let>` | List | Codes |
 | --- | --- | --- | --- |
-| PEPPOL-EN16931-CL008 | `eaid` | Peppol Participant Identifier Scheme | 94 |
-| PEPPOL-EN16931-CL007 | `ISO4217` | ISO 4217 alpha-3, Peppol's own copy | 179 |
+| PEPPOL-EN16931-CL008 | `eaid` | Peppol Participant Identifier Scheme | 83 |
+| PEPPOL-EN16931-CL007 | `ISO4217` | ISO 4217 alpha-3, Peppol's own copy | 178 |
 
 Both are carried separately from their CEN counterparts because they differ:
 `PEPPOL_EAS_SCHEME_CODES` is narrower than the CEF EAS register BR-CL-25 tests,
-and Peppol's ISO 4217 copy has drifted (at the generated ref it still admits
-`ANG` and `BGN`, retired by CEN, and lacks `XCG`, which CEN has added).
+and Peppol's ISO 4217 copy has drifted (at the generated ref it admits `STN`,
+which the CEN list lacks, and no longer `STD`, which the CEN list still has).
 
 **Transformation** `scripts/build-peppol.mjs` extracts each `tokenize()` literal
 by regular expression and emits frozen arrays plus `Set` lookups, same shape as
@@ -158,7 +161,7 @@ scratch directory at run time; none is present in `src/`, `dist/` or `fixtures/`
 | KoSIT validator (`itplr-kosit/validator`) | `1.6.3` | `scripts/lib/validator-setup.sh` |
 | KoSIT XRechnung validator configuration | `3.0.2` / `2026-08-31` | `scripts/lib/validator-setup.sh` |
 | KoSIT XRechnung validator configuration (D16B XSD modules only) | `3.0.2` / `2026-01-31` | `scripts/dgfip-check.sh` |
-| OpenPEPPOL `peppol-bis-invoice-3` (reference schematron) | tag `v3.0.20` | `scripts/lib/validator-setup.sh` |
+| OpenPEPPOL `peppol-bis-invoice-3` (reference schematron) | 3.0.21, commit `806866bd` (untagged) | `scripts/lib/validator-setup.sh` |
 | OASIS UBL 2.1 OS schemas (`UBL-2.1.zip`) | 2.1 OS | `scripts/lib/validator-setup.sh` |
 | Saxon-HE | `12.5` (Maven Central) | `scripts/lib/validator-setup.sh` |
 | `org.xmlresolver:xmlresolver` | `5.2.2` (Maven Central) | `scripts/lib/validator-setup.sh` |

@@ -31,6 +31,11 @@ ensure_peppol "$WORK_DIR"
 SCH_DIR="$(peppol_sch_dir "$WORK_DIR")"
 cd "$WORK_DIR"
 
+# Which rules judged the documents, byte for byte. OpenPEPPOL does not tag every
+# release, so the version alone does not identify a file; the record keeps these.
+echo "Peppol BIS Billing ${PEPPOL_VERSION}, OpenPEPPOL/peppol-bis-invoice-3 @ ${PEPPOL_REF}"
+( cd "$SCH_DIR" && shasum -a 256 CEN-EN16931-UBL.sch PEPPOL-EN16931-UBL.sch CEN-EN16931-CII.sch PEPPOL-EN16931-CII.sch )
+
 # --- 5. generate the peppol-bis-3 documents and judge them -------------------
 rm -f in/*.xml out/*.svrl
 node "$PKG_DIR/scripts/emit-peppol-fixtures.mjs" in
