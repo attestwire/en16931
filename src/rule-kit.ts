@@ -377,7 +377,8 @@ export const decimalPlaces = (value: number): number => {
  *
  *     abs(actual) - 1 < expected  and  abs(actual) + 1 > expected
  *
- * i.e. a *whole unit of the invoice currency*, exclusive at both ends. That
+ * i.e. a *whole unit of the invoice currency*, exclusive at both ends (CII's
+ * BR-CO-17 alone includes them: see `withinAbsoluteTolerance`). That
  * looks absurdly loose until you notice what it is for: it lets a sender who
  * computed VAT per line and summed, and a sender who computed VAT on the group
  * total, both pass, without the standard having to legislate one of them out
@@ -393,9 +394,30 @@ export const VAT_TOLERANCE = 1;
  * forbids a negative *price*, not a negative amount), so a credit line
  * produces a negative taxable amount and both sides of this comparison go
  * negative together.
+ *
+ * In binary floating point on purpose, unlike the `-09` form below, because
+ * that is how the bindings that give `-08` a tolerance compute it. CII's
+ * BR-Z-08, BR-E-08, BR-AE-08, BR-IC-08 and BR-G-08 write `../ram:BasisAmount
+ * - 1 < Σ`: the element is untyped, so XPath subtracts in xs:double and
+ * compares Σ as a double, which is this expression. UBL's BR-S-08, BR-AF-08
+ * and BR-AG-08 write `xs:decimal(cbc:TaxableAmount - 1) < Σ`: the subtraction
+ * runs in xs:double too, but Saxon's cast keeps that double's exact binary
+ * value and compares it with Σ exactly. The two part only where BT-116 is
+ * exactly 1.00 from Σ and the difference lands on the double Σ is read as:
+ * KoSIT accepts a UBL BT-116 of 17.13 on a line of 16.13, which this rejects
+ * (2026-10-03, not yet matched). The other `-08` rules compare exactly
+ * (`EXACT_08` in rules.ts).
  */
 export const withinSignedTolerance = (actual: number, expected: number): boolean =>
   actual - VAT_TOLERANCE < expected && actual + VAT_TOLERANCE > expected;
+
+/**
+ * An amount in hundredths, as the decimal it was written as: 32.01 is 3201,
+ * where `32.01 * 100` is 3200.9999999999995. The `toPrecision(15)` step is
+ * `round2`'s (totals.ts). A two-decimal amount within MAX_MONETARY_AMOUNT
+ * comes out a whole number, and whole numbers subtract and compare exactly.
+ */
+const hundredths = (amount: number): number => Number((amount * 100).toPrecision(15));
 
 /**
  * The `-09` / BR-CO-17 form: `abs(actual) - 1 < expected and abs(actual) + 1 >
@@ -406,7 +428,30 @@ export const withinSignedTolerance = (actual: number, expected: number): boolean
  * magnitude on one side only and a perfectly correct credit breakdown fails:
  * abs(-85.50) - 1 = 84.50 is not less than -85.50. Pass `expected` already
  * computed from the magnitude of the taxable amount.
+ *
+ * Compared in whole hundredths, because both bindings compute
+ * `abs(xs:decimal(BT-117)) - 1` exactly. In binary floating point 32.01 - 1 is
+ * 31.009999999999998, below 31.01: until 2026-10-03 a VAT amount exactly 1.00
+ * from its expected value passed in 544 of 12,000,006 pairs (expected 0.00 to
+ * 20,000.00, the amount 0.99, 1.00 and 1.01 either side). Re-normalising
+ * `abs(actual) - 1` through `toPrecision(15)` instead keeps the error of a
+ * cancellation: 1.06 - 1 is 0.06000000000000005, 0.0600000000000001 at 15
+ * digits. CII's BR-S-09 computes `expected` in xs:double, but a double that
+ * stands for a two-decimal amount orders the same way as that amount.
+ *
+ * `bounds` is "inclusive" for CII's BR-CO-17 alone: CEN-EN16931-CII.sch writes
+ * it with `<=` and `>=`, where its UBL binding and every `-09` rule write `<`
+ * and `>`.
  */
-export const withinAbsoluteTolerance = (actual: number, expected: number): boolean =>
-  Math.abs(actual) - VAT_TOLERANCE < expected &&
-  Math.abs(actual) + VAT_TOLERANCE > expected;
+export const withinAbsoluteTolerance = (
+  actual: number,
+  expected: number,
+  bounds: "exclusive" | "inclusive" = "exclusive",
+): boolean => {
+  const magnitude = hundredths(Math.abs(actual));
+  const target = hundredths(expected);
+  const band = hundredths(VAT_TOLERANCE);
+  return bounds === "inclusive"
+    ? magnitude - band <= target && magnitude + band >= target
+    : magnitude - band < target && magnitude + band > target;
+};

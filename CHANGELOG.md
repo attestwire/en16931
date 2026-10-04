@@ -5,6 +5,66 @@ All notable changes to `@attestwire/en16931`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] — 2026-10-04
+
+**A stated VAT amount (`BT-117`) at the edge of its whole-unit tolerance is
+judged as the official schematrons judge it. `BR-S-09`, `BR-AF-09` and
+`BR-AG-09` round a half cent up on a UBL document, an amount exactly 1.00 off
+is outside the tolerance in both syntaxes, and on a CII document `BR-CO-17`
+includes its bound and is never applied to a group of category L, M or O.**
+
+**Upgrading:** only a stated VAT breakdown group, a document's or a JSON
+input's `declaredTotals.subtotals`, is judged differently, and only in three
+cases. A group whose VAT amount is exactly 1.00 from its taxable amount times
+its rate can now fail where it passed, in either syntax. On a UBL document or
+a JSON input, a group whose product ends in exactly half a cent is held to the
+amount rounded up. On a CII document, a group exactly 1.00 off passes
+`BR-CO-17` where it failed, and a group in category L, M or O no longer draws
+`BR-CO-17` at all, so a document can now be valid where it was not. Rule ids
+are unchanged.
+
+### Fixed
+
+- **The stated VAT breakdown's `-09` check rounded like the CII schematron in
+  both syntaxes.** It computed `Math.round(|BT-116| × BT-119) / 100` in binary
+  floating point, which is the CII binding's own expression:
+  `CEN-EN16931-CII.sch` leaves `ram:RateApplicablePercent` uncast, so XPath
+  multiplies in `xs:double`. `CEN-EN16931-UBL.sch` casts both operands to
+  `xs:decimal`, where a half cent is exactly half and rounds up, which is what
+  `BR-CO-17` already did here. 1,034.10 at 25% is 258.525: 258.53 in UBL,
+  258.52 in CII. A UBL document stating 259.52 drew `BR-S-09` although KoSIT
+  accepts it, and one stating 257.53 drew `BR-CO-17` without the `BR-S-09`
+  KoSIT reports beside it. CII keeps the double; JSON input, which has no
+  syntax, takes the decimal value, the one the library computes. Checked
+  against KoSIT 1.6.3 with the XRechnung 3.0.2 configuration on 2026-10-03.
+- **A VAT amount exactly 1.00 from the value it is checked against could pass
+  the `-09` rules and `BR-CO-17`.** The tolerance was computed as
+  `|BT-117| - 1 < expected` in binary floating point, where 32.01 - 1 is
+  31.009999999999998, below 31.01. Both schematrons compute
+  `abs(xs:decimal(BT-117)) - 1`, which is exact. With expected values from
+  0.00 to 20,000.00 and stated amounts 0.99, 1.00 and 1.01 either side, 544 of
+  12,000,006 pairs passed that should not have, all of them exactly 1.00 off. A
+  VAT amount of 32.01 on 163.20 at 19%, which is 31.01, was valid here; KoSIT
+  reports `BR-CO-17` and `BR-S-09` on the UBL document and `BR-S-09` on the
+  CII one. The comparison is now made in whole hundredths. The `-08`
+  tolerance keeps binary floating point, because that is what the CII
+  binding computes: `BR-Z-08`, `BR-E-08`, `BR-AE-08`, `BR-IC-08` and
+  `BR-G-08` subtract and compare in `xs:double`, and KoSIT accepts a CII
+  taxable amount of 32.01 on a line of 31.01.
+- **`BR-CO-17` on a CII document was judged by the UBL binding.**
+  `CEN-EN16931-CII.sch` writes its tolerance with `<=` and `>=`, where the UBL
+  binding and every `-09` rule write `<` and `>`. And it never applies the
+  rule to a group of category L, M or O: `BR-CO-17` sits in the rule for every
+  header `ram:ApplicableTradeTax`, the rules for those three categories match
+  the same element earlier in the same pattern, and Schematron gives an
+  element to the first rule that matches it. On a CII document, 257.53 on
+  1,034.10 at 25% drew `BR-CO-17`, though it is exactly 1.00 from `BR-CO-17`'s
+  258.53 and 0.99 from `BR-S-09`'s 258.52, and KoSIT accepts it. So did an L
+  group at 7% stating 106.01 on 1,500.00, and an M group at 4% stating 62.50,
+  where KoSIT reports nothing at all: `BR-AF-09` and `BR-AG-09` are `true()` in
+  CII. The finding's message now names the inclusive CII tolerance. Checked
+  against KoSIT 1.6.3 with the XRechnung 3.0.2 configuration on 2026-10-03.
+
 ## [0.14.0] — 2026-09-26
 
 **Say what happened instead of the VAT code: `vatScenario` fills in the VAT
@@ -2491,6 +2551,7 @@ that explains itself.
   splits advisory rules into `warnings` so they never block a build.
 - Test files are excluded from `dist`.
 
+[0.14.1]: https://github.com/attestwire/en16931/releases/tag/v0.14.1
 [0.14.0]: https://github.com/attestwire/en16931/releases/tag/v0.14.0
 [0.13.0]: https://github.com/attestwire/en16931/releases/tag/v0.13.0
 [0.12.1]: https://github.com/attestwire/en16931/releases/tag/v0.12.1

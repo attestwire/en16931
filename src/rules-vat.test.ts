@@ -83,6 +83,50 @@ describe("the two tolerance forms", () => {
     expect(withinAbsoluteTolerance(-85.5, 85.5)).toBe(true);
     expect(withinAbsoluteTolerance(-85.5, -85.5)).toBe(false);
   });
+
+  it("-09 and BR-CO-17 compare decimals, as both bindings do: exactly a whole unit off is outside", () => {
+    // `abs(xs:decimal(BT-117)) - 1` is exact. In binary floating point 32.01 - 1
+    // is 31.009999999999998, below 31.01, and 15.13 + 1 is above 16.13, so
+    // both used to pass (stated-breakdown.test.ts has the KoSIT verdicts).
+    for (const [actual, expected] of [
+      [32.01, 31.01],
+      [-32.01, 31.01],
+      [15.13, 16.13],
+      [1.13, 0.13],
+      [0.14, 1.14],
+    ]) {
+      expect(withinAbsoluteTolerance(actual!, expected!), `${actual} against ${expected}`).toBe(false);
+    }
+    // Every two-decimal expected value to 2,000.00, against amounts 0.99 and
+    // 1.00 away on each side, each the double a parser reads for it.
+    const wrong: string[] = [];
+    for (let cents = 0; cents <= 200_000; cents++) {
+      for (const [offset, within] of [[-100, false], [-99, true], [99, true], [100, false]] as const) {
+        if (cents + offset < 0) continue;
+        const actual = (cents + offset) / 100;
+        if (withinAbsoluteTolerance(actual, cents / 100) !== within) wrong.push(`${actual} against ${cents / 100}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+  });
+
+  it("include the bound only where asked: CII's BR-CO-17 writes <= and >=", () => {
+    expect(withinAbsoluteTolerance(257.53, 258.53)).toBe(false);
+    expect(withinAbsoluteTolerance(257.53, 258.53, "inclusive")).toBe(true);
+    expect(withinAbsoluteTolerance(32.01, 31.01, "inclusive")).toBe(true);
+    expect(withinAbsoluteTolerance(-15.13, 16.13, "inclusive")).toBe(true);
+    expect(withinAbsoluteTolerance(257.52, 258.53, "inclusive")).toBe(false);
+    expect(withinAbsoluteTolerance(32.02, 31.01, "inclusive")).toBe(false);
+  });
+
+  it("-08 keeps binary floating point, which is what CII's ±1 -08 rules compute", () => {
+    // CEN-EN16931-CII.sch writes BR-Z-08 as `../ram:BasisAmount - 1 < Σ`: the
+    // element is untyped, so XPath subtracts in xs:double and compares the sum
+    // as a double too. 32.01 - 1 is below 31.01 there as well, and KoSIT
+    // accepts that group (stated-breakdown.test.ts). A decimal form here would
+    // reject it.
+    expect(withinSignedTolerance(32.01, 31.01)).toBe(true);
+  });
 });
 
 describe("the -01 / -08 / -09 families on well-formed input", () => {

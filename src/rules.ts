@@ -71,6 +71,17 @@ const EXACT_08: Record<"ubl" | "cii", ReadonlySet<string>> = {
 /** Categories whose `-09` rule requires the stated VAT amount to be exactly 0. */
 const ZERO_TAX_09: ReadonlySet<string> = new Set(["Z", "E", "AE", "K", "G", "O"]);
 
+/**
+ * Categories whose breakdown group CII's BR-CO-17 never reaches.
+ * CEN-EN16931-CII.sch puts BR-CO-17 in the rule for every header
+ * `ram:ApplicableTradeTax`, and the rules for L, M and O take that same
+ * element as context earlier in the pattern. A Schematron pattern gives a node
+ * to the first rule that matches it, so the later rule is suppressed there
+ * (Saxon's SVRL says so: `svrl:suppressed-rule`). In UBL the category rules
+ * sit on another element and BR-CO-17 reaches every group.
+ */
+const CII_BR_CO_17_SUPPRESSED: ReadonlySet<string> = new Set(["L", "M", "O"]);
+
 const XRECHNUNG_PROFILES = new Set(["xrechnung-ubl", "xrechnung-cii"]);
 const isXRechnung = (inv: InvoiceInput) => XRECHNUNG_PROFILES.has(inv.profile);
 const isPeppol = (inv: InvoiceInput) => inv.profile === "peppol-bis-3";
@@ -1411,10 +1422,19 @@ const baseInputRules: RuleFn[] = [
         // the same helpers to the *computed* breakdown; this applies them to
         // the *stated* one, which is where a parsed document's corruption is.
         // BR-S-09 / BR-AF-09 / BR-AG-09 on the stated group: BT-117 within 1
-        // (exclusive) of round(|BT-116| × BT-119) / 100, as the schematron
-        // writes it. BR-CO-17 below tests the same thing under its own id; the
-        // official validators report the category id, so both are raised.
-        // In CII, BR-AF-09 and BR-AG-09 are `true()` and never fire.
+        // (exclusive) of |BT-116| × BT-119 / 100, rounded to two decimals.
+        // BR-CO-17 below tests the same thing under its own id; the official
+        // validators report the category id, so both are raised. The two
+        // bindings do not round the same number. CEN-EN16931-UBL.sch casts
+        // both operands to xs:decimal, so a half cent is exactly half and
+        // rounds up, which is `round2`, as BR-CO-17 has it. CEN-EN16931-CII.sch
+        // leaves ram:RateApplicablePercent uncast, so XPath multiplies in
+        // xs:double, and `Math.round(|BT-116| × BT-119) / 100` is that
+        // expression: 1,034.10 at 25% is 258.53 in UBL and 258.52 in CII.
+        // Until 2026-10-03 both syntaxes took the CII form, and a UBL document
+        // KoSIT accepts failed BR-S-09 (stated-breakdown.test.ts). JSON input
+        // has no syntax and takes the decimal value, the one the library
+        // computes. In CII, BR-AF-09 and BR-AG-09 are `true()` and never fire.
         if (
           stated.category &&
           (stated.category === "S" ||
@@ -1426,7 +1446,9 @@ const baseInputRules: RuleFn[] = [
           typeof stated.rate === "number" &&
           Number.isFinite(stated.rate)
         ) {
-          const expected = Math.round(Math.abs(stated.taxableAmount) * stated.rate) / 100;
+          const product = Math.abs(stated.taxableAmount) * stated.rate;
+          const expected =
+            syntax === "cii" ? Math.round(product) / 100 : round2(product / 100);
           if (!withinAbsoluteTolerance(stated.taxAmount, expected)) {
             const rule = `BR-${CATEGORY_RULE_INFIX[stated.category] ?? stated.category}-09`;
             out.push({
@@ -1464,26 +1486,34 @@ const baseInputRules: RuleFn[] = [
           });
         }
 
+        // BR-CO-17. CEN-EN16931-CII.sch differs from the UBL binding twice: it
+        // writes the tolerance with <= and >=, where UBL and every -09 rule
+        // write < and >, and it never reaches a group of category L, M or O
+        // (CII_BR_CO_17_SUPPRESSED). With BR-AF-09 and BR-AG-09 `true()` in
+        // CII, nothing there checks an L or M group's VAT amount. KoSIT
+        // 1.6.3, 2026-10-03 (stated-breakdown.test.ts).
         if (
           typeof stated.taxAmount === "number" &&
           Number.isFinite(stated.taxAmount) &&
           typeof stated.taxableAmount === "number" &&
           Number.isFinite(stated.taxableAmount) &&
           typeof stated.rate === "number" &&
-          Number.isFinite(stated.rate)
+          Number.isFinite(stated.rate) &&
+          !(syntax === "cii" && CII_BR_CO_17_SUPPRESSED.has(stated.category ?? ""))
         ) {
           const expected = round2((Math.abs(stated.taxableAmount) * stated.rate) / 100);
+          const bounds = syntax === "cii" ? "inclusive" : "exclusive";
           const ok =
             Math.round(stated.rate) === 0
               ? Math.round(stated.taxAmount) === 0
-              : withinAbsoluteTolerance(stated.taxAmount, expected);
+              : withinAbsoluteTolerance(stated.taxAmount, expected, bounds);
           if (!ok) {
             const signed = round2((stated.taxableAmount * stated.rate) / 100);
             out.push({
               rule: "BR-CO-17",
               field: "BT-117",
               severity: "fatal",
-              message: `BR-CO-17 requires the VAT category tax amount (BT-117) to equal BT-116 × (BT-119 / 100). This group states ${round2(stated.taxAmount).toFixed(2)} against a stated taxable amount of ${round2(stated.taxableAmount).toFixed(2)} at ${stated.rate}%, which is ${signed.toFixed(2)} ${inv.currency}. The rule's tolerance is a whole unit of currency, exclusive, so this is outside it.`,
+              message: `BR-CO-17 requires the VAT category tax amount (BT-117) to equal BT-116 × (BT-119 / 100). This group states ${round2(stated.taxAmount).toFixed(2)} against a stated taxable amount of ${round2(stated.taxableAmount).toFixed(2)} at ${stated.rate}%, which is ${signed.toFixed(2)} ${inv.currency}. The rule's tolerance is a whole unit of currency, ${bounds === "inclusive" ? "inclusive in the CII binding" : "exclusive"}, so this is outside it.`,
               fix: `${
                 looksLikeFractionRate(stated.category, stated.rate)
                   ? `${fractionReason(stated.category)}: if ${stated.rate} is a rate kept as a fraction, the percentage is ${percentFromFraction(stated.rate)}, so correct the rate (BT-119 here, and BT-152 on any line that carries it too) rather than the amount. Otherwise, compute`

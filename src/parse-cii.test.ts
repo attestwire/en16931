@@ -506,7 +506,7 @@ describe("declared line and breakdown amounts are compared, not discarded (findi
   });
 
   it("stays inside the schematron's tolerances rather than tightening them", () => {
-    // BR-*-08 and BR-CO-17 allow a whole unit of currency, exclusive, and
+    // BR-CO-17 allows a whole unit of currency (inclusive in CII), and
     // PEPPOL-EN16931-R120 allows 0.02. A build that compared exactly here would
     // reject documents KoSIT accepts — which a first draft of this rule did.
     const nearMiss = ciiMinimal.replace(
